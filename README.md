@@ -1,7 +1,8 @@
 # vtplayer
 
-![vtplayer](vtamp.png)
+![vtplayer](docs/vtplayer.png)
 
+<!-- ![version](https://img.shields.io/badge/version-VERSION-orange) -->
 ![build](https://github.com/0xf07ce/vtplayer/actions/workflows/build.yml/badge.svg)
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-brightgreen)
 ![license](https://img.shields.io/badge/license-LGPL--2.1-blue)
