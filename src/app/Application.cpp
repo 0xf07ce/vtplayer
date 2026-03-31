@@ -3,7 +3,7 @@
 
 #include "Application.h"
 
-#ifdef VTAMP_BUILD_BUNDLE
+#ifdef VTPLAYER_BUILD_BUNDLE
 #include <ventty/ventty_gfx.h>
 #else
 #include <ventty/terminal/Terminal.h>
@@ -14,7 +14,7 @@
 #include <chrono>
 #include <thread>
 
-namespace vtamp
+namespace vtplayer
 {
 
     using Key = ventty::KeyEvent::Key;
@@ -95,9 +95,9 @@ namespace vtamp
 
     void Application::initTerminal()
     {
-#ifdef VTAMP_BUILD_BUNDLE
+#ifdef VTPLAYER_BUILD_BUNDLE
         auto term = std::make_unique<ventty::GfxTerminal>();
-        if (!term->init(100, 35, "VENTTY PLAYER", 1))
+        if (!term->init(100, 35, "VT-PLAYER", 1))
         {
             return;
         }
@@ -625,4 +625,4 @@ namespace vtamp
         _playlistView->addTrack(info);
     }
 
-} // namespace vtamp
+} // namespace vtplayer

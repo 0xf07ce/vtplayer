@@ -8,7 +8,7 @@
 
 #include <ventty/widget/Widget.h>
 
-namespace vtamp
+namespace vtplayer
 {
 
     /// Abstract interface for a visualizer that renders audio data
@@ -28,4 +28,4 @@ namespace vtamp
         virtual void setTheme(Theme const &theme) = 0;
     };
 
-} // namespace vtamp
+} // namespace vtplayer

@@ -1,4 +1,4 @@
-add_executable(vtamp
+add_executable(vtplayer
     main.cpp
 
     # app
@@ -35,5 +35,5 @@ add_executable(vtamp
     config/Config.cpp
 )
 
-target_include_directories(vtamp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(vtamp ventty vtampDep)
+target_include_directories(vtplayer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(vtplayer ventty vtplayerDep)

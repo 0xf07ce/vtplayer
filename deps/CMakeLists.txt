@@ -15,9 +15,9 @@ FetchContent_MakeAvailable(gme)
 
 # miniaudio: header-only (public domain), placed in deps/include/miniaudio/miniaudio.h
 
-add_library(vtampDep INTERFACE)
-target_include_directories(vtampDep INTERFACE
+add_library(vtplayerDep INTERFACE)
+target_include_directories(vtplayerDep INTERFACE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     "${gme_SOURCE_DIR}"
 )
-target_link_libraries(vtampDep INTERFACE gme)
+target_link_libraries(vtplayerDep INTERFACE gme)

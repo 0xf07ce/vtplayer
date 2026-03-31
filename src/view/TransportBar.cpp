@@ -8,7 +8,7 @@
 
 #include <cstdio>
 
-namespace vtamp
+namespace vtplayer
 {
 
 std::string TransportBar::formatTime(float seconds)
@@ -162,4 +162,4 @@ float TransportBar::handleMouse(ventty::MouseEvent const & event)
     return -1.0f;
 }
 
-} // namespace vtamp
+} // namespace vtplayer

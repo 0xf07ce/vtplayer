@@ -5,7 +5,7 @@
 
 #include <ventty/art/AsciiArt.h>
 
-namespace vtamp
+namespace vtplayer
 {
 
 void HeaderBar::draw(ventty::Window & window)
@@ -26,7 +26,7 @@ void HeaderBar::draw(ventty::Window & window)
     window.putChar(x++, r.y, ventty::DOUBLE_BOX.h, borderStyle);
     window.putChar(x++, r.y, U'[', borderStyle);
 
-    std::string title = " VENTTY PLAYER ";
+    std::string title = " VT-PLAYER ";
     window.drawText(x, r.y, title, titleStyle);
     x += static_cast<int>(title.size());
 
@@ -56,4 +56,4 @@ void HeaderBar::draw(ventty::Window & window)
     window.putChar(r.x + r.width - 1, r.y, ventty::DOUBLE_BOX.tr, borderStyle);
 }
 
-} // namespace vtamp
+} // namespace vtplayer

@@ -9,7 +9,7 @@
 #include <cmath>
 #include <complex>
 
-namespace vtamp
+namespace vtplayer
 {
 
     void AudioSpectrum::update(AudioEngine const &engine)
@@ -110,4 +110,4 @@ namespace vtamp
         }
     }
 
-} // namespace vtamp
+} // namespace vtplayer

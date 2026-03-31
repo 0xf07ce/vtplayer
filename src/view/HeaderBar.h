@@ -9,7 +9,7 @@
 
 #include <string>
 
-namespace vtamp
+namespace vtplayer
 {
 
 class HeaderBar : public ventty::Widget
@@ -29,4 +29,4 @@ private:
     bool _playing = false;
 };
 
-} // namespace vtamp
+} // namespace vtplayer

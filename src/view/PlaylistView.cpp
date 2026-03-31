@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace vtamp
+namespace vtplayer
 {
 
 using Key = ventty::KeyEvent::Key;
@@ -343,4 +343,4 @@ void PlaylistView::scrollToSelected()
     }
 }
 
-} // namespace vtamp
+} // namespace vtplayer

@@ -7,7 +7,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace vtamp
+namespace vtplayer
 {
 
 struct Config
@@ -43,4 +43,4 @@ private:
     void applyValues(std::unordered_map<std::string, std::string> const & values);
 };
 
-} // namespace vtamp
+} // namespace vtplayer

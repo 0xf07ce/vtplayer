@@ -5,6 +5,6 @@
 
 int main()
 {
-    vtamp::Application app;
+    vtplayer::Application app;
     return app.run();
 }

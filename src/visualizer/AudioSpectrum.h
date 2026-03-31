@@ -8,7 +8,7 @@
 
 #include <array>
 
-namespace vtamp
+namespace vtplayer
 {
 
     /// Spectrum analyzer visualizer using vertical bars with color gradient.
@@ -28,4 +28,4 @@ namespace vtamp
         std::array<float, NUM_BARS> _peakValues{};
     };
 
-} // namespace vtamp
+} // namespace vtplayer

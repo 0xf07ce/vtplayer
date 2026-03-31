@@ -12,7 +12,7 @@
 #include <memory>
 #include <string>
 
-namespace vtamp
+namespace vtplayer
 {
 
     class VisualizerView : public ventty::Widget
@@ -46,4 +46,4 @@ namespace vtamp
         std::string _trackInfo;
     };
 
-} // namespace vtamp
+} // namespace vtplayer

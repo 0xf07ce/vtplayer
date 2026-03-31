@@ -16,7 +16,7 @@ struct ma_device;
 struct ma_decoder;
 struct Music_Emu;
 
-namespace vtamp
+namespace vtplayer
 {
 
 enum class PlayState
@@ -84,4 +84,4 @@ private:
     RingBuffer<float, VIS_BUFFER_SIZE> _visBuffer;
 };
 
-} // namespace vtamp
+} // namespace vtplayer

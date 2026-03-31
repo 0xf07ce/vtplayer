@@ -7,7 +7,7 @@
 #include <cmath>
 #include <complex>
 
-namespace vtamp
+namespace vtplayer
 {
 
 /// Simple in-place radix-2 FFT (decimation in time)
@@ -83,4 +83,4 @@ private:
     static constexpr int LOG2N = log2(N);
 };
 
-} // namespace vtamp
+} // namespace vtplayer

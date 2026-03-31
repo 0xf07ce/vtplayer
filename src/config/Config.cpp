@@ -7,7 +7,7 @@
 #include <fstream>
 #include <sstream>
 
-namespace vtamp
+namespace vtplayer
 {
 
 std::filesystem::path Config::defaultPath()
@@ -163,4 +163,4 @@ void Config::applyValues(std::unordered_map<std::string, std::string> const & va
     }
 }
 
-} // namespace vtamp
+} // namespace vtplayer

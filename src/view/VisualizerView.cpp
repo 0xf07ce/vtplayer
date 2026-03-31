@@ -5,7 +5,7 @@
 
 #include <ventty/art/AsciiArt.h>
 
-namespace vtamp
+namespace vtplayer
 {
 
     void VisualizerView::setVisualizer(std::unique_ptr<Visualizer> vis)
@@ -96,4 +96,4 @@ namespace vtamp
         }
     }
 
-} // namespace vtamp
+} // namespace vtplayer

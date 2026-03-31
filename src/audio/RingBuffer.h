@@ -7,7 +7,7 @@
 #include <array>
 #include <cstring>
 
-namespace vtamp
+namespace vtplayer
 {
 
 /// SPSC lock-free ring buffer for passing audio samples from audio thread to UI thread
@@ -50,4 +50,4 @@ private:
     std::atomic<uint64_t> _writePos{0};
 };
 
-} // namespace vtamp
+} // namespace vtplayer

@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace vtamp
+namespace vtplayer
 {
 
 struct FileEntry
@@ -54,4 +54,4 @@ private:
     OnAddCallback _onAdd;
 };
 
-} // namespace vtamp
+} // namespace vtplayer

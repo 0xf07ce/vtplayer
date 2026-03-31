@@ -12,7 +12,7 @@
 #include <algorithm>
 #include <cstring>
 
-namespace vtamp
+namespace vtplayer
 {
 
 AudioEngine::AudioEngine() = default;
@@ -417,4 +417,4 @@ void AudioEngine::fillBuffer(float * output, unsigned int frameCount)
                     std::memory_order_relaxed);
 }
 
-} // namespace vtamp
+} // namespace vtplayer

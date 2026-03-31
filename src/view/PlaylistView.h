@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace vtamp
+namespace vtplayer
 {
 
 class PlaylistView : public ventty::Widget
@@ -54,4 +54,4 @@ private:
     OnPlayCallback _onPlay;
 };
 
-} // namespace vtamp
+} // namespace vtplayer

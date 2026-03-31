@@ -10,7 +10,7 @@
 
 #include <string>
 
-namespace vtamp
+namespace vtplayer
 {
 
 class TransportBar : public ventty::Widget
@@ -43,4 +43,4 @@ private:
     int _progressW = 0;
 };
 
-} // namespace vtamp
+} // namespace vtplayer

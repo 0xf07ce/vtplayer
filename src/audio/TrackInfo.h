@@ -6,7 +6,7 @@
 #include <filesystem>
 #include <string>
 
-namespace vtamp
+namespace vtplayer
 {
 
 enum class AudioFormat
@@ -65,4 +65,4 @@ struct TrackInfo
     }
 };
 
-} // namespace vtamp
+} // namespace vtplayer

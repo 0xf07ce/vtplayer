@@ -9,7 +9,7 @@
 
 #include <algorithm>
 
-namespace vtamp
+namespace vtplayer
 {
 
 using Key = ventty::KeyEvent::Key;
@@ -379,4 +379,4 @@ void FileBrowser::scrollToSelected()
     }
 }
 
-} // namespace vtamp
+} // namespace vtplayer

@@ -17,7 +17,7 @@
 
 #include <memory>
 
-namespace vtamp
+namespace vtplayer
 {
 
     enum class Screen
@@ -82,4 +82,4 @@ namespace vtamp
         std::unique_ptr<VisualizerView> _visualizerView;
     };
 
-} // namespace vtamp
+} // namespace vtplayer
