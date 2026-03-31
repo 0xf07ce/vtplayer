@@ -3,7 +3,7 @@
 
 #define MA_LOG_LEVEL MA_LOG_LEVEL_ERROR
 #define MINIAUDIO_IMPLEMENTATION
-#include <miniaudio.h>
+#include <miniaudio/miniaudio.h>
 
 #include "AudioEngine.h"
 

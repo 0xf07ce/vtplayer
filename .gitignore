@@ -3,6 +3,7 @@
 .vscode/
 .claude/
 cmake-build-*/
+build/
 local/
 AGENTS.md
 CLAUDE.md

@@ -36,7 +36,7 @@ miniaudio 0.11.25
   Author: David Reid
   Source: https://miniaud.io/
   License: Public Domain (Unlicense) OR MIT-0 (dual-licensed)
-  Files: deps/include/miniaudio.h
+  Files: deps/include/miniaudio/miniaudio.h
 
 zlib
   Author: Jean-loup Gailly, Mark Adler

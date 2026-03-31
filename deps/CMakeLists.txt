@@ -13,7 +13,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 FetchContent_MakeAvailable(gme)
 
-# miniaudio: header-only (public domain), placed in deps/include/miniaudio.h
+# miniaudio: header-only (public domain), placed in deps/include/miniaudio/miniaudio.h
 
 add_library(vtampDep INTERFACE)
 target_include_directories(vtampDep INTERFACE
