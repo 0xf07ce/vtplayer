@@ -455,9 +455,13 @@ namespace vtplayer
         {
             if (_focus == FocusPanel::FileBrowser)
             {
-                _focus = FocusPanel::Playlist;
-                _fileBrowser->setFocused(false);
-                _playlistView->setFocused(true);
+                // Only switch to playlist if it's not empty
+                if (!_playlistView->empty())
+                {
+                    _focus = FocusPanel::Playlist;
+                    _fileBrowser->setFocused(false);
+                    _playlistView->setFocused(true);
+                }
             }
             else
             {
