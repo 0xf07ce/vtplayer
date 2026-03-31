@@ -19,6 +19,45 @@ namespace vtamp
 
     using Key = ventty::KeyEvent::Key;
 
+    // Map Korean Hangul Jamo (ㅂ, ㅈ, etc.) to their QWERTY equivalents
+    // so that shortcuts work regardless of IME state.
+    static char32_t hangulToQwerty(char32_t ch)
+    {
+        // clang-format off
+        switch (ch)
+        {
+        // Consonants (initial)
+        case U'ㅂ': return 'q';  case U'ㅃ': return 'Q';
+        case U'ㅈ': return 'w';  case U'ㅉ': return 'W';
+        case U'ㄷ': return 'e';  case U'ㄸ': return 'E';
+        case U'ㄱ': return 'r';  case U'ㄲ': return 'R';
+        case U'ㅅ': return 't';  case U'ㅆ': return 'T';
+        case U'ㅛ': return 'y';
+        case U'ㅕ': return 'u';
+        case U'ㅑ': return 'i';
+        case U'ㅐ': return 'o';  case U'ㅒ': return 'O';
+        case U'ㅔ': return 'p';  case U'ㅖ': return 'P';
+        case U'ㅁ': return 'a';
+        case U'ㄴ': return 's';
+        case U'ㅇ': return 'd';
+        case U'ㄹ': return 'f';
+        case U'ㅎ': return 'g';
+        case U'ㅗ': return 'h';
+        case U'ㅓ': return 'j';
+        case U'ㅏ': return 'k';
+        case U'ㅣ': return 'l';
+        case U'ㅋ': return 'z';
+        case U'ㅌ': return 'x';
+        case U'ㅊ': return 'c';
+        case U'ㅍ': return 'v';
+        case U'ㅠ': return 'b';
+        case U'ㅜ': return 'n';
+        case U'ㅡ': return 'm';
+        default:    return ch;
+        }
+        // clang-format on
+    }
+
     Application::Application() = default;
 
     Application::~Application()
@@ -383,15 +422,18 @@ namespace vtamp
 
     void Application::handleGlobalKeys(ventty::KeyEvent const &event)
     {
+        // Normalize Korean Jamo to QWERTY so shortcuts work under Hangul IME
+        char32_t const ch = (event.key == Key::Char) ? hangulToQwerty(event.ch) : event.ch;
+
         // Quit
-        if (event.key == Key::Char && (event.ch == 'q' || event.ch == 'Q') && !event.alt && !event.ctrl)
+        if (event.key == Key::Char && (ch == 'q' || ch == 'Q') && !event.alt && !event.ctrl)
         {
             quit();
             return;
         }
 
         // v/V: toggle visualizer screen
-        if (event.key == Key::Char && (event.ch == 'v' || event.ch == 'V') && !event.alt && !event.ctrl)
+        if (event.key == Key::Char && (ch == 'v' || ch == 'V') && !event.alt && !event.ctrl)
         {
             _screen = (_screen == Screen::Browser) ? Screen::Visualizer : Screen::Browser;
             resize();
@@ -409,7 +451,7 @@ namespace vtamp
         }
 
         // Tab: switch focus between panels (browser screen only)
-        if (event.key == Key::Char && event.ch == '\t' && _screen == Screen::Browser)
+        if (event.key == Key::Tab && _screen == Screen::Browser)
         {
             if (_focus == FocusPanel::FileBrowser)
             {
@@ -427,7 +469,7 @@ namespace vtamp
         }
 
         // Space: play/pause
-        if (event.key == Key::Char && event.ch == ' ')
+        if (event.key == Key::Char && ch == ' ')
         {
             auto state = _audio.state();
             if (state == PlayState::Playing)
@@ -448,7 +490,7 @@ namespace vtamp
         }
 
         // s: stop
-        if (event.key == Key::Char && (event.ch == 's' || event.ch == 'S') && !event.alt && !event.ctrl)
+        if (event.key == Key::Char && (ch == 's' || ch == 'S') && !event.alt && !event.ctrl)
         {
             _audio.stop();
             _playlistView->setPlayingIndex(-1);
@@ -456,14 +498,14 @@ namespace vtamp
         }
 
         // n: next track
-        if (event.key == Key::Char && (event.ch == 'n' || event.ch == 'N') && !event.alt && !event.ctrl)
+        if (event.key == Key::Char && (ch == 'n' || ch == 'N') && !event.alt && !event.ctrl)
         {
             playNext();
             return;
         }
 
         // p: previous track
-        if (event.key == Key::Char && (event.ch == 'p' || event.ch == 'P') && !event.alt && !event.ctrl)
+        if (event.key == Key::Char && (ch == 'p' || ch == 'P') && !event.alt && !event.ctrl)
         {
             playPrev();
             return;
@@ -484,13 +526,13 @@ namespace vtamp
         }
 
         // +/-: volume
-        if (event.key == Key::Char && (event.ch == '+' || event.ch == '='))
+        if (event.key == Key::Char && (ch == '+' || ch == '='))
         {
             float vol = _audio.volume();
             _audio.setVolume(vol + 0.05f);
             return;
         }
-        if (event.key == Key::Char && event.ch == '-')
+        if (event.key == Key::Char && ch == '-')
         {
             float vol = _audio.volume();
             _audio.setVolume(vol - 0.05f);
@@ -498,7 +540,7 @@ namespace vtamp
         }
 
         // a: add selected file to playlist
-        if (event.key == Key::Char && (event.ch == 'a' || event.ch == 'A') && !event.alt && !event.ctrl && _screen == Screen::Browser)
+        if (event.key == Key::Char && (ch == 'a' || ch == 'A') && !event.alt && !event.ctrl && _screen == Screen::Browser)
         {
             auto const *entry = _fileBrowser->selectedEntry();
             if (entry && entry->isAudio)
