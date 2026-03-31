@@ -1,0 +1,586 @@
+// Copyright (c) 2026 Leon J. Lee
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
+#include "Application.h"
+
+#ifdef VTAMP_BUILD_BUNDLE
+#include <ventty/ventty_gfx.h>
+#else
+#include <ventty/terminal/Terminal.h>
+#endif
+
+#include <ventty/art/AsciiArt.h>
+
+#include <chrono>
+#include <thread>
+
+namespace vtamp
+{
+
+    using Key = ventty::KeyEvent::Key;
+
+    Application::Application() = default;
+
+    Application::~Application()
+    {
+        _audio.shutdown();
+    }
+
+    int Application::run()
+    {
+        init();
+        _running = true;
+
+        while (_running && _terminal->isRunning())
+        {
+            while (_terminal->pollEvent())
+                ;
+
+            updateUI();
+            draw();
+            _terminal->render();
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
+
+        cleanup();
+        return 0;
+    }
+
+    void Application::quit()
+    {
+        _audio.stop();
+        _running = false;
+        _terminal->quit();
+    }
+
+    void Application::initTerminal()
+    {
+#ifdef VTAMP_BUILD_BUNDLE
+        auto term = std::make_unique<ventty::GfxTerminal>();
+        if (!term->init(100, 35, "VENTTY PLAYER", 1))
+        {
+            return;
+        }
+        term->loadBuiltinFont();
+        _terminal = std::move(term);
+#else
+        auto term = std::make_unique<ventty::Terminal>();
+        if (!term->init())
+        {
+            return;
+        }
+        _terminal = std::move(term);
+#endif
+    }
+
+    void Application::init()
+    {
+        // Load config
+        _config.load();
+
+        // Apply theme colors from config
+        _theme = Theme::retro();
+        if (!_config.themeColors.empty())
+        {
+            _theme.applyColors(_config.themeColors);
+        }
+
+        _audio.init();
+        _audio.setVolume(_config.volume);
+
+        // Init terminal
+        initTerminal();
+        if (!_terminal)
+            return;
+
+        _rootWindow = _terminal->createWindow(0, 0, _terminal->cols(), _terminal->rows());
+
+        // Input callbacks
+        _terminal->onKey([this](ventty::KeyEvent const &ev)
+                         { handleInput(ev); });
+
+        _terminal->onMouse([this](ventty::MouseEvent const &ev)
+                           { handleMouse(ev); });
+
+        _terminal->onResize([this](ventty::ResizeEvent const &ev)
+                            {
+        if (_rootWindow)
+        {
+            _rootWindow->resize(ev.cols, ev.rows);
+            _rootWindow->setPosition(0, 0);
+        }
+        resize();
+        _terminal->forceRedraw(); });
+
+        // Create views
+        _headerBar = std::make_unique<HeaderBar>();
+        _headerBar->setTheme(_theme);
+
+        _fileBrowser = std::make_unique<FileBrowser>();
+        _fileBrowser->setTheme(_theme);
+        _fileBrowser->setFocused(true);
+        _fileBrowser->setDirectory(_config.startDirectory);
+        _fileBrowser->setOnAdd([this](std::filesystem::path const &path)
+                               { addToPlaylist(path); });
+
+        _playlistView = std::make_unique<PlaylistView>();
+        _playlistView->setTheme(_theme);
+        _playlistView->setOnPlay([this](int index)
+                                 { playTrack(index); });
+
+        _transportBar = std::make_unique<TransportBar>();
+        _transportBar->setTheme(_theme);
+
+        _visualizerView = std::make_unique<VisualizerView>();
+        _visualizerView->setTheme(_theme);
+        _visualizerView->setVisualizer(std::make_unique<AudioSpectrum>());
+
+        resize();
+    }
+
+    void Application::cleanup()
+    {
+        // Audio must stop before terminal restores — otherwise audio thread
+        // output can corrupt the restored terminal.
+        _audio.shutdown();
+
+        if (_terminal)
+        {
+            _terminal->shutdown();
+            _terminal.reset();
+        }
+    }
+
+    void Application::resize()
+    {
+        int const w = _terminal->cols();
+        int const h = _terminal->rows();
+
+        // HeaderBar: top row
+        _headerBar->setRect(0, 0, w, 1);
+
+        // TransportBar: bottom 2 rows
+        _transportBar->setRect(0, h - 2, w, 2);
+
+        // Content area: between header and transport
+        int contentY = 1;
+        int contentH = h - 3;
+
+        if (_screen == Screen::Browser)
+        {
+            // Split: FileBrowser (left 40%) | PlaylistView (right 60%)
+            int browserW = (w * 2) / 5;
+            if (browserW < 20)
+                browserW = 20;
+            int playlistW = w - browserW;
+
+            _fileBrowser->setRect(0, contentY, browserW, contentH);
+            _playlistView->setRect(browserW, contentY, playlistW, contentH);
+        }
+        else
+        {
+            // Visualizer takes full content area
+            _visualizerView->setRect(0, contentY, w, contentH);
+        }
+    }
+
+    void Application::updateUI()
+    {
+        // Update header
+        auto state = _audio.state();
+        bool playing = (state == PlayState::Playing);
+        _headerBar->setPlaying(playing || state == PlayState::Paused);
+
+        if (playing || state == PlayState::Paused)
+        {
+            _headerBar->setTrackName(_audio.currentTrack().title);
+
+            float pos = _audio.position();
+            float dur = _audio.duration();
+            int pm = static_cast<int>(pos) / 60;
+            int ps = static_cast<int>(pos) % 60;
+            int dm = static_cast<int>(dur) / 60;
+            int ds = static_cast<int>(dur) % 60;
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), "%02d:%02d/%02d:%02d", pm, ps, dm, ds);
+            _headerBar->setTrackTime(buf);
+        }
+        else
+        {
+            _headerBar->setTrackName("");
+            _headerBar->setTrackTime("");
+        }
+
+        // Auto-advance: audio callback signals track ended via flag,
+        // then UI thread safely stops and loads next track.
+        if (_audio.hasTrackEnded())
+        {
+            _audio.stop();
+            if (_playlistView->playingIndex() >= 0)
+            {
+                playNext();
+            }
+        }
+
+        // Update transport
+        _transportBar->setState(state);
+        _transportBar->setTrackName(_audio.currentTrack().title);
+        _transportBar->setPosition(_audio.position());
+        _transportBar->setDuration(_audio.duration());
+        _transportBar->setVolume(_audio.volume());
+
+        // Update visualizer
+        if (_screen == Screen::Visualizer)
+        {
+            _visualizerView->update(_audio);
+            _visualizerView->setTrackName(_audio.currentTrack().title);
+
+            // Build track info string
+            std::string info;
+            auto const &track = _audio.currentTrack();
+            switch (track.format)
+            {
+            case AudioFormat::Mp3:
+                info = "MP3";
+                break;
+            case AudioFormat::Ogg:
+                info = "OGG";
+                break;
+            case AudioFormat::Flac:
+                info = "FLAC";
+                break;
+            case AudioFormat::Gme:
+                info = "GME";
+                break;
+            default:
+                break;
+            }
+            info += " | " + std::to_string(AudioEngine::SAMPLE_RATE) + "Hz | Stereo";
+            _visualizerView->setTrackInfo(info);
+        }
+    }
+
+    void Application::draw()
+    {
+        _rootWindow->clear(ventty::Style{_theme.foreground, _theme.background});
+
+        // Header
+        _headerBar->draw(*_rootWindow);
+
+        // Content
+        if (_screen == Screen::Browser)
+        {
+            drawBrowserScreen();
+        }
+        else
+        {
+            drawVisualizerScreen();
+        }
+
+        // Transport
+        _transportBar->draw(*_rootWindow);
+    }
+
+    void Application::drawBrowserScreen()
+    {
+        _fileBrowser->draw(*_rootWindow);
+        _playlistView->draw(*_rootWindow);
+
+        // Draw vertical separator between panels
+        int sepX = _fileBrowser->rect().width;
+        int sepY = _fileBrowser->rect().y;
+        int sepH = _fileBrowser->rect().height;
+
+        for (int y = 0; y < sepH; ++y)
+        {
+            _rootWindow->putChar(sepX, sepY + y, ventty::SINGLE_BOX.v,
+                                 ventty::Style{_theme.separatorFg, _theme.background});
+        }
+    }
+
+    void Application::drawVisualizerScreen()
+    {
+        _visualizerView->draw(*_rootWindow);
+    }
+
+    void Application::handleInput(ventty::KeyEvent const &event)
+    {
+        if (event.key == Key::None)
+            return;
+
+        // Global keys (always active)
+        handleGlobalKeys(event);
+
+        // Screen-specific input
+        if (_screen == Screen::Browser)
+        {
+            if (_focus == FocusPanel::FileBrowser)
+            {
+                _fileBrowser->handleKey(event);
+            }
+            else
+            {
+                _playlistView->handleKey(event);
+            }
+        }
+    }
+
+    void Application::handleMouse(ventty::MouseEvent const &event)
+    {
+        using Button = ventty::MouseEvent::Button;
+        using Action = ventty::MouseEvent::Action;
+
+        // Transport bar: click on progress bar to seek
+        float seekRatio = _transportBar->handleMouse(event);
+        if (seekRatio >= 0.0f)
+        {
+            float dur = _audio.duration();
+            _audio.seek(seekRatio * dur);
+            return;
+        }
+
+        // Browser screen: click on panels
+        if (_screen == Screen::Browser)
+        {
+            auto const &browserRect = _fileBrowser->rect();
+            auto const &playlistRect = _playlistView->rect();
+
+            // Click to switch focus
+            if (event.button == Button::Left && event.action == Action::Press)
+            {
+                if (browserRect.contains(event.x, event.y))
+                {
+                    if (_focus != FocusPanel::FileBrowser)
+                    {
+                        _focus = FocusPanel::FileBrowser;
+                        _fileBrowser->setFocused(true);
+                        _playlistView->setFocused(false);
+                    }
+                }
+                else if (playlistRect.contains(event.x, event.y))
+                {
+                    if (_focus != FocusPanel::Playlist)
+                    {
+                        _focus = FocusPanel::Playlist;
+                        _fileBrowser->setFocused(false);
+                        _playlistView->setFocused(true);
+                    }
+                }
+            }
+
+            // Delegate to focused panel
+            if (_fileBrowser->rect().contains(event.x, event.y))
+            {
+                _fileBrowser->handleMouse(event);
+            }
+            else if (_playlistView->rect().contains(event.x, event.y))
+            {
+                _playlistView->handleMouse(event);
+            }
+        }
+    }
+
+    void Application::handleGlobalKeys(ventty::KeyEvent const &event)
+    {
+        // Quit
+        if (event.key == Key::Char && (event.ch == 'q' || event.ch == 'Q') && !event.alt && !event.ctrl)
+        {
+            quit();
+            return;
+        }
+
+        // v/V: toggle visualizer screen
+        if (event.key == Key::Char && (event.ch == 'v' || event.ch == 'V') && !event.alt && !event.ctrl)
+        {
+            _screen = (_screen == Screen::Browser) ? Screen::Visualizer : Screen::Browser;
+            resize();
+            _terminal->forceRedraw();
+            return;
+        }
+
+        // Escape: back to browser from visualizer
+        if (event.key == Key::Escape && _screen == Screen::Visualizer)
+        {
+            _screen = Screen::Browser;
+            resize();
+            _terminal->forceRedraw();
+            return;
+        }
+
+        // Tab: switch focus between panels (browser screen only)
+        if (event.key == Key::Char && event.ch == '\t' && _screen == Screen::Browser)
+        {
+            if (_focus == FocusPanel::FileBrowser)
+            {
+                _focus = FocusPanel::Playlist;
+                _fileBrowser->setFocused(false);
+                _playlistView->setFocused(true);
+            }
+            else
+            {
+                _focus = FocusPanel::FileBrowser;
+                _fileBrowser->setFocused(true);
+                _playlistView->setFocused(false);
+            }
+            return;
+        }
+
+        // Space: play/pause
+        if (event.key == Key::Char && event.ch == ' ')
+        {
+            auto state = _audio.state();
+            if (state == PlayState::Playing)
+            {
+                _audio.pause();
+            }
+            else if (state == PlayState::Paused)
+            {
+                _audio.play();
+            }
+            else if (!_playlistView->empty())
+            {
+                // Start playing selected or first track
+                int idx = _playlistView->selectedIndex();
+                playTrack(idx);
+            }
+            return;
+        }
+
+        // s: stop
+        if (event.key == Key::Char && (event.ch == 's' || event.ch == 'S') && !event.alt && !event.ctrl)
+        {
+            _audio.stop();
+            _playlistView->setPlayingIndex(-1);
+            return;
+        }
+
+        // n: next track
+        if (event.key == Key::Char && (event.ch == 'n' || event.ch == 'N') && !event.alt && !event.ctrl)
+        {
+            playNext();
+            return;
+        }
+
+        // p: previous track
+        if (event.key == Key::Char && (event.ch == 'p' || event.ch == 'P') && !event.alt && !event.ctrl)
+        {
+            playPrev();
+            return;
+        }
+
+        // Left/Right: seek
+        if (event.key == Key::Left)
+        {
+            float pos = _audio.position();
+            _audio.seek(pos - 5.0f);
+            return;
+        }
+        if (event.key == Key::Right)
+        {
+            float pos = _audio.position();
+            _audio.seek(pos + 5.0f);
+            return;
+        }
+
+        // +/-: volume
+        if (event.key == Key::Char && (event.ch == '+' || event.ch == '='))
+        {
+            float vol = _audio.volume();
+            _audio.setVolume(vol + 0.05f);
+            return;
+        }
+        if (event.key == Key::Char && event.ch == '-')
+        {
+            float vol = _audio.volume();
+            _audio.setVolume(vol - 0.05f);
+            return;
+        }
+
+        // a: add selected file to playlist
+        if (event.key == Key::Char && (event.ch == 'a' || event.ch == 'A') && !event.alt && !event.ctrl && _screen == Screen::Browser)
+        {
+            auto const *entry = _fileBrowser->selectedEntry();
+            if (entry && entry->isAudio)
+            {
+                addToPlaylist(entry->path);
+            }
+            return;
+        }
+
+        // Ctrl+Up/Down: move playlist item
+        if (event.ctrl && event.key == Key::Up)
+        {
+            _playlistView->moveSelectedUp();
+            return;
+        }
+        if (event.ctrl && event.key == Key::Down)
+        {
+            _playlistView->moveSelectedDown();
+            return;
+        }
+
+        // F5: refresh
+        if (event.key == Key::F5)
+        {
+            _fileBrowser->refresh();
+            _terminal->forceRedraw();
+            return;
+        }
+    }
+
+    void Application::playTrack(int index)
+    {
+        auto const *track = _playlistView->track(index);
+        if (!track)
+            return;
+
+        _audio.stop();
+        if (_audio.load(track->path))
+        {
+            _audio.play();
+            _playlistView->setPlayingIndex(index);
+        }
+        else
+        {
+            _playlistView->setPlayingIndex(-1);
+            _headerBar->setTrackName("ERR: " + _audio.lastError());
+            _headerBar->setPlaying(true);
+        }
+    }
+
+    void Application::playNext()
+    {
+        int current = _playlistView->playingIndex();
+        int count = _playlistView->trackCount();
+        if (count == 0)
+            return;
+
+        int next = (current + 1) % count;
+        playTrack(next);
+    }
+
+    void Application::playPrev()
+    {
+        int current = _playlistView->playingIndex();
+        int count = _playlistView->trackCount();
+        if (count == 0)
+            return;
+
+        int prev = (current - 1 + count) % count;
+        playTrack(prev);
+    }
+
+    void Application::addToPlaylist(std::filesystem::path const &path)
+    {
+        TrackInfo info;
+        info.path = path;
+        info.title = path.stem().string();
+        info.format = TrackInfo::formatFromPath(path);
+
+        // Try to get duration by briefly loading
+        // For now just add with unknown duration
+        _playlistView->addTrack(info);
+    }
+
+} // namespace vtamp
