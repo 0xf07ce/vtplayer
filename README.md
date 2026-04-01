@@ -7,10 +7,23 @@
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-brightgreen)
 ![license](https://img.shields.io/badge/license-LGPL--2.1-blue)
 
-[ventty](https://github.com/0xf07ce/ventty) 기반 터미널 음악 플레이어.
-MP3, OGG, FLAC 및 VGM/VGZ/NSF/SPC/GBS/GYM/HES 등 레트로 게임 음악 포맷을 지원합니다.
+A terminal-based music player built on [ventty](https://github.com/0xf07ce/ventty).
+Supports MP3, OGG, FLAC and retro game music formats including VGM/VGZ/NSF/SPC/GBS/GYM/HES.
 
+## Features
 
-## 라이센스
+- Dual-screen UI: file browser with playlist and spectrum visualizer
+- Standard audio playback via miniaudio (MP3/OGG/FLAC)
+- Retro game music playback via game-music-emu (VGM/NSF/SPC/GBS/GYM/HES)
+- Real-time spectrum analyzer with peak indicators
+- Configurable themes and keybindings
 
-[LICENSE](LICENSE) 참조.
+## Documentation
+
+- [Building](docs/building.md)
+- [Configuration](docs/configuration.md)
+- [Keybindings](docs/keybindings.md)
+
+## License
+
+See [LICENSE](LICENSE).
