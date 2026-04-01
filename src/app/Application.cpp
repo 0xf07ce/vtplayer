@@ -176,6 +176,13 @@ namespace vtplayer
         _visualizerView->setVisualizer(std::make_unique<AudioSpectrum>());
 
         resize();
+
+        // If an initial file was provided, add it to the playlist and play
+        if (!_initialFile.empty())
+        {
+            addToPlaylist(_initialFile);
+            playTrack(0);
+        }
     }
 
     void Application::cleanup()
