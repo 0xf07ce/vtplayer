@@ -38,6 +38,8 @@ namespace vtplayer
         Application();
         ~Application();
 
+        void setInitialFile(std::filesystem::path path) { _initialFile = std::move(path); }
+
         int run();
         void quit();
 
@@ -80,6 +82,8 @@ namespace vtplayer
         std::unique_ptr<PlaylistView> _playlistView;
         std::unique_ptr<TransportBar> _transportBar;
         std::unique_ptr<VisualizerView> _visualizerView;
+
+        std::filesystem::path _initialFile;
     };
 
 } // namespace vtplayer
