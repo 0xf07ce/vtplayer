@@ -6,7 +6,7 @@
 #include "Visualizer.h"
 #include "../audio/Fft.h"
 
-#include <array>
+#include <vector>
 
 namespace vtplayer
 {
@@ -15,6 +15,8 @@ namespace vtplayer
     class AudioSpectrum : public Visualizer
     {
     public:
+        explicit AudioSpectrum(int numBars = 48);
+
         void update(AudioEngine const &engine) override;
         void draw(ventty::Window &window, int x, int y, int w, int h) override;
         void setTheme(Theme const &theme) override { _theme = theme; }
@@ -23,9 +25,8 @@ namespace vtplayer
         Theme _theme;
         Fft<512> _fft;
 
-        static constexpr int NUM_BARS = 48;
-        std::array<float, NUM_BARS> _barValues{};
-        std::array<float, NUM_BARS> _peakValues{};
+        std::vector<float> _barValues;
+        std::vector<float> _peakValues;
     };
 
 } // namespace vtplayer

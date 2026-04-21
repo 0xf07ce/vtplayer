@@ -31,6 +31,8 @@ public:
 
     void setTheme(Theme const & theme) { _theme = theme; }
     void setDirectory(std::filesystem::path const & dir);
+    void setShowHidden(bool show);
+    void setAllowedExtensions(std::string const & csv);
     void refresh();
 
     int selectedIndex() const { return _selectedIndex; }
@@ -51,6 +53,8 @@ private:
     std::vector<FileEntry> _entries;
     int _selectedIndex = 0;
     int _scrollOffset = 0;
+    bool _showHidden = false;
+    std::vector<std::string> _allowedExts{".mp3", ".ogg", ".flac"};
     OnAddCallback _onAdd;
 };
 

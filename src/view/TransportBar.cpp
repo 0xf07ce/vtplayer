@@ -72,7 +72,8 @@ void TransportBar::draw(ventty::Window & window)
     // Progress bar
     int timeLen = 13; // " MM:SS/MM:SS "
     int volLen = 10;  // " Vol:XXX% "
-    int progressW = r.width - cx - timeLen - volLen - 2;
+    int agLen = _autoGainEnabled ? 11 : 0; // " AG:+99.9 "
+    int progressW = r.width - cx - timeLen - volLen - agLen - 2;
     if (progressW > 4)
     {
         _progressX = cx;
@@ -96,6 +97,16 @@ void TransportBar::draw(ventty::Window & window)
     char volBuf[16];
     std::snprintf(volBuf, sizeof(volBuf), " Vol:%3d%%", volPct);
     window.drawText(cx, y1, volBuf, baseStyle);
+    cx += 9;
+
+    // Auto-gain indicator (only when enabled)
+    if (_autoGainEnabled)
+    {
+        char agBuf[16];
+        std::snprintf(agBuf, sizeof(agBuf), " AG:%+5.1f ", _autoGainDb);
+        window.drawText(cx, y1, agBuf,
+                        ventty::Style{_theme.transportStateFg, _theme.transportBg});
+    }
 
     // --- Row 2: Function key hints ---
     int y2 = r.y + 1;
@@ -114,6 +125,7 @@ void TransportBar::draw(ventty::Window & window)
         {"N/P", "Next/Prev"},
         {"\xE2\x86\x90\xE2\x86\x92", "Seek"}, // ←→
         {"+/-", "Vol"},
+        {"G", "AutoGain"},
         {"V", "Visualizer"},
         {"Q", "Quit"},
     };

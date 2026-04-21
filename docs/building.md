@@ -4,18 +4,16 @@
 
 - C++20 compatible compiler (GCC 10+, Clang 12+, MSVC 2019+)
 - CMake 3.20+
-- zlib (system-installed)
 
 ## Dependencies
 
 | Library | Version | Source | License |
 |---------|---------|--------|---------|
 | [ventty](https://github.com/0xf07ce/ventty) | latest | FetchContent | - |
-| [game-music-emu](https://github.com/libgme/game-music-emu) | 0.6.3 | FetchContent | LGPL-2.1 |
+| [cxxopts](https://github.com/jarro2783/cxxopts) | 3.2.1 | FetchContent | MIT |
 | [miniaudio](https://miniaud.io) | latest | Vendored header (`deps/include/`) | Public Domain |
-| zlib | system | System package | zlib |
 
-ventty and game-music-emu are automatically fetched by CMake. No manual installation needed.
+ventty and cxxopts are automatically fetched by CMake. No manual installation needed.
 
 ## Build
 

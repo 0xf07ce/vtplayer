@@ -7,10 +7,35 @@
 
 #include "AudioEngine.h"
 
-#include <gme/gme.h>
-
 #include <algorithm>
+#include <cmath>
 #include <cstring>
+
+namespace
+{
+
+/// Soft-clip: linear pass-through for |x| ≤ knee, smooth exponential
+/// approach to ±1.0 above. Used to tame peaks when volume > 1.0.
+inline float softClip(float x)
+{
+    constexpr float knee = 0.8f;
+    constexpr float headroom = 1.0f - knee; // 0.2
+    float absx = std::fabs(x);
+    if (absx <= knee) return x;
+    float sign = x < 0.0f ? -1.0f : 1.0f;
+    float over = absx - knee;
+    return sign * (knee + headroom * (1.0f - std::exp(-over / headroom)));
+}
+
+// Auto-gain tuning (ReplayGain-style reference, runtime only — no tags written).
+constexpr float kAutoGainTargetRms = 0.12589f;  ///< -18 dBFS
+constexpr float kAutoGainNoiseGate = 0.003162f; ///< -50 dBFS, skip updates below
+constexpr float kAutoGainMaxLin = 3.981f;       ///< +12 dB ceiling
+constexpr float kAutoGainMinLin = 0.2512f;      ///< -12 dB floor
+constexpr float kAutoGainAttackSamples  = 0.15f * 44100.0f; ///< 150ms (when reducing gain)
+constexpr float kAutoGainReleaseSamples = 2.5f  * 44100.0f; ///< 2.5s (when raising gain)
+
+} // namespace
 
 namespace vtplayer
 {
@@ -57,131 +82,27 @@ bool AudioEngine::load(std::filesystem::path const & path)
     _currentTrack.artist.clear();
     _currentTrack.duration = 0.0f;
 
-    if (_currentFormat == AudioFormat::Gme)
+    _decoder = new ma_decoder;
+
+    ma_decoder_config decoderConfig = ma_decoder_config_init(
+        ma_format_f32, CHANNELS, SAMPLE_RATE);
+
+    if (ma_decoder_init_file(path.string().c_str(), &decoderConfig, _decoder) != MA_SUCCESS)
     {
-        // Use game-music-emu
-        gme_err_t err = gme_open_file(path.string().c_str(), &_emu, SAMPLE_RATE);
-        if (err)
-        {
-            _lastError = std::string("GME: ") + err;
-            _emu = nullptr;
-            return false;
-        }
-        if (!_emu)
-        {
-            _lastError = "GME: failed to create emulator";
-            return false;
-        }
-
-        if (gme_track_count(_emu) < 1)
-        {
-            _lastError = "GME: no tracks in file";
-            gme_delete(_emu);
-            _emu = nullptr;
-            return false;
-        }
-
-        // Read metadata
-        gme_info_t * info = nullptr;
-        if (!gme_track_info(_emu, &info, 0))
-        {
-            if (info->length > 0)
-            {
-                _currentTrack.duration = static_cast<float>(info->length) / 1000.0f;
-            }
-            else if (info->intro_length + info->loop_length > 0)
-            {
-                _currentTrack.duration = static_cast<float>(info->intro_length + info->loop_length * 2) / 1000.0f;
-            }
-            else
-            {
-                _currentTrack.duration = 180.0f; // default 3 min for VGM
-            }
-
-            if (info->song && info->song[0])
-            {
-                _currentTrack.title = info->song;
-            }
-            if (info->author && info->author[0])
-            {
-                _currentTrack.artist = info->author;
-            }
-            if (info->system && info->system[0])
-            {
-                _lastError = std::string("System: ") + info->system;
-            }
-            gme_free_info(info);
-        }
-
-        err = gme_start_track(_emu, 0);
-        if (err)
-        {
-            _lastError = std::string("GME start: ") + err;
-            gme_delete(_emu);
-            _emu = nullptr;
-            return false;
-        }
-
-        // Test-render a small buffer to detect unsupported chip types.
-        // GME opens VGM files with any chip but silently outputs zeros
-        // for chips it cannot emulate (e.g. NES 2A03, arcade chips).
-        {
-            short testBuf[2048];
-            gme_err_t testErr = gme_play(_emu, 2048, testBuf);
-            if (testErr)
-            {
-                _lastError = std::string("GME play: ") + testErr;
-                gme_delete(_emu);
-                _emu = nullptr;
-                return false;
-            }
-            int nonZero = 0;
-            for (int i = 0; i < 2048; ++i)
-            {
-                if (testBuf[i] != 0) nonZero++;
-            }
-            if (nonZero == 0)
-            {
-                _lastError = "Unsupported VGM chip (try NSF/SPC for this system)";
-                gme_delete(_emu);
-                _emu = nullptr;
-                return false;
-            }
-            // Restart track after test render
-            gme_start_track(_emu, 0);
-        }
-
-        if (_currentTrack.duration > 0.0f)
-        {
-            gme_set_fade(_emu, static_cast<int>(_currentTrack.duration * 1000.0f));
-        }
-
-        _duration.store(_currentTrack.duration, std::memory_order_relaxed);
+        _lastError = "Failed to open audio file";
+        delete _decoder;
+        _decoder = nullptr;
+        return false;
     }
-    else
-    {
-        // Use miniaudio decoder for MP3/OGG/FLAC
-        _decoder = new ma_decoder;
 
-        ma_decoder_config decoderConfig = ma_decoder_config_init(
-            ma_format_f32, CHANNELS, SAMPLE_RATE);
-
-        if (ma_decoder_init_file(path.string().c_str(), &decoderConfig, _decoder) != MA_SUCCESS)
-        {
-            _lastError = "Failed to open audio file";
-            delete _decoder;
-            _decoder = nullptr;
-            return false;
-        }
-
-        ma_uint64 totalFrames = 0;
-        ma_decoder_get_length_in_pcm_frames(_decoder, &totalFrames);
-        _currentTrack.duration = static_cast<float>(totalFrames) / static_cast<float>(SAMPLE_RATE);
-        _duration.store(_currentTrack.duration, std::memory_order_relaxed);
-    }
+    ma_uint64 totalFrames = 0;
+    ma_decoder_get_length_in_pcm_frames(_decoder, &totalFrames);
+    _currentTrack.duration = static_cast<float>(totalFrames) / static_cast<float>(SAMPLE_RATE);
+    _duration.store(_currentTrack.duration, std::memory_order_relaxed);
 
     _framesPlayed = 0;
     _position.store(0.0f, std::memory_order_relaxed);
+    _autoGain.store(1.0f, std::memory_order_relaxed);
     _lastError.clear();
 
     return true;
@@ -202,7 +123,7 @@ void AudioEngine::play()
     }
 
     // Start fresh playback
-    if (!_decoder && !_emu)
+    if (!_decoder)
     {
         return;
     }
@@ -245,8 +166,7 @@ void AudioEngine::stop()
     auto prev = _state.exchange(PlayState::Stopped, std::memory_order_acq_rel);
 
     // Uninit the device first — this blocks until the audio callback
-    // has fully returned, so after this point no thread touches
-    // _decoder or _emu.
+    // has fully returned, so after this point no thread touches _decoder.
     if (prev != PlayState::Stopped)
     {
         ma_device_uninit(_device);
@@ -261,15 +181,10 @@ void AudioEngine::stop()
         _decoder = nullptr;
     }
 
-    if (_emu)
-    {
-        gme_delete(_emu);
-        _emu = nullptr;
-    }
-
     _trackEnded.store(false, std::memory_order_relaxed);
     _framesPlayed = 0;
     _position.store(0.0f, std::memory_order_relaxed);
+    _autoGain.store(1.0f, std::memory_order_relaxed);
 }
 
 void AudioEngine::seek(float seconds)
@@ -284,30 +199,30 @@ void AudioEngine::seek(float seconds)
 
     std::lock_guard<std::mutex> lock(_audioMutex);
 
-    if (_currentFormat == AudioFormat::Gme)
+    if (_decoder)
     {
-        if (_emu)
-        {
-            gme_seek(_emu, static_cast<int>(seconds * 1000.0f));
-            _framesPlayed = static_cast<uint64_t>(seconds * SAMPLE_RATE);
-            _position.store(seconds, std::memory_order_relaxed);
-        }
-    }
-    else
-    {
-        if (_decoder)
-        {
-            ma_uint64 frame = static_cast<ma_uint64>(seconds * SAMPLE_RATE);
-            ma_decoder_seek_to_pcm_frame(_decoder, frame);
-            _framesPlayed = frame;
-            _position.store(seconds, std::memory_order_relaxed);
-        }
+        ma_uint64 frame = static_cast<ma_uint64>(seconds * SAMPLE_RATE);
+        ma_decoder_seek_to_pcm_frame(_decoder, frame);
+        _framesPlayed = frame;
+        _position.store(seconds, std::memory_order_relaxed);
     }
 }
 
 void AudioEngine::setVolume(float v)
 {
-    _volume.store(std::clamp(v, 0.0f, 1.0f), std::memory_order_relaxed);
+    _volume.store(std::clamp(v, 0.0f, VOLUME_MAX), std::memory_order_relaxed);
+}
+
+void AudioEngine::setAutoGain(bool enabled)
+{
+    _autoGainEnabled.store(enabled, std::memory_order_relaxed);
+    // _autoGain itself is ramped smoothly by fillBuffer, no hard reset.
+}
+
+float AudioEngine::autoGainDb() const
+{
+    float g = _autoGain.load(std::memory_order_relaxed);
+    return 20.0f * std::log10(std::max(g, 1e-6f));
 }
 
 int AudioEngine::getSamples(float * out, int count) const
@@ -336,74 +251,91 @@ void AudioEngine::dataCallback(
 void AudioEngine::fillBuffer(float * output, unsigned int frameCount)
 {
     float vol = _volume.load(std::memory_order_relaxed);
+    bool agOn = _autoGainEnabled.load(std::memory_order_relaxed);
     unsigned int totalSamples = frameCount * CHANNELS;
 
     std::lock_guard<std::mutex> lock(_audioMutex);
 
-    if (_currentFormat == AudioFormat::Gme)
-    {
-        if (!_emu)
-        {
-            std::memset(output, 0, totalSamples * sizeof(float));
-            _trackEnded.store(true, std::memory_order_release);
-            return;
-        }
-
-        // GME outputs 16-bit stereo samples — use stack buffer for small frames,
-        // heap for large ones
-        short stackBuf[4096];
-        short * buf16 = stackBuf;
-        bool heapAlloc = false;
-        if (totalSamples > 4096)
-        {
-            buf16 = new short[totalSamples];
-            heapAlloc = true;
-        }
-
-        gme_err_t err = gme_play(_emu, static_cast<int>(totalSamples), buf16);
-
-        if (err || gme_track_ended(_emu))
-        {
-            std::memset(output, 0, totalSamples * sizeof(float));
-            if (heapAlloc) delete[] buf16;
-            _trackEnded.store(true, std::memory_order_release);
-            return;
-        }
-
-        // Convert int16 -> float and apply volume
-        for (unsigned int i = 0; i < totalSamples; ++i)
-        {
-            output[i] = (static_cast<float>(buf16[i]) / 32768.0f) * vol;
-        }
-        if (heapAlloc) delete[] buf16;
-    }
-    else if (_decoder)
-    {
-        ma_uint64 framesRead = 0;
-        ma_decoder_read_pcm_frames(_decoder, output, frameCount, &framesRead);
-
-        if (framesRead < frameCount)
-        {
-            // End of file — zero remaining
-            std::memset(output + framesRead * CHANNELS, 0,
-                        (frameCount - framesRead) * CHANNELS * sizeof(float));
-            _trackEnded.store(true, std::memory_order_release);
-        }
-
-        // Apply volume
-        unsigned int samplesRead = static_cast<unsigned int>(framesRead) * CHANNELS;
-        for (unsigned int i = 0; i < samplesRead; ++i)
-        {
-            output[i] *= vol;
-        }
-    }
-    else
+    if (!_decoder)
     {
         std::memset(output, 0, totalSamples * sizeof(float));
         return;
     }
 
-    // Feed visualization buffer (mono mixdown)
+    ma_uint64 framesRead = 0;
+    ma_decoder_read_pcm_frames(_decoder, output, frameCount, &framesRead);
+
+    if (framesRead < frameCount)
+    {
+        // End of file — zero remaining
+        std::memset(output + framesRead * CHANNELS, 0,
+                    (frameCount - framesRead) * CHANNELS * sizeof(float));
+        _trackEnded.store(true, std::memory_order_release);
+    }
+
+    // --- Auto-gain analysis (on pre-gain mono mixdown) ---
+    float autoStart = _autoGain.load(std::memory_order_relaxed);
+    float autoEnd = autoStart;
+    if (framesRead > 0)
+    {
+        if (agOn)
+        {
+            double sumSq = 0.0;
+            for (ma_uint64 i = 0; i < framesRead; ++i)
+            {
+                float m = (output[i * 2] + output[i * 2 + 1]) * 0.5f;
+                sumSq += static_cast<double>(m) * m;
+            }
+            float rms = std::sqrt(static_cast<float>(sumSq / framesRead));
+            float desired = autoStart;
+            if (rms > kAutoGainNoiseGate)
+            {
+                desired = std::clamp(kAutoGainTargetRms / rms,
+                                     kAutoGainMinLin, kAutoGainMaxLin);
+            }
+            float tauSamples = (desired < autoStart)
+                                   ? kAutoGainAttackSamples
+                                   : kAutoGainReleaseSamples;
+            float alpha = std::min(1.0f, static_cast<float>(frameCount) / tauSamples);
+            autoEnd = autoStart + (desired - autoStart) * alpha;
+        }
+        else
+        {
+            // Smoothly ramp back to unity when disabled, avoiding a click on toggle.
+            float alpha = std::min(1.0f, static_cast<float>(frameCount) / kAutoGainReleaseSamples);
+            autoEnd = autoStart + (1.0f - autoStart) * alpha;
+        }
+        _autoGain.store(autoEnd, std::memory_order_relaxed);
+    }
+
+    // --- Apply combined gain with per-sample linear ramp ---
+    float totalStart = autoStart * vol;
+    float totalEnd = autoEnd * vol;
+    float step = (framesRead > 0)
+                     ? (totalEnd - totalStart) / static_cast<float>(framesRead)
+                     : 0.0f;
+    bool mayClip = (totalStart > 1.0f) || (totalEnd > 1.0f);
+    float g = totalStart;
+    if (mayClip)
+    {
+        for (ma_uint64 i = 0; i < framesRead; ++i)
+        {
+            output[i * 2]     = softClip(output[i * 2]     * g);
+            output[i * 2 + 1] = softClip(output[i * 2 + 1] * g);
+            g += step;
+        }
+    }
+    else
+    {
+        for (ma_uint64 i = 0; i < framesRead; ++i)
+        {
+            output[i * 2]     *= g;
+            output[i * 2 + 1] *= g;
+            g += step;
+        }
+    }
+
+    // Feed visualization buffer (mono mixdown, post-processing)
     float mono[1024];
     unsigned int monoCount = std::min(frameCount, 1024u);
     for (unsigned int i = 0; i < monoCount; ++i)

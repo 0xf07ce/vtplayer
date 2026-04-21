@@ -22,6 +22,7 @@ public:
     void setPosition(float pos) { _position = pos; }
     void setDuration(float dur) { _duration = dur; }
     void setVolume(float vol) { _volume = vol; }
+    void setAutoGain(bool enabled, float gainDb) { _autoGainEnabled = enabled; _autoGainDb = gainDb; }
 
     void draw(ventty::Window & window) override;
 
@@ -36,7 +37,9 @@ private:
     std::string _trackName;
     float _position = 0.0f;
     float _duration = 0.0f;
-    float _volume = 0.8f;
+    float _volume = 1.0f;
+    bool _autoGainEnabled = false;
+    float _autoGainDb = 0.0f;
 
     // Progress bar position (set during draw for mouse hit testing)
     int _progressX = 0;

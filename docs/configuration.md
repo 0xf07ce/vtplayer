@@ -8,7 +8,8 @@ vtplayer reads settings from `~/.config/ventty-player/config.ini`.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `volume` | `80` | Initial volume (0-100) |
+| `volume` | `100` | Initial volume (0-200, values above 100 apply soft-clipped amplification) |
+| `auto_gain` | `false` | Runtime RMS-based loudness normalization toward -18 dBFS (range ±12 dB). Toggle live with `G`. |
 
 ### [ui]
 
@@ -21,14 +22,13 @@ vtplayer reads settings from `~/.config/ventty-player/config.ini`.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `mode` | `spectrum` | Display mode: `spectrum`, `waveform`, or `both` |
-| `bar_count` | `48` | Number of spectrum bars |
+| `bar_count` | `48` | Number of spectrum bars (4-256) |
 
 ### [formats]
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `extensions` | `mp3,ogg,flac,vgm,vgz,nsf,spc,gbs,gym,hes` | Comma-separated list of recognized audio file extensions |
+| `extensions` | `mp3,ogg,flac` | Comma-separated list of recognized audio file extensions |
 
 ### [theme]
 
@@ -45,11 +45,10 @@ start_directory = ~/Music
 show_hidden = false
 
 [visualizer]
-mode = spectrum
 bar_count = 64
 
 [formats]
-extensions = mp3,ogg,flac,vgm,vgz,nsf,spc
+extensions = mp3,ogg,flac
 
 [theme]
 theme.primary = #61AFEF

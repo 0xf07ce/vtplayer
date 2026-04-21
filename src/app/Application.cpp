@@ -127,6 +127,7 @@ namespace vtplayer
 
         _audio.init();
         _audio.setVolume(_config.volume);
+        _audio.setAutoGain(_config.autoGain);
 
         // Init terminal
         initTerminal();
@@ -159,6 +160,8 @@ namespace vtplayer
         _fileBrowser = std::make_unique<FileBrowser>();
         _fileBrowser->setTheme(_theme);
         _fileBrowser->setFocused(true);
+        _fileBrowser->setShowHidden(_config.showHidden);
+        _fileBrowser->setAllowedExtensions(_config.extensions);
         _fileBrowser->setDirectory(_config.startDirectory);
         _fileBrowser->setOnAdd([this](std::filesystem::path const &path)
                                { addToPlaylist(path); });
@@ -173,7 +176,7 @@ namespace vtplayer
 
         _visualizerView = std::make_unique<VisualizerView>();
         _visualizerView->setTheme(_theme);
-        _visualizerView->setVisualizer(std::make_unique<AudioSpectrum>());
+        _visualizerView->setVisualizer(std::make_unique<AudioSpectrum>(_config.barCount));
 
         resize();
 
@@ -275,6 +278,7 @@ namespace vtplayer
         _transportBar->setPosition(_audio.position());
         _transportBar->setDuration(_audio.duration());
         _transportBar->setVolume(_audio.volume());
+        _transportBar->setAutoGain(_audio.autoGainEnabled(), _audio.autoGainDb());
 
         // Update visualizer
         if (_screen == Screen::Visualizer)
@@ -295,9 +299,6 @@ namespace vtplayer
                 break;
             case AudioFormat::Flac:
                 info = "FLAC";
-                break;
-            case AudioFormat::Gme:
-                info = "GME";
                 break;
             default:
                 break;
@@ -547,6 +548,13 @@ namespace vtplayer
         {
             float vol = _audio.volume();
             _audio.setVolume(vol - 0.05f);
+            return;
+        }
+
+        // g: toggle auto-gain (runtime loudness normalization)
+        if (event.key == Key::Char && (ch == 'g' || ch == 'G') && !event.alt && !event.ctrl)
+        {
+            _audio.setAutoGain(!_audio.autoGainEnabled());
             return;
         }
 

@@ -26,20 +26,14 @@ ventty
   License: MIT
   Files: Fetched via CMake FetchContent
 
-game-music-emu 0.6.3
-  Author: Shay Green, Michael Pyne
-  Source: https://github.com/libgme/game-music-emu
-  License: LGPL-2.1-or-later
-  Files: Fetched via CMake FetchContent
-
 miniaudio 0.11.25
   Author: David Reid
   Source: https://miniaud.io/
   License: Public Domain (Unlicense) OR MIT-0 (dual-licensed)
   Files: deps/include/miniaudio/miniaudio.h
 
-zlib
-  Author: Jean-loup Gailly, Mark Adler
-  Source: https://zlib.net/
-  License: zlib License
-  Files: System library
+cxxopts 3.2.1
+  Author: jarro2783
+  Source: https://github.com/jarro2783/cxxopts
+  License: MIT
+  Files: Fetched via CMake FetchContent

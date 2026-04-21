@@ -10,7 +10,7 @@
 
 int main(int argc, char *argv[])
 {
-    cxxopts::Options options("vtplayer", "Terminal-based music player for VGM, NSF, SPC, MP3, OGG, FLAC and more");
+    cxxopts::Options options("vtplayer", "Terminal-based music player for MP3, OGG, and FLAC");
     options.add_options()
         ("h,help", "Show this help message")
         ("file", "Audio file to play", cxxopts::value<std::string>());

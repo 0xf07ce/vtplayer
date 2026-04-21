@@ -122,6 +122,10 @@ void Config::applyValues(std::unordered_map<std::string, std::string> const & va
     {
         try { volume = std::stof(*v) / 100.0f; } catch (...) {}
     }
+    if (auto * v = get("audio.auto_gain"))
+    {
+        autoGain = (*v == "true" || *v == "1" || *v == "yes" || *v == "on");
+    }
     if (auto * v = get("ui.start_directory"))
     {
         std::string dir = *v;
@@ -139,10 +143,6 @@ void Config::applyValues(std::unordered_map<std::string, std::string> const & va
     if (auto * v = get("ui.show_hidden"))
     {
         showHidden = (*v == "true" || *v == "1" || *v == "yes");
-    }
-    if (auto * v = get("visualizer.mode"))
-    {
-        visMode = *v;
     }
     if (auto * v = get("visualizer.bar_count"))
     {

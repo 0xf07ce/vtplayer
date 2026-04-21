@@ -15,7 +15,6 @@ enum class AudioFormat
     Mp3,
     Ogg,
     Flac,
-    Gme,  ///< All game-music-emu formats: VGM, VGZ, NSF, SPC, GBS, etc.
 };
 
 struct TrackInfo
@@ -37,31 +36,7 @@ struct TrackInfo
         if (ext == ".mp3") return AudioFormat::Mp3;
         if (ext == ".ogg") return AudioFormat::Ogg;
         if (ext == ".flac") return AudioFormat::Flac;
-        // GME-supported formats
-        if (ext == ".vgm" || ext == ".vgz"
-            || ext == ".nsf" || ext == ".nsfe"
-            || ext == ".spc"
-            || ext == ".gbs"
-            || ext == ".gym"
-            || ext == ".hes")
-        {
-            return AudioFormat::Gme;
-        }
         return AudioFormat::Unknown;
-    }
-
-    static bool isSupportedExtension(std::string const & ext)
-    {
-        std::string lower = ext;
-        for (auto & c : lower)
-        {
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        }
-        return lower == ".mp3" || lower == ".ogg" || lower == ".flac"
-            || lower == ".vgm" || lower == ".vgz"
-            || lower == ".nsf" || lower == ".nsfe"
-            || lower == ".spc" || lower == ".gbs"
-            || lower == ".gym" || lower == ".hes";
     }
 };
 

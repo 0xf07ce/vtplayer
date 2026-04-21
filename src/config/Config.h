@@ -13,18 +13,18 @@ namespace vtplayer
 struct Config
 {
     // [audio]
-    float volume = 0.8f;
+    float volume = 1.0f;
+    bool autoGain = false;  ///< runtime RMS-based loudness normalization
 
     // [ui]
     std::filesystem::path startDirectory;
     bool showHidden = false;
 
     // [visualizer]
-    std::string visMode = "spectrum";  ///< spectrum, waveform, both
     int barCount = 48;
 
     // [formats]
-    std::string extensions = "vgm,vgz,mp3,ogg,flac";
+    std::string extensions = "mp3,ogg,flac";
 
     // [theme] — color overrides as "#RRGGBB" hex strings
     std::unordered_map<std::string, std::string> themeColors;

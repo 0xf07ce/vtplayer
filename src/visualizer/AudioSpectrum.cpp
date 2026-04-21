@@ -12,8 +12,16 @@
 namespace vtplayer
 {
 
+    AudioSpectrum::AudioSpectrum(int numBars)
+    {
+        int n = std::clamp(numBars, 4, 256);
+        _barValues.assign(n, 0.0f);
+        _peakValues.assign(n, 0.0f);
+    }
+
     void AudioSpectrum::update(AudioEngine const &engine)
     {
+        int const numBars = static_cast<int>(_barValues.size());
         float samples[512];
         engine.getSamples(samples, 512);
 
@@ -33,10 +41,10 @@ namespace vtplayer
         _fft.magnitude(fftOut, mag);
 
         // Group into logarithmic frequency bands
-        for (int i = 0; i < NUM_BARS; ++i)
+        for (int i = 0; i < numBars; ++i)
         {
-            float frac0 = static_cast<float>(i) / static_cast<float>(NUM_BARS);
-            float frac1 = static_cast<float>(i + 1) / static_cast<float>(NUM_BARS);
+            float frac0 = static_cast<float>(i) / static_cast<float>(numBars);
+            float frac1 = static_cast<float>(i + 1) / static_cast<float>(numBars);
 
             int bin0 = static_cast<int>(std::pow(256.0f, frac0));
             int bin1 = static_cast<int>(std::pow(256.0f, frac1));
@@ -63,13 +71,14 @@ namespace vtplayer
 
     void AudioSpectrum::draw(ventty::Window &window, int x, int y, int w, int h)
     {
-        int totalBars = std::min(NUM_BARS, w);
+        int const numBars = static_cast<int>(_barValues.size());
+        int totalBars = std::min(numBars, w);
         int barW = w / totalBars;
         if (barW < 1)
             barW = 1;
         totalBars = w / barW;
 
-        for (int i = 0; i < totalBars && i < NUM_BARS; ++i)
+        for (int i = 0; i < totalBars && i < numBars; ++i)
         {
             int bx = x + i * barW;
             float val = _barValues[i];

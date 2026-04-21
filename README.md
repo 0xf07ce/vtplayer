@@ -8,13 +8,12 @@
 ![license](https://img.shields.io/badge/license-LGPL--2.1-blue)
 
 A terminal-based music player built on [ventty](https://github.com/0xf07ce/ventty).
-Supports MP3, OGG, FLAC and retro game music formats including VGM/VGZ/NSF/SPC/GBS/GYM/HES.
+Supports MP3, OGG, and FLAC.
 
 ## Features
 
 - Dual-screen UI: file browser with playlist and spectrum visualizer
-- Standard audio playback via miniaudio (MP3/OGG/FLAC)
-- Retro game music playback via game-music-emu (VGM/NSF/SPC/GBS/GYM/HES)
+- Audio playback via miniaudio (MP3/OGG/FLAC)
 - Real-time spectrum analyzer with peak indicators
 - Configurable themes and keybindings
 

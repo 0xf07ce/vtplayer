@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
 #include "FileBrowser.h"
-#include "../audio/TrackInfo.h"
 
 #include <ventty/art/AsciiArt.h>
 #include <ventty/core/Utf8.h>
 
 #include <algorithm>
+#include <cctype>
 
 namespace vtplayer
 {
@@ -35,6 +35,48 @@ void FileBrowser::setDirectory(std::filesystem::path const & dir)
     refresh();
 }
 
+void FileBrowser::setShowHidden(bool show)
+{
+    if (_showHidden == show) return;
+    _showHidden = show;
+    refresh();
+}
+
+void FileBrowser::setAllowedExtensions(std::string const & csv)
+{
+    std::vector<std::string> exts;
+    std::string cur;
+    auto flush = [&]()
+    {
+        if (cur.empty()) return;
+        std::string ext;
+        ext.reserve(cur.size() + 1);
+        if (cur.front() != '.') ext.push_back('.');
+        for (char ch : cur)
+        {
+            ext.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+        }
+        exts.push_back(std::move(ext));
+        cur.clear();
+    };
+    for (char c : csv)
+    {
+        if (c == ',' || c == ' ' || c == '\t')
+        {
+            flush();
+        }
+        else
+        {
+            cur.push_back(c);
+        }
+    }
+    flush();
+
+    if (exts.empty()) return; // keep previous default rather than blanking the browser
+    _allowedExts = std::move(exts);
+    refresh();
+}
+
 void FileBrowser::refresh()
 {
     _entries.clear();
@@ -57,10 +99,8 @@ void FileBrowser::refresh()
     for (auto const & entry : std::filesystem::directory_iterator(_currentDir, ec))
     {
         auto name = entry.path().filename().string();
-        if (name.empty() || name[0] == '.')
-        {
-            continue; // skip hidden files
-        }
+        if (name.empty()) continue;
+        if (!_showHidden && name[0] == '.') continue;
 
         FileEntry fe;
         fe.name = name;
@@ -74,7 +114,11 @@ void FileBrowser::refresh()
         else if (entry.is_regular_file(ec))
         {
             auto ext = entry.path().extension().string();
-            if (TrackInfo::isSupportedExtension(ext))
+            for (auto & c : ext)
+            {
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            }
+            if (std::find(_allowedExts.begin(), _allowedExts.end(), ext) != _allowedExts.end())
             {
                 fe.isAudio = true;
                 files.push_back(std::move(fe));
