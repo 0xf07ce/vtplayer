@@ -22,7 +22,8 @@ std::filesystem::path Config::defaultPath()
 void Config::load()
 {
     auto path = defaultPath();
-    if (!path.empty() && std::filesystem::exists(path))
+    bool const existed = !path.empty() && std::filesystem::exists(path);
+    if (existed)
     {
         loadFrom(path);
     }
@@ -47,6 +48,12 @@ void Config::load()
         {
             startDirectory = "/";
         }
+    }
+
+    // First run: materialize defaults so the user can discover/edit them.
+    if (!existed && !path.empty())
+    {
+        save();
     }
 }
 
@@ -161,6 +168,59 @@ void Config::applyValues(std::unordered_map<std::string, std::string> const & va
             themeColors[key.substr(6)] = value;
         }
     }
+}
+
+bool Config::save() const
+{
+    return saveTo(defaultPath());
+}
+
+bool Config::saveTo(std::filesystem::path const & path) const
+{
+    if (path.empty()) return false;
+
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    if (ec) return false;
+
+    std::ofstream file(path, std::ios::trunc);
+    if (!file.is_open()) return false;
+
+    file << serializeIni();
+    return static_cast<bool>(file);
+}
+
+std::string Config::serializeIni() const
+{
+    std::ostringstream out;
+
+    out << "# VTAMP (ventty-player) configuration\n";
+    out << "# Auto-generated on first run; rewritten on exit.\n\n";
+
+    out << "[audio]\n";
+    out << "volume = " << static_cast<int>(volume * 100.0f + 0.5f) << "\n";
+    out << "auto_gain = " << (autoGain ? "true" : "false") << "\n\n";
+
+    out << "[ui]\n";
+    out << "start_directory = " << startDirectory.string() << "\n";
+    out << "show_hidden = " << (showHidden ? "true" : "false") << "\n\n";
+
+    out << "[visualizer]\n";
+    out << "bar_count = " << barCount << "\n\n";
+
+    out << "[formats]\n";
+    out << "extensions = " << extensions << "\n";
+
+    if (!themeColors.empty())
+    {
+        out << "\n[theme]\n";
+        for (auto const & [key, value] : themeColors)
+        {
+            out << key << " = " << value << "\n";
+        }
+    }
+
+    return out.str();
 }
 
 } // namespace vtplayer

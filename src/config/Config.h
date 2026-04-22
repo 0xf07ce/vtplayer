@@ -29,11 +29,18 @@ struct Config
     // [theme] — color overrides as "#RRGGBB" hex strings
     std::unordered_map<std::string, std::string> themeColors;
 
-    /// Load from default config path (~/.config/ventty-player/config.ini)
+    /// Load from default config path (~/.config/ventty-player/config.ini).
+    /// If the file does not exist, writes out the current values as defaults.
     void load();
 
     /// Load from a specific file
     void loadFrom(std::filesystem::path const & path);
+
+    /// Save current values to the default config path, creating parent dirs.
+    bool save() const;
+
+    /// Save current values to a specific file
+    bool saveTo(std::filesystem::path const & path) const;
 
     /// Get the default config file path
     static std::filesystem::path defaultPath();
@@ -41,6 +48,7 @@ struct Config
 private:
     void parseIni(std::string const & content);
     void applyValues(std::unordered_map<std::string, std::string> const & values);
+    std::string serializeIni() const;
 };
 
 } // namespace vtplayer
