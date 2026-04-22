@@ -5,6 +5,7 @@
 
 #include "../audio/AudioEngine.h"
 #include "../config/Config.h"
+#include "../view/ContextMenu.h"
 #include "../view/FileBrowser.h"
 #include "../view/HeaderBar.h"
 #include "../view/PlaylistView.h"
@@ -57,6 +58,8 @@ namespace vtplayer
         void handleInput(ventty::KeyEvent const &event);
         void handleMouse(ventty::MouseEvent const &event);
         void handleGlobalKeys(ventty::KeyEvent const &event);
+        void openContextMenu();
+        void onContextMenuSelect(int index);
 
         void playTrack(int index);
         void playNext();
@@ -82,6 +85,7 @@ namespace vtplayer
         std::unique_ptr<PlaylistView> _playlistView;
         std::unique_ptr<TransportBar> _transportBar;
         std::unique_ptr<VisualizerView> _visualizerView;
+        std::unique_ptr<ContextMenu> _contextMenu;
 
         std::filesystem::path _initialFile;
     };

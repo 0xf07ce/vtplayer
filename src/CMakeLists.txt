@@ -24,6 +24,8 @@ add_executable(vtplayer
     view/TransportBar.cpp
     view/VisualizerView.h
     view/VisualizerView.cpp
+    view/ContextMenu.h
+    view/ContextMenu.cpp
 
     # visualizer
     visualizer/Visualizer.h

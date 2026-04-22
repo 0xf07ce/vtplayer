@@ -37,6 +37,7 @@ public:
 
     int selectedIndex() const { return _selectedIndex; }
     FileEntry const * selectedEntry() const;
+    std::filesystem::path const & currentDirectory() const { return _currentDir; }
 
     using OnAddCallback = std::function<void(std::filesystem::path const &)>;
     void setOnAdd(OnAddCallback cb) { _onAdd = std::move(cb); }

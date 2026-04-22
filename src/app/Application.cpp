@@ -126,7 +126,7 @@ namespace vtplayer
         }
 
         _audio.init();
-        _audio.setVolume(_config.volume);
+        _audio.setVolume(1.0f);
         _audio.setAutoGain(_config.autoGain);
 
         // Init terminal
@@ -178,6 +178,15 @@ namespace vtplayer
         _visualizerView->setTheme(_theme);
         _visualizerView->setVisualizer(std::make_unique<AudioSpectrum>(_config.barCount));
 
+        _contextMenu = std::make_unique<ContextMenu>();
+        _contextMenu->setTheme(_theme);
+        _contextMenu->setTitle("Menu");
+        _contextMenu->setItems({
+            "Set current directory as start directory",
+            "Exit",
+        });
+        _contextMenu->setOnSelect([this](int idx) { onContextMenuSelect(idx); });
+
         resize();
 
         // If an initial file was provided, add it to the playlist and play
@@ -190,6 +199,10 @@ namespace vtplayer
 
     void Application::cleanup()
     {
+        // Sync runtime-mutable settings back before persisting.
+        _config.autoGain = _audio.autoGainEnabled();
+        _config.save();
+
         // Audio must stop before terminal restores — otherwise audio thread
         // output can corrupt the restored terminal.
         _audio.shutdown();
@@ -277,7 +290,6 @@ namespace vtplayer
         _transportBar->setTrackName(_audio.currentTrack().title);
         _transportBar->setPosition(_audio.position());
         _transportBar->setDuration(_audio.duration());
-        _transportBar->setVolume(_audio.volume());
         _transportBar->setAutoGain(_audio.autoGainEnabled(), _audio.autoGainDb());
 
         // Update visualizer
@@ -327,6 +339,12 @@ namespace vtplayer
 
         // Transport
         _transportBar->draw(*_rootWindow);
+
+        // Context menu overlay (drawn last so it sits on top)
+        if (_contextMenu)
+        {
+            _contextMenu->draw(*_rootWindow);
+        }
     }
 
     void Application::drawBrowserScreen()
@@ -355,6 +373,31 @@ namespace vtplayer
     {
         if (event.key == Key::None)
             return;
+
+        // Modal context menu consumes all input while open.
+        if (_contextMenu && _contextMenu->isOpen())
+        {
+            _contextMenu->handleKey(event);
+            return;
+        }
+
+        // ESC opens the context menu. On the visualizer screen, ESC first
+        // falls back to the browser (preserving prior behavior); a second
+        // ESC opens the menu.
+        if (event.key == Key::Escape)
+        {
+            if (_screen == Screen::Visualizer)
+            {
+                _screen = Screen::Browser;
+                resize();
+                _terminal->forceRedraw();
+            }
+            else
+            {
+                openContextMenu();
+            }
+            return;
+        }
 
         // Global keys (always active)
         handleGlobalKeys(event);
@@ -449,15 +492,6 @@ namespace vtplayer
             return;
         }
 
-        // Escape: back to browser from visualizer
-        if (event.key == Key::Escape && _screen == Screen::Visualizer)
-        {
-            _screen = Screen::Browser;
-            resize();
-            _terminal->forceRedraw();
-            return;
-        }
-
         // Tab: switch focus between panels (browser screen only)
         if (event.key == Key::Tab && _screen == Screen::Browser)
         {
@@ -523,31 +557,17 @@ namespace vtplayer
             return;
         }
 
-        // Left/Right: seek
-        if (event.key == Key::Left)
+        // < / >: seek
+        if (event.key == Key::Char && ch == '<')
         {
             float pos = _audio.position();
             _audio.seek(pos - 5.0f);
             return;
         }
-        if (event.key == Key::Right)
+        if (event.key == Key::Char && ch == '>')
         {
             float pos = _audio.position();
             _audio.seek(pos + 5.0f);
-            return;
-        }
-
-        // +/-: volume
-        if (event.key == Key::Char && (ch == '+' || ch == '='))
-        {
-            float vol = _audio.volume();
-            _audio.setVolume(vol + 0.05f);
-            return;
-        }
-        if (event.key == Key::Char && ch == '-')
-        {
-            float vol = _audio.volume();
-            _audio.setVolume(vol - 0.05f);
             return;
         }
 
@@ -588,6 +608,36 @@ namespace vtplayer
             _terminal->forceRedraw();
             return;
         }
+    }
+
+    void Application::openContextMenu()
+    {
+        if (!_contextMenu) return;
+        _contextMenu->open();
+        _terminal->forceRedraw();
+    }
+
+    void Application::onContextMenuSelect(int index)
+    {
+        // Menu order (Exit is always last):
+        //   0 = Set current directory as start directory
+        //   1 = Exit
+        switch (index)
+        {
+        case 0:
+            if (_fileBrowser)
+            {
+                _config.startDirectory = _fileBrowser->currentDirectory();
+                _config.save();
+            }
+            break;
+        case 1:
+            quit();
+            break;
+        default:
+            break;
+        }
+        if (_terminal) _terminal->forceRedraw();
     }
 
     void Application::playTrack(int index)
