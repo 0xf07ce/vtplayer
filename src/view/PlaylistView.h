@@ -32,6 +32,11 @@ public:
     void moveSelectedDown();
     void clear();
 
+    /// Randomize the order of tracks in place. The currently-playing track
+    /// keeps its identity — its index is updated to its new position so audio
+    /// playback stays uninterrupted.
+    void shuffle();
+
     /// Replace the full track list (used when switching playlists). Resets scroll and selection.
     void setTracks(std::vector<TrackInfo> tracks);
 

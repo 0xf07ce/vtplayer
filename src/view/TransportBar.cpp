@@ -113,7 +113,6 @@ void TransportBar::draw(ventty::Window & window)
 
     FnHint hints[] = {
         {"Space", "Play/Pause"},
-        {"S", "Stop"},
         {"N/P", "Next/Prev"},
         {"</>", "Seek"},
         {"G", "AutoGain"},

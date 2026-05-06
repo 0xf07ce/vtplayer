@@ -89,6 +89,7 @@ namespace vtplayer
         FocusPanel _focus = FocusPanel::FileBrowser;
         Theme _theme;
         int _visualizerIndex = 1; // 1 = AudioSpectrum (default), 0 = Oscilloscope
+        bool _repeatEnabled = false;
 
         // Views
         std::unique_ptr<HeaderBar> _headerBar;

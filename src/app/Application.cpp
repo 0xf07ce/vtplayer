@@ -307,9 +307,22 @@ namespace vtplayer
         if (_audio.hasTrackEnded())
         {
             _audio.stop();
-            if (_playlistView->playingIndex() >= 0)
+            int current = _playlistView->playingIndex();
+            int count = _playlistView->trackCount();
+            if (current >= 0)
             {
-                playNext();
+                if (current + 1 < count)
+                {
+                    playTrack(current + 1);
+                }
+                else if (_repeatEnabled && count > 0)
+                {
+                    playTrack(0);
+                }
+                else
+                {
+                    _playlistView->setPlayingIndex(-1);
+                }
             }
         }
 
@@ -549,11 +562,17 @@ namespace vtplayer
             return;
         }
 
-        // s: stop
+        // r: toggle repeat (loop back to first track when the last one ends)
+        if (event.key == Key::Char && (ch == 'r' || ch == 'R') && !event.alt && !event.ctrl)
+        {
+            _repeatEnabled = !_repeatEnabled;
+            return;
+        }
+
+        // s: shuffle current playlist (one-shot reorder)
         if (event.key == Key::Char && (ch == 's' || ch == 'S') && !event.alt && !event.ctrl)
         {
-            _audio.stop();
-            _playlistView->setPlayingIndex(-1);
+            _playlistView->shuffle();
             return;
         }
 
@@ -758,16 +777,22 @@ namespace vtplayer
             return info;
         };
 
-        // Always append to the end of the playlist. With Shift+Enter (quietAppend)
-        // the current playback state stays untouched; without Shift we play the
-        // first newly-added track.
-        int const playIndex = _playlistView->trackCount();
-        for (auto const &p : paths) _playlistView->addTrack(buildInfo(p));
-
-        if (!quietAppend)
+        if (quietAppend)
         {
-            playTrack(playIndex);
+            // Shift+Enter: append to the end of the playlist without disturbing
+            // current playback.
+            for (auto const &p : paths) _playlistView->addTrack(buildInfo(p));
+            return;
         }
+
+        // Enter: replace the current playlist with the selected files and play
+        // the first newly-added track. setTracks fires onPlayingRemoved which
+        // stops audio if a track was playing.
+        std::vector<TrackInfo> newTracks;
+        newTracks.reserve(paths.size());
+        for (auto const &p : paths) newTracks.push_back(buildInfo(p));
+        _playlistView->setTracks(std::move(newTracks));
+        playTrack(0);
     }
 
     void Application::openPlaylist(std::filesystem::path const &path)

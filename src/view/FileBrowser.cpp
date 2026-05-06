@@ -221,7 +221,7 @@ void FileBrowser::draw(ventty::Window & window)
         dirName = _currentDir.string();
     }
     dirName = toNfc(dirName);
-    std::string header = " [" + dirName + "]";
+    std::string header = " " + dirName;
     header = truncateToWidth(header, r.width - 2, "...");
     window.drawText(r.x + 1, r.y, header, headerStyle);
 

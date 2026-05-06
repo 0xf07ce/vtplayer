@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <random>
 
 namespace vtplayer
 {
@@ -117,6 +118,37 @@ void PlaylistView::clear()
     {
         _onPlayingRemoved();
     }
+}
+
+void PlaylistView::shuffle()
+{
+    if (_tracks.size() < 2) return;
+
+    std::filesystem::path playingPath;
+    if (_playingIndex >= 0 && _playingIndex < static_cast<int>(_tracks.size()))
+    {
+        playingPath = _tracks[_playingIndex].path;
+    }
+
+    static std::mt19937 rng{std::random_device{}()};
+    std::shuffle(_tracks.begin(), _tracks.end(), rng);
+
+    if (!playingPath.empty())
+    {
+        for (int i = 0; i < static_cast<int>(_tracks.size()); ++i)
+        {
+            if (_tracks[i].path == playingPath)
+            {
+                _playingIndex = i;
+                break;
+            }
+        }
+    }
+
+    _selectedIndex = 0;
+    _scrollOffset = 0;
+    clearMultiSelection();
+    scrollToSelected();
 }
 
 void PlaylistView::setTracks(std::vector<TrackInfo> tracks)
