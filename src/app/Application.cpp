@@ -273,29 +273,25 @@ namespace vtplayer
         // HeaderBar: top row
         _headerBar->setRect(0, 0, w, 1);
 
-        // TransportBar: bottom 2 rows
-        _transportBar->setRect(0, h - 2, w, 2);
+        // TransportBar: bottom row carries the box-bottom border with the
+        // current track info overlaid.
+        _transportBar->setRect(0, h - 1, w, 1);
 
-        // Content area: between header and transport
-        int contentY = 1;
-        int contentH = h - 3;
+        // Content area: between header and transport. Set rects for both
+        // layouts so toggling screens doesn't require a resize cycle.
+        int const contentY = 1;
+        int const contentH = h - 2;
 
-        if (_screen == Screen::Browser)
-        {
-            // Split: FileBrowser (left 40%) | PlaylistView (right 60%)
-            int browserW = (w * 2) / 5;
-            if (browserW < 20)
-                browserW = 20;
-            int playlistW = w - browserW;
+        // Browser split: FileBrowser (left 40%) | PlaylistView (right 60%)
+        int browserW = (w * 2) / 5;
+        if (browserW < 20)
+            browserW = 20;
+        int playlistW = w - browserW;
+        _fileBrowser->setRect(0, contentY, browserW, contentH);
+        _playlistView->setRect(browserW, contentY, playlistW, contentH);
 
-            _fileBrowser->setRect(0, contentY, browserW, contentH);
-            _playlistView->setRect(browserW, contentY, playlistW, contentH);
-        }
-        else
-        {
-            // Visualizer takes full content area
-            _visualizerView->setRect(0, contentY, w, contentH);
-        }
+        // Visualizer takes the full content area.
+        _visualizerView->setRect(0, contentY, w, contentH);
     }
 
     void Application::updateUI()
@@ -352,9 +348,13 @@ namespace vtplayer
         {
             drawBrowserScreen();
         }
-        else
+        else if (_screen == Screen::Visualizer)
         {
             drawVisualizerScreen();
+        }
+        else
+        {
+            drawHelpScreen();
         }
 
         // Transport
@@ -389,6 +389,151 @@ namespace vtplayer
         _visualizerView->draw(*_rootWindow);
     }
 
+    void Application::buildHelpRows()
+    {
+        // clang-format off
+        _helpRows = {
+            {"Keyboard shortcuts", "", true},
+            {"", "", false},
+            {"Playback", "", true},
+            {"  Space",                 "Play / Pause", false},
+            {"  N / P",                 "Next / Previous track", false},
+            {"  < / >",                 "Seek -5s / +5s", false},
+            {"  R",                     "Toggle repeat", false},
+            {"  S",                     "Shuffle playlist", false},
+            {"  G",                     "Toggle auto-gain", false},
+            {"", "", false},
+            {"Browser", "", true},
+            {"  Tab",                   "Switch focus (browser <-> playlist)", false},
+            {"  Enter",                 "Replace playlist with selection and play", false},
+            {"  Shift+Enter",           "Append selection to playlist", false},
+            {"  A",                     "Add selected file to playlist", false},
+            {"  Backspace",             "Go up to parent directory", false},
+            {"  F5",                    "Refresh listing", false},
+            {"", "", false},
+            {"Playlist", "", true},
+            {"  Enter",                 "Play selected track", false},
+            {"  Del / D / Backspace",   "Remove selection", false},
+            {"  Ctrl+Up / Ctrl+Down",   "Move selected track", false},
+            {"  Ctrl+A",                "Select all", false},
+            {"  Ctrl+S",                "Save current playlist", false},
+            {"", "", false},
+            {"Visualizer", "", true},
+            {"  V",                     "Toggle visualizer screen", false},
+            {"  0 - 9",                 "Switch visualizer style", false},
+            {"", "", false},
+            {"Misc", "", true},
+            {"  H / Up / Down / PgUp / PgDn", "Show / scroll this help", false},
+            {"  ESC",                   "Open menu / dismiss overlay", false},
+            {"  Q",                     "Quit", false},
+        };
+        // clang-format on
+    }
+
+    int Application::helpVisibleRows() const
+    {
+        if (!_terminal) return 0;
+        int const h = _terminal->rows();
+        int const top = 1;
+        int const bottom = h - 2;
+        return std::max(0, bottom - top + 1);
+    }
+
+    int Application::helpMaxScroll() const
+    {
+        int const total = static_cast<int>(_helpRows.size());
+        int const visible = helpVisibleRows();
+        return std::max(0, total - visible);
+    }
+
+    void Application::drawHelpScreen()
+    {
+        if (!_terminal) return;
+        int const w = _terminal->cols();
+        int const h = _terminal->rows();
+        int const top = 1;          // below header
+        int const bottom = h - 2;   // above transport row
+        if (bottom < top) return;
+
+        // Clamp scroll in case the terminal shrank since the last key event.
+        int const maxScroll = helpMaxScroll();
+        if (_helpScroll > maxScroll) _helpScroll = maxScroll;
+        if (_helpScroll < 0) _helpScroll = 0;
+
+        // Clear the content area to the help background.
+        ventty::Style bgStyle{_theme.foreground, _theme.background};
+        _rootWindow->fill(0, top, w, bottom - top + 1, U' ', bgStyle);
+
+        // Side borders matching the browser/playlist box so the surrounding
+        // frame stays continuous when help replaces the content panels.
+        ventty::Style borderStyle{_theme.border, _theme.background};
+        for (int y = top; y <= bottom; ++y)
+        {
+            _rootWindow->putChar(0, y, ventty::DOUBLE_BOX.v, borderStyle);
+            _rootWindow->putChar(w - 1, y, ventty::DOUBLE_BOX.v, borderStyle);
+        }
+
+        ventty::Style headerStyle{_theme.browserHeaderFg, _theme.background, ventty::Attr::Bold};
+        ventty::Style keyStyle{_theme.browserAudioFg, _theme.background};
+        ventty::Style descStyle{_theme.foreground, _theme.background};
+
+        int const leftX = 4;
+        int const colWidth = 32;
+        int const visible = bottom - top + 1;
+        int const total = static_cast<int>(_helpRows.size());
+        int const drawRows = std::min(visible, total - _helpScroll);
+
+        for (int i = 0; i < drawRows; ++i)
+        {
+            int const y = top + i;
+            auto const & row = _helpRows[_helpScroll + i];
+            if (row.isHeader)
+            {
+                _rootWindow->drawText(leftX - 2, y, row.left, headerStyle);
+            }
+            else if (!row.left.empty())
+            {
+                _rootWindow->drawText(leftX, y, row.left, keyStyle);
+                if (!row.right.empty())
+                {
+                    _rootWindow->drawText(leftX + colWidth, y, row.right, descStyle);
+                }
+            }
+        }
+
+        // Scroll hint when content overflows.
+        if (maxScroll > 0)
+        {
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), " %d / %d ",
+                          _helpScroll + 1,
+                          maxScroll + 1);
+            std::string hint = buf;
+            int const hintX = w - 2 - static_cast<int>(hint.size());
+            if (hintX > 1)
+            {
+                _rootWindow->drawText(hintX, bottom, hint,
+                                      ventty::Style{_theme.border, _theme.background});
+            }
+        }
+    }
+
+    void Application::toggleHelp()
+    {
+        if (_screen == Screen::Help)
+        {
+            _screen = _previousScreen;
+        }
+        else
+        {
+            if (_helpRows.empty()) buildHelpRows();
+            _helpScroll = 0;
+            _previousScreen = _screen;
+            _screen = Screen::Help;
+        }
+        if (_terminal) _terminal->forceRedraw();
+    }
+
     void Application::handleInput(ventty::KeyEvent const &event)
     {
         if (event.key == Key::None)
@@ -403,7 +548,7 @@ namespace vtplayer
 
         // ESC opens the context menu. On the visualizer screen, ESC first
         // falls back to the browser (preserving prior behavior); a second
-        // ESC opens the menu.
+        // ESC opens the menu. In Help mode, ESC dismisses the help overlay.
         if (event.key == Key::Escape)
         {
             if (_screen == Screen::Visualizer)
@@ -412,9 +557,57 @@ namespace vtplayer
                 resize();
                 _terminal->forceRedraw();
             }
+            else if (_screen == Screen::Help)
+            {
+                toggleHelp();
+            }
             else
             {
                 openContextMenu();
+            }
+            return;
+        }
+
+        // In Help mode only H (dismiss), Q (quit), and scroll keys respond.
+        // Everything else is swallowed so global hotkeys don't mutate state
+        // behind the help overlay.
+        if (_screen == Screen::Help)
+        {
+            int const maxScroll = helpMaxScroll();
+            int const page = std::max(1, helpVisibleRows());
+            char32_t const ch = (event.key == Key::Char) ? hangulToQwerty(event.ch) : event.ch;
+
+            if (event.key == Key::Char && (ch == 'h' || ch == 'H') && !event.alt && !event.ctrl)
+            {
+                toggleHelp();
+            }
+            else if (event.key == Key::Char && (ch == 'q' || ch == 'Q') && !event.alt && !event.ctrl)
+            {
+                quit();
+            }
+            else if (event.key == Key::Up)
+            {
+                _helpScroll = std::max(0, _helpScroll - 1);
+            }
+            else if (event.key == Key::Down)
+            {
+                _helpScroll = std::min(maxScroll, _helpScroll + 1);
+            }
+            else if (event.key == Key::PageUp)
+            {
+                _helpScroll = std::max(0, _helpScroll - page);
+            }
+            else if (event.key == Key::PageDown)
+            {
+                _helpScroll = std::min(maxScroll, _helpScroll + page);
+            }
+            else if (event.key == Key::Home)
+            {
+                _helpScroll = 0;
+            }
+            else if (event.key == Key::End)
+            {
+                _helpScroll = maxScroll;
             }
             return;
         }
@@ -509,6 +702,13 @@ namespace vtplayer
             _screen = (_screen == Screen::Browser) ? Screen::Visualizer : Screen::Browser;
             resize();
             _terminal->forceRedraw();
+            return;
+        }
+
+        // h/H: open the help overlay (dismissed by H or ESC).
+        if (event.key == Key::Char && (ch == 'h' || ch == 'H') && !event.alt && !event.ctrl)
+        {
+            toggleHelp();
             return;
         }
 

@@ -18,6 +18,8 @@
 #include <ventty/terminal/TerminalBase.h>
 
 #include <memory>
+#include <string>
+#include <vector>
 
 namespace vtplayer
 {
@@ -26,6 +28,7 @@ namespace vtplayer
     {
         Browser,
         Visualizer,
+        Help,
     };
 
     enum class FocusPanel
@@ -54,7 +57,12 @@ namespace vtplayer
         void draw();
         void drawBrowserScreen();
         void drawVisualizerScreen();
+        void drawHelpScreen();
         void updateUI();
+        void toggleHelp();
+        void buildHelpRows();
+        int helpVisibleRows() const;
+        int helpMaxScroll() const;
 
         void handleInput(ventty::KeyEvent const &event);
         void handleMouse(ventty::MouseEvent const &event);
@@ -86,7 +94,17 @@ namespace vtplayer
 
         // UI state
         Screen _screen = Screen::Browser;
+        Screen _previousScreen = Screen::Browser; // restored when leaving Help
         FocusPanel _focus = FocusPanel::FileBrowser;
+
+        struct HelpRow
+        {
+            std::string left;
+            std::string right;
+            bool isHeader = false;
+        };
+        std::vector<HelpRow> _helpRows;
+        int _helpScroll = 0;
         Theme _theme;
         int _visualizerIndex = 1; // 1 = AudioSpectrum (default), 0 = Oscilloscope
         bool _repeatEnabled = false;

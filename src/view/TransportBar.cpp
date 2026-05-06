@@ -27,12 +27,12 @@ std::string TransportBar::formatTime(float seconds)
 void TransportBar::draw(ventty::Window & window)
 {
     auto const & r = rect();
-    if (r.height < 2) return;
+    if (r.height < 1) return;
 
-    // --- Row 1: Transport info + progress bar ---
+    // Single row: bottom border of the surrounding box, with transport
+    // controls (state, track name, progress, time, AG) overlaid on top.
     int y1 = r.y;
     ventty::Style baseBorder{_theme.border, _theme.transportBg};
-    ventty::Style baseStyle{_theme.transportFg, _theme.transportBg};
 
     // Bottom border line
     window.putChar(r.x, y1, ventty::DOUBLE_BOX.bl, baseBorder);
@@ -98,43 +98,6 @@ void TransportBar::draw(ventty::Window & window)
         std::snprintf(agBuf, sizeof(agBuf), " AG:%+5.1f ", _autoGainDb);
         window.drawText(cx, y1, agBuf,
                         ventty::Style{_theme.transportStateFg, _theme.transportBg});
-    }
-
-    // --- Row 2: Function key hints ---
-    int y2 = r.y + 1;
-    window.fill(r.x, y2, r.width, 1, U' ',
-                ventty::Style{_theme.transportFnLabelFg, _theme.transportBg});
-
-    struct FnHint
-    {
-        std::string key;
-        std::string label;
-    };
-
-    FnHint hints[] = {
-        {"Space", "Play/Pause"},
-        {"N/P", "Next/Prev"},
-        {"</>", "Seek"},
-        {"G", "AutoGain"},
-        {"V", "Visualizer"},
-        {"Q", "Quit"},
-    };
-
-    int hx = r.x + 1;
-    for (auto const & hint : hints)
-    {
-        if (hx + static_cast<int>(hint.key.size() + hint.label.size()) + 3 > r.x + r.width)
-        {
-            break;
-        }
-        window.drawText(hx, y2, hint.key,
-                        ventty::Style{_theme.transportFnKeyFg, _theme.transportBg});
-        hx += static_cast<int>(ventty::stringWidth(hint.key));
-
-        std::string label = ":" + hint.label + " ";
-        window.drawText(hx, y2, label,
-                        ventty::Style{_theme.transportFnLabelFg, _theme.transportBg});
-        hx += static_cast<int>(label.size());
     }
 }
 
