@@ -33,6 +33,8 @@ add_executable(vtplayer
     visualizer/AudioSpectrum.cpp
     visualizer/Oscilloscope.h
     visualizer/Oscilloscope.cpp
+    visualizer/MatrixRain.h
+    visualizer/MatrixRain.cpp
 
     # config
     config/Config.h

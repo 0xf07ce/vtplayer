@@ -65,6 +65,11 @@ namespace vtplayer
         Color visTrailFg{0x4D, 0x4D, 0x4D};
         Color visLabelFg{0x3A, 0x32, 0x45};
 
+        // Matrix rain — head/body/tail green gradient.
+        Color matrixHead{0xB8, 0xFF, 0xB8};
+        Color matrixBody{0x00, 0xCC, 0x00};
+        Color matrixTail{0x0A, 0x3A, 0x0A};
+
         // Separator
         Color separatorFg{0x80, 0x70, 0x90};
 
@@ -132,6 +137,11 @@ namespace vtplayer
             set("vis_bar_high", visBarHigh);
             set("vis_trail_fg", visTrailFg);
             set("vis_label_fg", visLabelFg);
+
+            // Matrix rain
+            set("matrix_head_fg", matrixHead);
+            set("matrix_body_fg", matrixBody);
+            set("matrix_tail_fg", matrixTail);
 
             // Separator
             set("separator_fg", separatorFg);

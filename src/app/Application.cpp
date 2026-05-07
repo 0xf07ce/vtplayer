@@ -5,6 +5,7 @@
 
 #include "../playlist/PlaylistRepository.h"
 #include "../util/UnicodeNormalize.h"
+#include "../visualizer/MatrixRain.h"
 #include "../visualizer/Oscilloscope.h"
 
 #ifdef VTPLAYER_BUILD_BUNDLE
@@ -420,7 +421,9 @@ namespace vtplayer
             {"", "", false},
             {"Visualizer", "", true},
             {"  V",                     "Toggle visualizer screen", false},
-            {"  0 - 9",                 "Switch visualizer style", false},
+            {"  0",                     "Oscilloscope", false},
+            {"  1",                     "Spectrum analyzer", false},
+            {"  2",                     "Matrix rain", false},
             {"", "", false},
             {"Misc", "", true},
             {"  H / Up / Down / PgUp / PgDn", "Show / scroll this help", false},
@@ -871,8 +874,11 @@ namespace vtplayer
         case 1:
             vis = std::make_unique<AudioSpectrum>(_config.barCount);
             break;
+        case 2:
+            vis = std::make_unique<MatrixRain>();
+            break;
         default:
-            // Slots 2-9 reserved; ignore until implemented.
+            // Slots 3-9 reserved; ignore until implemented.
             return;
         }
 
