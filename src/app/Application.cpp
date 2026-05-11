@@ -5,6 +5,7 @@
 
 #include "../playlist/PlaylistRepository.h"
 #include "../util/UnicodeNormalize.h"
+#include "../visualizer/DebugBars.h"
 #include "../visualizer/MatrixRain.h"
 #include "../visualizer/Oscilloscope.h"
 
@@ -877,8 +878,11 @@ namespace vtplayer
         case 2:
             vis = std::make_unique<MatrixRain>();
             break;
+        case 3:
+            vis = std::make_unique<DebugBars>();
+            break;
         default:
-            // Slots 3-9 reserved; ignore until implemented.
+            // Slots 4-9 reserved; ignore until implemented.
             return;
         }
 

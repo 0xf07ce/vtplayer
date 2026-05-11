@@ -35,6 +35,8 @@ add_executable(vtplayer
     visualizer/Oscilloscope.cpp
     visualizer/MatrixRain.h
     visualizer/MatrixRain.cpp
+    visualizer/DebugBars.h
+    visualizer/DebugBars.cpp
 
     # config
     config/Config.h
