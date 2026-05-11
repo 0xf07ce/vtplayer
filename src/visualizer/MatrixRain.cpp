@@ -161,6 +161,40 @@ namespace vtplayer
     MatrixRain::MatrixRain()
         : _rng(std::random_device{}())
     {
+        rebuildColorLut();
+    }
+
+    void MatrixRain::setTheme(Theme const &theme)
+    {
+        _theme = theme;
+        rebuildColorLut();
+    }
+
+    void MatrixRain::rebuildColorLut()
+    {
+        // Bake the three theme-derived endpoint colors that draw() used to
+        // recompute every frame.
+        Color const bg = _theme.background;
+        Color const headBright =
+            lerpColor(_theme.matrixHead, Color{0x40, 0xFF, 0x40}, kHeadBoost);
+        Color const bodyDim = lerpColor(bg, _theme.matrixBody, kBodyDim);
+        Color const trailEnd =
+            lerpColor(Color{0, 0, 0}, _theme.matrixTail, kTailDeepFactor);
+
+        for (int b = 0; b < kBrightnessLevels; ++b)
+        {
+            float const bright =
+                static_cast<float>(b) / static_cast<float>(kBrightnessLevels - 1);
+            _headLut[b] = lerpColor(bg, headBright, bright);
+            for (int f = 0; f < kFadeLevels; ++f)
+            {
+                float const linT =
+                    static_cast<float>(f) / static_cast<float>(kFadeLevels - 1);
+                float const t = std::sqrt(linT);
+                Color const trail = lerpColor(bodyDim, trailEnd, t);
+                _trailLut[b][f] = lerpColor(bg, trail, bright);
+            }
+        }
     }
 
     char32_t MatrixRain::randomGlyph()
@@ -406,30 +440,22 @@ namespace vtplayer
             // Pick only from active (non-empty, age > 0) cells so every
             // attempt produces a visible mutation. The head (age == 0)
             // is excluded so the brightest cell stays stable.
+            //
+            // Reservoir sampling (k=1) — one pass, uniform over active
+            // cells. Replaces the previous count-then-pick double scan.
             if (uni01(_rng) < kShimmerProb)
             {
-                int activeCount = 0;
+                int seen = 0;
+                int chosen = -1;
                 for (int r = 0; r < h; ++r)
-                    if (c.glyph[r] != 0 && c.age[r] > 0)
-                        ++activeCount;
-                if (activeCount > 0)
                 {
-                    std::uniform_int_distribution<int> pick(0, activeCount - 1);
-                    int target = pick(_rng);
-                    int idx = 0;
-                    for (int r = 0; r < h; ++r)
-                    {
-                        if (c.glyph[r] != 0 && c.age[r] > 0)
-                        {
-                            if (idx == target)
-                            {
-                                c.glyph[r] = randomGlyph();
-                                break;
-                            }
-                            ++idx;
-                        }
-                    }
+                    if (c.glyph[r] == 0 || c.age[r] == 0) continue;
+                    ++seen;
+                    std::uniform_int_distribution<int> pick(0, seen - 1);
+                    if (pick(_rng) == 0) chosen = r;
                 }
+                if (chosen >= 0)
+                    c.glyph[chosen] = randomGlyph();
             }
         }
     }
@@ -441,20 +467,13 @@ namespace vtplayer
             return;
 
         Color const bg = _theme.background;
-        // Head: pulled toward bright pure green for a clean "밝은 녹색"
-        // pop (less yellow than the previous chartreuse target).
-        Color const headBright = lerpColor(_theme.matrixHead, Color{0x40, 0xFF, 0x40}, kHeadBoost);
-        // Body: dimmed below theme so the trail glyphs are clearly
-        // darker than the head.
-        Color const bodyDim = lerpColor(bg, _theme.matrixBody, kBodyDim);
-        // Trail end: pulled even darker than theme.matrixTail so the
-        // gradient from body → tail spans a wider range. lerp(black,
-        // tail, kTailDeepFactor) drops brightness while preserving green
-        // hue — the deep end stays a dark green rather than washing into
-        // background purple.
-        Color const trailEnd = lerpColor(Color{0, 0, 0}, _theme.matrixTail, kTailDeepFactor);
+        // Application clears the root window with the theme background each
+        // frame, so empty cells are already in the right state — we don't
+        // need to paint them. That alone removes ~½ of the putChar calls on
+        // a sparse rain frame.
 
-        ventty::Style bgStyle{bg, bg};
+        constexpr int kBrightMax = kBrightnessLevels - 1;
+        constexpr int kFadeMax = kFadeLevels - 1;
 
         for (int col = 0; col < w && col < static_cast<int>(_cols.size()); ++col)
         {
@@ -462,38 +481,36 @@ namespace vtplayer
 
             for (int r = 0; r < h; ++r)
             {
-                int const drawX = x + col;
-                int const drawY = y + r;
-
                 if (c.glyph[r] == 0)
-                {
-                    window.putChar(drawX, drawY, U' ', bgStyle);
                     continue;
-                }
+
+                // Quantize cellBrightness into [0..kBrightMax]. Snapshot
+                // brightness is already discretized by spawn events, but
+                // the lerp-toward-bg step reduces it to a continuous float;
+                // bin it so adjacent cells cluster onto the same Color.
+                float const bright = std::clamp(c.cellBrightness[r], 0.0f, 1.0f);
+                int bIdx = static_cast<int>(bright * kBrightMax + 0.5f);
+                if (bIdx < 0) bIdx = 0;
+                else if (bIdx > kBrightMax) bIdx = kBrightMax;
 
                 Color fg;
                 if (c.age[r] == 0)
                 {
-                    fg = headBright;
+                    fg = _headLut[bIdx];
                 }
                 else
                 {
-                    // Fade scales with this cell's recorded max-age. sqrt
-                    // curve front-loads the darkening so each subsequent
-                    // trail row is visibly darker than the previous one
-                    // (a linear lerp made the trail look uniformly dim).
-                    float const fadeDenom = static_cast<float>(std::max(1, c.cellMaxAge[r]));
-                    float linT = std::clamp(static_cast<float>(c.age[r]) / fadeDenom, 0.0f, 1.0f);
-                    float t = std::sqrt(linT);
-                    fg = lerpColor(bodyDim, trailEnd, t);
+                    // linT = age / maxAge, then quantize. Integer rounding
+                    // avoids the per-cell sqrt/divide that the LUT bakes.
+                    int const denom = std::max(1, c.cellMaxAge[r]);
+                    int fIdx = (c.age[r] * kFadeMax + denom / 2) / denom;
+                    if (fIdx < 0) fIdx = 0;
+                    else if (fIdx > kFadeMax) fIdx = kFadeMax;
+                    fg = _trailLut[bIdx][fIdx];
                 }
-                // Step 4: per-cell brightness — dim the color toward the
-                // background by (1 - cellBrightness). brightness=1.0 is
-                // unchanged; brightness=0.0 would be pure background.
-                float const bright = std::clamp(c.cellBrightness[r], 0.0f, 1.0f);
-                fg = lerpColor(bg, fg, bright);
-                ventty::Style style{fg, bg};
-                window.putChar(drawX, drawY, c.glyph[r], style);
+
+                ventty::Style const style{fg, bg};
+                window.putChar(x + col, y + r, c.glyph[r], style);
             }
         }
     }

@@ -6,6 +6,7 @@
 #include "Visualizer.h"
 #include "../audio/Fft.h"
 
+#include <array>
 #include <random>
 #include <vector>
 
@@ -25,9 +26,17 @@ namespace vtplayer
 
         void update(AudioEngine const &engine) override;
         void draw(ventty::Window &window, int x, int y, int w, int h) override;
-        void setTheme(Theme const &theme) override { _theme = theme; }
+        void setTheme(Theme const &theme) override;
 
     private:
+        // Color quantization levels. Adjacent cells that fall into the same
+        // (brightness, fade) bin share an identical Color, so the terminal
+        // renderer's per-cell ANSI truecolor diff cache hits and the heavy
+        // \033[38;2;R;G;Bm \033[48;2;R;G;Bm sequence is emitted once per run
+        // instead of once per cell.
+        static constexpr int kBrightnessLevels = 8;
+        static constexpr int kFadeLevels = 8;
+
         struct Drop
         {
             float headY = 0.0f;      ///< current head position (row, fractional)
@@ -51,6 +60,12 @@ namespace vtplayer
         int _gridH = 0;
         std::mt19937 _rng;
 
+        // Precomputed color tables — rebuilt only in setTheme(), reused for
+        // every cell every frame. headLut[b]: head-row color at brightness
+        // bin b. trailLut[b][f]: trail color at brightness bin b, fade bin f.
+        std::array<Color, kBrightnessLevels> _headLut{};
+        std::array<std::array<Color, kFadeLevels>, kBrightnessLevels> _trailLut{};
+
         // Audio: smoothed bass intensity in [0, 1].
         Fft<512> _fft;
         float _intensity = 0.0f;
@@ -72,6 +87,9 @@ namespace vtplayer
         /// Per-frame simulation step. (w, h) come from draw() since that's
         /// the only place we learn the visible region.
         void stepSimulation(int w, int h);
+
+        /// Rebuild _headLut / _trailLut from the current theme.
+        void rebuildColorLut();
     };
 
 } // namespace vtplayer
