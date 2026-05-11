@@ -79,7 +79,7 @@ private:
     int _selectedIndex = 0;
     int _scrollOffset = 0;
     bool _showHidden = false;
-    std::vector<std::string> _allowedExts{".mp3", ".ogg", ".flac"};
+    std::vector<std::string> _allowedExts{".mp3", ".wav", ".ogg", ".flac"};
     std::set<int> _multiSelected;
     int _selectionAnchor = -1;
     OnActivateCallback _onActivate;

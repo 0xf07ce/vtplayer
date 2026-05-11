@@ -24,7 +24,7 @@ struct Config
     int barCount = 48;
 
     // [formats]
-    std::string extensions = "mp3,ogg,flac";
+    std::string extensions = "mp3,wav,ogg,flac";
 
     // [playlist]
     std::filesystem::path playlistCurrentPath;  ///< absolute path to the playlist file to load on startup

@@ -13,6 +13,7 @@ enum class AudioFormat
 {
     Unknown,
     Mp3,
+    Wav,
     Ogg,
     Flac,
 };
@@ -34,6 +35,7 @@ struct TrackInfo
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         }
         if (ext == ".mp3") return AudioFormat::Mp3;
+        if (ext == ".wav") return AudioFormat::Wav;
         if (ext == ".ogg") return AudioFormat::Ogg;
         if (ext == ".flac") return AudioFormat::Flac;
         return AudioFormat::Unknown;

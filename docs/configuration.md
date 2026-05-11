@@ -28,7 +28,7 @@ vtplayer reads settings from `~/.config/ventty-player/config.ini`.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `extensions` | `mp3,ogg,flac` | Comma-separated list of recognized audio file extensions |
+| `extensions` | `mp3,wav,ogg,flac` | Comma-separated list of recognized audio file extensions |
 
 ### [theme]
 
@@ -48,7 +48,7 @@ show_hidden = false
 bar_count = 64
 
 [formats]
-extensions = mp3,ogg,flac
+extensions = mp3,wav,ogg,flac
 
 [theme]
 theme.primary = #61AFEF
