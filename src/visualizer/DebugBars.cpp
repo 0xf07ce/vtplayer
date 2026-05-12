@@ -85,11 +85,11 @@ namespace vtplayer
         // Order is the on-screen vertical order — rearrange here to change
         // the layout. Labels stay <= 4 chars to fit the label column.
         static constexpr char const *kLabels[kNumMetrics] = {
-            "gain", "pos%",
             "peak", "rms",
             "bass", "mid", "treb", "cent",
             "I", "slow", "xs", "pSp",
             "bpm", "beat",
+            "gain", "pos%",
         };
         for (int i = 0; i < kNumMetrics; ++i)
         {
@@ -133,11 +133,11 @@ namespace vtplayer
             _centroid *= kIntensityIdleDecay;
 
             float const idleValues[kNumMetrics] = {
-                gain, pos,
                 _peak, _rms,
                 _bass, _mid, _treb, _centroid,
                 _intensity, _slowAverage, 0.0f, 0.0f,
                 std::clamp(_bpm / 200.0f, 0.0f, 1.0f), _beatPulse,
+                gain, pos,
             };
             for (int i = 0; i < kNumMetrics; ++i)
                 _metrics[i].value = std::clamp(idleValues[i], 0.0f, 1.0f);
@@ -238,11 +238,11 @@ namespace vtplayer
         float const pSpawnNorm = std::clamp(pSpawn / kSpawnCeiling, 0.0f, 1.0f);
 
         float const values[kNumMetrics] = {
-            gain, pos,
             _peak, _rms,
             _bass, _mid, _treb, _centroid,
             _intensity, _slowAverage, std::clamp(excess, 0.0f, 1.0f), pSpawnNorm,
             std::clamp(_bpm / 200.0f, 0.0f, 1.0f), std::clamp(_beatPulse, 0.0f, 1.0f),
+            gain, pos,
         };
         for (int i = 0; i < kNumMetrics; ++i)
             _metrics[i].value = std::clamp(values[i], 0.0f, 1.0f);

@@ -17,11 +17,11 @@ namespace vtplayer
     /// has its own stable color.
     ///
     /// Surfaces (top to bottom):
-    ///   gain / pos%             — engine state
     ///   peak / rms              — time-domain envelope
     ///   bass / mid / treb / cent — spectral bands + centroid
     ///   I / slow / xs / pSp     — MatrixRain intensity envelope
     ///   bpm / beat              — onset / tempo state
+    ///   gain / pos%             — engine state
     class DebugBars : public Visualizer
     {
     public:
