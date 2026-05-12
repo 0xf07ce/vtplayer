@@ -155,6 +155,10 @@ void Config::applyValues(std::unordered_map<std::string, std::string> const & va
     {
         try { barCount = std::stoi(*v); } catch (...) {}
     }
+    if (auto * v = get("visualizer.index"))
+    {
+        try { visualizerIndex = std::stoi(*v); } catch (...) {}
+    }
     if (auto * v = get("formats.extensions"))
     {
         extensions = *v;
@@ -219,7 +223,8 @@ std::string Config::serializeIni() const
     out << "show_hidden = " << (showHidden ? "true" : "false") << "\n\n";
 
     out << "[visualizer]\n";
-    out << "bar_count = " << barCount << "\n\n";
+    out << "bar_count = " << barCount << "\n";
+    out << "index = " << visualizerIndex << "\n\n";
 
     out << "[formats]\n";
     out << "extensions = " << extensions << "\n\n";

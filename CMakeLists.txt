@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(vtplayer VERSION 0.0.1)
+project(vtplayer VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -15,7 +15,7 @@ include(local.cmake OPTIONAL)
 include(FetchContent)
 FetchContent_Declare(ventty
     GIT_REPOSITORY https://github.com/0xf07ce/ventty.git
-    GIT_TAG        main
+    GIT_TAG        v0.2.0   # 970e9d1e6ff7da225f2ea4ac9ef0aa999c8b0efa
     GIT_SHALLOW    TRUE
 )
 set(VENTTY_BUILD_TESTS    OFF CACHE BOOL "" FORCE)

@@ -55,3 +55,4 @@ add_executable(vtplayer
 
 target_include_directories(vtplayer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(vtplayer ventty vtplayerDep)
+target_compile_definitions(vtplayer PRIVATE VTPLAYER_VERSION="${PROJECT_VERSION}")

@@ -220,7 +220,11 @@ namespace vtplayer
 
         _visualizerView = std::make_unique<VisualizerView>();
         _visualizerView->setTheme(_theme);
+        // Restore last-used visualizer from config; fall back to spectrum
+        // if the saved index is out of range or no longer implemented.
+        _visualizerIndex = 1;
         _visualizerView->setVisualizer(std::make_unique<AudioSpectrum>(_config.barCount));
+        setVisualizerByIndex(_config.visualizerIndex);
 
         _contextMenu = std::make_unique<ContextMenu>();
         _contextMenu->setTheme(_theme);
@@ -247,6 +251,7 @@ namespace vtplayer
     {
         // Sync runtime-mutable settings back before persisting.
         _config.autoGain = _audio.autoGainEnabled();
+        _config.visualizerIndex = _visualizerIndex;
         _config.save();
 
         // Persist the current playlist's track list to disk.
@@ -393,9 +398,12 @@ namespace vtplayer
 
     void Application::buildHelpRows()
     {
+#ifndef VTPLAYER_VERSION
+#define VTPLAYER_VERSION "unknown"
+#endif
         // clang-format off
         _helpRows = {
-            {"Keyboard shortcuts", "", true},
+            {"VT-PLAYER " VTPLAYER_VERSION " — Keyboard shortcuts", "", true},
             {"", "", false},
             {"Playback", "", true},
             {"  Space",                 "Play / Pause", false},
