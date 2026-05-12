@@ -1,0 +1,106 @@
+name: Release Bottles
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build bottles for (e.g., v0.3.0). Must already exist on this repo.'
+        required: true
+
+jobs:
+  ensure-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Ensure GitHub Release exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view "${TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release create "${TAG}" \
+              --repo "${{ github.repository }}" \
+              --title "${TAG}" \
+              --generate-notes
+          fi
+
+  bottle:
+    needs: ensure-release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      REPO: ${{ github.repository }}
+      TAP: 0xf07ce/tap
+      FORMULA: 0xf07ce/tap/vtplayer
+
+    steps:
+      - name: Tap
+        run: |
+          brew update --quiet
+          brew tap "${TAP}"
+
+      - name: Verify tap formula version matches tag
+        run: |
+          formula_version=$(brew info --json=v2 "${FORMULA}" | jq -r '.formulae[0].versions.stable')
+          expected="${TAG#v}"
+          if [ "${formula_version}" != "${expected}" ]; then
+            echo "::error::Tap formula version (${formula_version}) does not match tag (${expected})."
+            echo "::error::Update Formula/vtplayer.rb in homebrew-tap to ${TAG} before triggering this workflow."
+            exit 1
+          fi
+
+      - name: Build with --build-bottle
+        run: brew install --build-bottle "${FORMULA}"
+
+      - name: Bottle
+        run: |
+          brew bottle \
+            --no-rebuild \
+            --root-url="https://github.com/${REPO}/releases/download/${TAG}" \
+            "${FORMULA}"
+
+          # `brew bottle` emits files with a double dash between formula name
+          # and version (e.g. vtplayer--0.2.0.arm64_tahoe.bottle.tar.gz). The
+          # release asset must use the single-dash form that brew install
+          # looks up from `root_url`.
+          for f in vtplayer--*.bottle.tar.gz; do
+            mv "$f" "${f//--/-}"
+          done
+          ls -la vtplayer-*.bottle.tar.gz
+
+      - name: Upload bottle to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${TAG}" \
+            vtplayer-*.bottle.tar.gz \
+            --repo "${REPO}" \
+            --clobber
+
+      - name: Emit formula DSL snippet
+        run: |
+          {
+            echo "### Bottle for ${{ matrix.os }}"
+            echo ""
+            echo "Add this line inside the \`bottle do\` block in"
+            echo "[\`Formula/vtplayer.rb\`](https://github.com/0xf07ce/homebrew-tap/blob/main/Formula/vtplayer.rb):"
+            echo ""
+            for f in vtplayer-*.bottle.tar.gz; do
+              sha=$(shasum -a 256 "$f" | awk '{print $1}')
+              tag=$(echo "$f" | sed -E 's/^vtplayer-[0-9.]+\.(.+)\.bottle\.tar\.gz$/\1/')
+              echo '```ruby'
+              echo "sha256 cellar: :any_skip_relocation, ${tag}: \"${sha}\""
+              echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
