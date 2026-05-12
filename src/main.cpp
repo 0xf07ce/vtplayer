@@ -8,12 +8,17 @@
 #include <filesystem>
 #include <iostream>
 
+#ifndef VTPLAYER_VERSION
+#define VTPLAYER_VERSION "unknown"
+#endif
+
 int main(int argc, char *argv[])
 {
     cxxopts::Options options("vtplayer", "Terminal-based music player for MP3, OGG, and FLAC");
     options.add_options()
-        ("h,help", "Show this help message")
-        ("file", "Audio file to play", cxxopts::value<std::string>());
+        ("h,help",    "Show this help message")
+        ("v,version", "Show version and exit")
+        ("file",      "Audio file to play", cxxopts::value<std::string>());
     options.parse_positional({"file"});
     options.positional_help("[FILE]");
 
@@ -22,6 +27,12 @@ int main(int argc, char *argv[])
     if (result.count("help"))
     {
         std::cout << options.help() << std::endl;
+        return 0;
+    }
+
+    if (result.count("version"))
+    {
+        std::cout << "vtplayer " << VTPLAYER_VERSION << std::endl;
         return 0;
     }
 
