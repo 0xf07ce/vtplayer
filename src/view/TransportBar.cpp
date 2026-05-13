@@ -45,16 +45,17 @@ void TransportBar::draw(ventty::Window & window)
     // Embed transport controls into the border line
     int cx = r.x + 2;
 
-    // State icon — Playing has no glyph (the ▶ on the playlist row is the
-    // canonical "playing" cue). Paused/Stopped still show their state.
-    std::string stateIcon;
-    switch (_state)
+    // Repeat-mode indicator. The play/pause/stop state is conveyed by the
+    // play-time on the right, so this slot is reused for the repeat mode:
+    //   R = repeat-all, r = repeat-1, . = no repeat.
+    char repeatGlyph = '.';
+    switch (_repeatMode)
     {
-    case PlayState::Playing: stateIcon = " ";          break;
-    case PlayState::Paused:  stateIcon = "\xE2\x8F\xB8"; break; // ⏸
-    default:                 stateIcon = "\xE2\x8F\xB9"; break; // ⏹
+    case RepeatMode::All: repeatGlyph = 'R'; break;
+    case RepeatMode::One: repeatGlyph = 'r'; break;
+    case RepeatMode::None: repeatGlyph = '.'; break;
     }
-    window.drawText(cx, y1, stateIcon,
+    window.drawText(cx, y1, std::string(1, repeatGlyph),
                     ventty::Style{_theme.transportStateFg, _theme.transportBg});
     cx += 2;
 

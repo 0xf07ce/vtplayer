@@ -314,11 +314,15 @@ namespace vtplayer
             int count = _playlistView->trackCount();
             if (current >= 0)
             {
-                if (current + 1 < count)
+                if (_repeatMode == RepeatMode::One)
+                {
+                    playTrack(current);
+                }
+                else if (current + 1 < count)
                 {
                     playTrack(current + 1);
                 }
-                else if (_repeatEnabled && count > 0)
+                else if (_repeatMode == RepeatMode::All && count > 0)
                 {
                     playTrack(0);
                 }
@@ -331,6 +335,7 @@ namespace vtplayer
 
         // Update transport
         _transportBar->setState(state);
+        _transportBar->setRepeatMode(_repeatMode);
         _transportBar->setTrackName(_audio.currentTrack().title);
         _transportBar->setPosition(_audio.position());
         _transportBar->setDuration(_audio.duration());
@@ -409,7 +414,7 @@ namespace vtplayer
             {"  Space",                 "Play / Pause", false},
             {"  N / P",                 "Next / Previous track", false},
             {"  < / >",                 "Seek -5s / +5s", false},
-            {"  R",                     "Toggle repeat", false},
+            {"  R",                     "Cycle repeat: none -> all -> one", false},
             {"  S",                     "Shuffle playlist", false},
             {"  G",                     "Toggle auto-gain", false},
             {"", "", false},
@@ -774,10 +779,15 @@ namespace vtplayer
             return;
         }
 
-        // r: toggle repeat (loop back to first track when the last one ends)
+        // r: cycle repeat mode (none -> all -> one -> none)
         if (event.key == Key::Char && (ch == 'r' || ch == 'R') && !event.alt && !event.ctrl)
         {
-            _repeatEnabled = !_repeatEnabled;
+            switch (_repeatMode)
+            {
+            case RepeatMode::None: _repeatMode = RepeatMode::All;  break;
+            case RepeatMode::All:  _repeatMode = RepeatMode::One;  break;
+            case RepeatMode::One:  _repeatMode = RepeatMode::None; break;
+            }
             return;
         }
 

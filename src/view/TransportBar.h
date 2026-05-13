@@ -13,11 +13,19 @@
 namespace vtplayer
 {
 
+enum class RepeatMode
+{
+    None,
+    All,
+    One,
+};
+
 class TransportBar : public ventty::Widget
 {
 public:
     void setTheme(Theme const & theme) { _theme = theme; }
     void setState(PlayState state) { _state = state; }
+    void setRepeatMode(RepeatMode mode) { _repeatMode = mode; }
     void setTrackName(std::string const & name) { _trackName = name; }
     void setPosition(float pos) { _position = pos; }
     void setDuration(float dur) { _duration = dur; }
@@ -34,6 +42,7 @@ private:
 
     Theme _theme;
     PlayState _state = PlayState::Stopped;
+    RepeatMode _repeatMode = RepeatMode::None;
     std::string _trackName;
     float _position = 0.0f;
     float _duration = 0.0f;

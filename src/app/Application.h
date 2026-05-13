@@ -107,7 +107,7 @@ namespace vtplayer
         int _helpScroll = 0;
         Theme _theme;
         int _visualizerIndex = 1; // 1 = AudioSpectrum (default), 0 = Oscilloscope
-        bool _repeatEnabled = false;
+        RepeatMode _repeatMode = RepeatMode::None;
 
         // Views
         std::unique_ptr<HeaderBar> _headerBar;
