@@ -5,11 +5,11 @@
 
 #include "../audio/AudioEngine.h"
 #include "../config/Config.h"
-#include "../playlist/Playlist.h"
+#include "../playqueue/PlayQueue.h"
 #include "../view/ContextMenu.h"
 #include "../view/FileBrowser.h"
 #include "../view/HeaderBar.h"
-#include "../view/PlaylistView.h"
+#include "../view/PlayQueueView.h"
 #include "../view/Theme.h"
 #include "../view/TransportBar.h"
 #include "../view/VisualizerView.h"
@@ -34,7 +34,7 @@ namespace vtplayer
     enum class FocusPanel
     {
         FileBrowser,
-        Playlist,
+        PlayQueue,
     };
 
     class Application
@@ -74,12 +74,11 @@ namespace vtplayer
         void playTrack(int index);
         void playNext();
         void playPrev();
-        void addToPlaylist(std::filesystem::path const &path);
+        void addToPlayQueue(std::filesystem::path const &path);
         void activateFromBrowser(std::vector<std::filesystem::path> const &paths, bool quietAppend);
 
-        void openPlaylist(std::filesystem::path const &path);
-        void newPlaylist();
-        void saveCurrentPlaylist();
+        /// Read an .m3u file and append its tracks to the current play queue.
+        void appendPlayQueueFile(std::filesystem::path const &path);
 
         bool _running = false;
         std::unique_ptr<ventty::TerminalBase> _terminal;
@@ -89,8 +88,8 @@ namespace vtplayer
         AudioEngine _audio;
         Config _config;
 
-        // Current playlist (persisted to M3U on disk)
-        Playlist _currentPlaylist;
+        // Current play queue (persisted to M3U on disk)
+        PlayQueue _currentPlayQueue;
 
         // UI state
         Screen _screen = Screen::Browser;
@@ -112,7 +111,7 @@ namespace vtplayer
         // Views
         std::unique_ptr<HeaderBar> _headerBar;
         std::unique_ptr<FileBrowser> _fileBrowser;
-        std::unique_ptr<PlaylistView> _playlistView;
+        std::unique_ptr<PlayQueueView> _playQueueView;
         std::unique_ptr<TransportBar> _transportBar;
         std::unique_ptr<VisualizerView> _visualizerView;
         std::unique_ptr<ContextMenu> _contextMenu;

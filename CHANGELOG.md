@@ -4,6 +4,7 @@
 
 - CI: release workflow builds arm64_tahoe/sequoia bottles on tag push.
 - Repeat now has three modes (none / all / one). `R` key cycles through them, and the transport bar shows the current mode on its left edge as `.` / `R` / `r`. The play/pause/stop glyph in that slot is removed — playback state is already conveyed by the time display on the right.
+- Pressing `a` on a directory in the file browser now adds every audio file in that directory to the play queue (non-recursive).
 
 ## 0.2.0 (2026-05-12)
 

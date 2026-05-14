@@ -12,7 +12,7 @@ Supports MP3, WAV, OGG, and FLAC.
 
 ## Features
 
-- Dual-screen UI: file browser with playlist and spectrum visualizer
+- Dual-screen UI: file browser with play queue and spectrum visualizer
 - Audio playback via miniaudio (MP3/WAV/OGG/FLAC)
 - Real-time spectrum analyzer with peak indicators
 - Configurable themes and keybindings

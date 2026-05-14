@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Leon J. Lee
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
-#include "Playlist.h"
+#include "PlayQueue.h"
 
 #include "../util/UnicodeNormalize.h"
 
@@ -85,12 +85,12 @@ ExtInf parseExtInf(std::string const & line)
 
 } // namespace
 
-std::string Playlist::name() const
+std::string PlayQueue::name() const
 {
     return toNfc(_path.stem().string());
 }
 
-std::optional<Playlist> Playlist::load(std::filesystem::path const & path)
+std::optional<PlayQueue> PlayQueue::load(std::filesystem::path const & path)
 {
     std::ifstream file(path);
     if (!file.is_open())
@@ -98,7 +98,7 @@ std::optional<Playlist> Playlist::load(std::filesystem::path const & path)
         return std::nullopt;
     }
 
-    Playlist pl(path);
+    PlayQueue pl(path);
     auto const baseDir = path.parent_path();
 
     std::string line;
@@ -163,7 +163,7 @@ std::optional<Playlist> Playlist::load(std::filesystem::path const & path)
     return pl;
 }
 
-bool Playlist::save() const
+bool PlayQueue::save() const
 {
     if (_path.empty()) return false;
 

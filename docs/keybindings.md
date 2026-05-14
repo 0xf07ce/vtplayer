@@ -7,7 +7,7 @@
 | `q` | Quit |
 | `v` | Toggle visualizer screen |
 | `Esc` | Back to browser from visualizer |
-| `Tab` | Switch focus between file browser and playlist |
+| `Tab` | Switch focus between file browser and play queue |
 | `Space` | Play / pause |
 | `s` | Stop playback |
 | `n` | Next track |
@@ -15,8 +15,8 @@
 | `Left` / `Right` | Seek backward / forward (5s) |
 | `+` / `=` | Volume up (+5%) |
 | `-` | Volume down (-5%) |
-| `a` | Add selected file to playlist |
-| `Ctrl+Up` / `Ctrl+Down` | Move playlist item up / down |
+| `a` | Add selected file to play queue (on a directory: add every audio file inside it, non-recursive) |
+| `Ctrl+Up` / `Ctrl+Down` | Move play-queue item up / down |
 | `F5` | Refresh directory listing |
 
 ## File Browser
@@ -34,7 +34,7 @@
 | Action | Effect |
 |--------|--------|
 | Click progress bar | Seek to position |
-| Click browser / playlist | Switch focus |
+| Click browser / play queue | Switch focus |
 | Scroll wheel | Navigate lists |
 
 ## Note

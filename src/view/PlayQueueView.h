@@ -16,7 +16,7 @@
 namespace vtplayer
 {
 
-class PlaylistView : public ventty::Widget
+class PlayQueueView : public ventty::Widget
 {
 public:
     void setTheme(Theme const & theme) { _theme = theme; }
@@ -37,14 +37,11 @@ public:
     /// playback stays uninterrupted.
     void shuffle();
 
-    /// Replace the full track list (used when switching playlists). Resets scroll and selection.
+    /// Replace the full track list (used when switching play queues). Resets scroll and selection.
     void setTracks(std::vector<TrackInfo> tracks);
 
     /// Snapshot of the current tracks for persistence.
     std::vector<TrackInfo> const & tracks() const { return _tracks; }
-
-    /// Name displayed in the header (usually the playlist file stem).
-    void setCurrentPlaylistName(std::string name) { _playlistName = std::move(name); }
 
     int selectedIndex() const { return _selectedIndex; }
     void setSelectedIndex(int idx);
@@ -59,7 +56,7 @@ public:
     using OnPlayCallback = std::function<void(int index)>;
     void setOnPlay(OnPlayCallback cb) { _onPlay = std::move(cb); }
 
-    /// Fired when a track that was playing got removed (or the playlist was
+    /// Fired when a track that was playing got removed (or the play queue was
     /// replaced/cleared while a track was playing). Application uses this to
     /// stop audio playback.
     using OnPlayingRemovedCallback = std::function<void()>;
@@ -83,7 +80,6 @@ private:
 
     Theme _theme;
     std::vector<TrackInfo> _tracks;
-    std::string _playlistName;
     int _selectedIndex = 0;
     int _scrollOffset = 0;
     int _playingIndex = -1;

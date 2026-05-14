@@ -152,6 +152,36 @@ void FileBrowser::refresh()
     clearMultiSelection();
 }
 
+std::vector<std::filesystem::path>
+FileBrowser::collectAudioFiles(std::filesystem::path const & dir) const
+{
+    std::vector<std::filesystem::path> paths;
+    std::error_code ec;
+    for (auto const & entry : std::filesystem::directory_iterator(dir, ec))
+    {
+        auto name = entry.path().filename().string();
+        if (name.empty()) continue;
+        if (!_showHidden && name[0] == '.') continue;
+        if (!entry.is_regular_file(ec)) continue;
+
+        auto ext = entry.path().extension().string();
+        for (auto & c : ext)
+        {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        if (std::find(_allowedExts.begin(), _allowedExts.end(), ext) != _allowedExts.end())
+        {
+            paths.push_back(entry.path());
+        }
+    }
+    std::sort(paths.begin(), paths.end(),
+              [](std::filesystem::path const & a, std::filesystem::path const & b)
+              {
+                  return a.filename().string() < b.filename().string();
+              });
+    return paths;
+}
+
 void FileBrowser::clearMultiSelection()
 {
     _multiSelected.clear();

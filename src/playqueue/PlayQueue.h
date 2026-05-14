@@ -13,17 +13,17 @@
 namespace vtplayer
 {
 
-/// In-memory playlist backed by an Extended M3U file on disk.
+/// In-memory play queue backed by an Extended M3U file on disk.
 /// File format: UTF-8, lines of `#EXTINF:<duration>,<artist> - <title>` followed by a path.
-class Playlist
+class PlayQueue
 {
 public:
-    Playlist() = default;
-    explicit Playlist(std::filesystem::path path) : _path(std::move(path)) {}
+    PlayQueue() = default;
+    explicit PlayQueue(std::filesystem::path path) : _path(std::move(path)) {}
 
     /// Parse an M3U/M3U8 file. Relative track paths are resolved against the file's directory.
     /// Returns std::nullopt if the file cannot be opened.
-    static std::optional<Playlist> load(std::filesystem::path const & path);
+    static std::optional<PlayQueue> load(std::filesystem::path const & path);
 
     /// Write the current tracks to `_path`. Parent directories are created as needed.
     bool save() const;

@@ -18,8 +18,8 @@ add_executable(vtplayer
     view/HeaderBar.cpp
     view/FileBrowser.h
     view/FileBrowser.cpp
-    view/PlaylistView.h
-    view/PlaylistView.cpp
+    view/PlayQueueView.h
+    view/PlayQueueView.cpp
     view/TransportBar.h
     view/TransportBar.cpp
     view/VisualizerView.h
@@ -42,11 +42,11 @@ add_executable(vtplayer
     config/Config.h
     config/Config.cpp
 
-    # playlist
-    playlist/Playlist.h
-    playlist/Playlist.cpp
-    playlist/PlaylistRepository.h
-    playlist/PlaylistRepository.cpp
+    # playqueue
+    playqueue/PlayQueue.h
+    playqueue/PlayQueue.cpp
+    playqueue/PlayQueueRepository.h
+    playqueue/PlayQueueRepository.cpp
 
     # util
     util/UnicodeNormalize.h

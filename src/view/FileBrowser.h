@@ -44,10 +44,16 @@ public:
     FileEntry const * selectedEntry() const;
     std::filesystem::path const & currentDirectory() const { return _currentDir; }
 
+    /// Non-recursively collect audio files from `dir`, applying the same
+    /// extension and hidden-file filters as the browser listing. Results
+    /// are sorted alphabetically by filename.
+    std::vector<std::filesystem::path>
+    collectAudioFiles(std::filesystem::path const & dir) const;
+
     /// Called when the user activates audio file(s) (Enter / double-click).
     /// `paths` contains every audio file to add: the multi-selection set
     /// when non-empty, otherwise just the cursor entry. `quietAppend` is
-    /// true on Shift+Enter — append to the end of the playlist without
+    /// true on Shift+Enter — append to the end of the play queue without
     /// disturbing playback. When false, append and start playing the first
     /// newly-added track.
     using OnActivateCallback =

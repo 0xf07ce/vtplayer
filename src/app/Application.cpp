@@ -3,7 +3,7 @@
 
 #include "Application.h"
 
-#include "../playlist/PlaylistRepository.h"
+#include "../playqueue/PlayQueueRepository.h"
 #include "../util/UnicodeNormalize.h"
 #include "../visualizer/DebugBars.h"
 #include "../visualizer/MatrixRain.h"
@@ -172,48 +172,21 @@ namespace vtplayer
         _fileBrowser->setOnActivate([this](std::vector<std::filesystem::path> const &paths, bool quietAppend)
                                     { activateFromBrowser(paths, quietAppend); });
         _fileBrowser->setOnOpenPlaylist([this](std::filesystem::path const &path)
-                                        { openPlaylist(path); });
+                                        { appendPlayQueueFile(path); });
 
-        _playlistView = std::make_unique<PlaylistView>();
-        _playlistView->setTheme(_theme);
-        _playlistView->setOnPlay([this](int index)
+        _playQueueView = std::make_unique<PlayQueueView>();
+        _playQueueView->setTheme(_theme);
+        _playQueueView->setOnPlay([this](int index)
                                  { playTrack(index); });
-        _playlistView->setOnPlayingRemoved([this]
+        _playQueueView->setOnPlayingRemoved([this]
                                            {
                                                _audio.stop();
-                                               _playlistView->setPlayingIndex(-1);
+                                               _playQueueView->setPlayingIndex(-1);
                                            });
 
-        // Bootstrap current playlist: prefer Config.playlistCurrentPath, otherwise default.m3u.
-        {
-            PlaylistRepository::ensureDirectory();
-            auto target = _config.playlistCurrentPath;
-            bool usingDefault = false;
-            if (target.empty() || !std::filesystem::exists(target))
-            {
-                target = PlaylistRepository::defaultPlaylistPath();
-                usingDefault = true;
-            }
-
-            if (auto loaded = Playlist::load(target))
-            {
-                _currentPlaylist = std::move(*loaded);
-            }
-            else
-            {
-                _currentPlaylist = PlaylistRepository::ensureDefault();
-                usingDefault = true;
-            }
-
-            _playlistView->setTracks(_currentPlaylist.tracks());
-            _playlistView->setCurrentPlaylistName(_currentPlaylist.name());
-
-            if (usingDefault || _config.playlistCurrentPath != _currentPlaylist.path())
-            {
-                _config.playlistCurrentPath = _currentPlaylist.path();
-                _config.save();
-            }
-        }
+        // Load the persistent play queue from ~/.config/ventty-player/playqueue.m3u.
+        _currentPlayQueue = PlayQueueRepository::load();
+        _playQueueView->setTracks(_currentPlayQueue.tracks());
 
         _transportBar = std::make_unique<TransportBar>();
         _transportBar->setTheme(_theme);
@@ -230,8 +203,6 @@ namespace vtplayer
         _contextMenu->setTheme(_theme);
         _contextMenu->setTitle("Menu");
         _contextMenu->setItems({
-            "New playlist",
-            "Save playlist",
             "Set current directory as start directory",
             "Exit",
         });
@@ -239,10 +210,10 @@ namespace vtplayer
 
         resize();
 
-        // If an initial file was provided, add it to the playlist and play
+        // If an initial file was provided, add it to the play queue and play
         if (!_initialFile.empty())
         {
-            addToPlaylist(_initialFile);
+            addToPlayQueue(_initialFile);
             playTrack(0);
         }
     }
@@ -254,11 +225,11 @@ namespace vtplayer
         _config.visualizerIndex = _visualizerIndex;
         _config.save();
 
-        // Persist the current playlist's track list to disk.
-        if (!_currentPlaylist.path().empty() && _playlistView)
+        // Persist the current play queue's track list to disk.
+        if (!_currentPlayQueue.path().empty() && _playQueueView)
         {
-            _currentPlaylist.setTracks(_playlistView->tracks());
-            _currentPlaylist.save();
+            _currentPlayQueue.setTracks(_playQueueView->tracks());
+            _currentPlayQueue.save();
         }
 
         // Audio must stop before terminal restores — otherwise audio thread
@@ -289,13 +260,13 @@ namespace vtplayer
         int const contentY = 1;
         int const contentH = h - 2;
 
-        // Browser split: FileBrowser (left 40%) | PlaylistView (right 60%)
+        // Browser split: FileBrowser (left 40%) | PlayQueueView (right 60%)
         int browserW = (w * 2) / 5;
         if (browserW < 20)
             browserW = 20;
-        int playlistW = w - browserW;
+        int playQueueW = w - browserW;
         _fileBrowser->setRect(0, contentY, browserW, contentH);
-        _playlistView->setRect(browserW, contentY, playlistW, contentH);
+        _playQueueView->setRect(browserW, contentY, playQueueW, contentH);
 
         // Visualizer takes the full content area.
         _visualizerView->setRect(0, contentY, w, contentH);
@@ -310,8 +281,8 @@ namespace vtplayer
         if (_audio.hasTrackEnded())
         {
             _audio.stop();
-            int current = _playlistView->playingIndex();
-            int count = _playlistView->trackCount();
+            int current = _playQueueView->playingIndex();
+            int count = _playQueueView->trackCount();
             if (current >= 0)
             {
                 if (_repeatMode == RepeatMode::One)
@@ -328,7 +299,7 @@ namespace vtplayer
                 }
                 else
                 {
-                    _playlistView->setPlayingIndex(-1);
+                    _playQueueView->setPlayingIndex(-1);
                 }
             }
         }
@@ -382,7 +353,7 @@ namespace vtplayer
     void Application::drawBrowserScreen()
     {
         _fileBrowser->draw(*_rootWindow);
-        _playlistView->draw(*_rootWindow);
+        _playQueueView->draw(*_rootWindow);
 
         // Draw vertical separator between panels
         int sepX = _fileBrowser->rect().width;
@@ -415,23 +386,22 @@ namespace vtplayer
             {"  N / P",                 "Next / Previous track", false},
             {"  < / >",                 "Seek -5s / +5s", false},
             {"  R",                     "Cycle repeat: none -> all -> one", false},
-            {"  S",                     "Shuffle playlist", false},
+            {"  S",                     "Shuffle play queue", false},
             {"  G",                     "Toggle auto-gain", false},
             {"", "", false},
             {"Browser", "", true},
-            {"  Tab",                   "Switch focus (browser <-> playlist)", false},
-            {"  Enter",                 "Replace playlist with selection and play", false},
-            {"  Shift+Enter",           "Append selection to playlist", false},
-            {"  A",                     "Add selected file to playlist", false},
+            {"  Tab",                   "Switch focus (browser <-> play queue)", false},
+            {"  Enter",                 "Replace play queue with selection and play", false},
+            {"  Shift+Enter",           "Append selection to play queue", false},
+            {"  A",                     "Add selected file (or every audio file in selected dir) to play queue", false},
             {"  Backspace",             "Go up to parent directory", false},
             {"  F5",                    "Refresh listing", false},
             {"", "", false},
-            {"Playlist", "", true},
+            {"Play Queue", "", true},
             {"  Enter",                 "Play selected track", false},
             {"  Del / D / Backspace",   "Remove selection", false},
             {"  Ctrl+Up / Ctrl+Down",   "Move selected track", false},
             {"  Ctrl+A",                "Select all", false},
-            {"  Ctrl+S",                "Save current playlist", false},
             {"", "", false},
             {"Visualizer", "", true},
             {"  V",                     "Toggle visualizer screen", false},
@@ -481,7 +451,7 @@ namespace vtplayer
         ventty::Style bgStyle{_theme.foreground, _theme.background};
         _rootWindow->fill(0, top, w, bottom - top + 1, U' ', bgStyle);
 
-        // Side borders matching the browser/playlist box so the surrounding
+        // Side borders matching the browser/play-queue box so the surrounding
         // frame stays continuous when help replaces the content panels.
         ventty::Style borderStyle{_theme.border, _theme.background};
         for (int y = top; y <= bottom; ++y)
@@ -641,7 +611,7 @@ namespace vtplayer
             }
             else
             {
-                _playlistView->handleKey(event);
+                _playQueueView->handleKey(event);
             }
         }
     }
@@ -664,7 +634,7 @@ namespace vtplayer
         if (_screen == Screen::Browser)
         {
             auto const &browserRect = _fileBrowser->rect();
-            auto const &playlistRect = _playlistView->rect();
+            auto const &playQueueRect = _playQueueView->rect();
 
             // Click to switch focus
             if (event.button == Button::Left && event.action == Action::Press)
@@ -675,16 +645,16 @@ namespace vtplayer
                     {
                         _focus = FocusPanel::FileBrowser;
                         _fileBrowser->setFocused(true);
-                        _playlistView->setFocused(false);
+                        _playQueueView->setFocused(false);
                     }
                 }
-                else if (playlistRect.contains(event.x, event.y))
+                else if (playQueueRect.contains(event.x, event.y))
                 {
-                    if (_focus != FocusPanel::Playlist)
+                    if (_focus != FocusPanel::PlayQueue)
                     {
-                        _focus = FocusPanel::Playlist;
+                        _focus = FocusPanel::PlayQueue;
                         _fileBrowser->setFocused(false);
-                        _playlistView->setFocused(true);
+                        _playQueueView->setFocused(true);
                     }
                 }
             }
@@ -694,9 +664,9 @@ namespace vtplayer
             {
                 _fileBrowser->handleMouse(event);
             }
-            else if (_playlistView->rect().contains(event.x, event.y))
+            else if (_playQueueView->rect().contains(event.x, event.y))
             {
-                _playlistView->handleMouse(event);
+                _playQueueView->handleMouse(event);
             }
         }
     }
@@ -741,19 +711,19 @@ namespace vtplayer
         {
             if (_focus == FocusPanel::FileBrowser)
             {
-                // Only switch to playlist if it's not empty
-                if (!_playlistView->empty())
+                // Only switch to play queue if it's not empty
+                if (!_playQueueView->empty())
                 {
-                    _focus = FocusPanel::Playlist;
+                    _focus = FocusPanel::PlayQueue;
                     _fileBrowser->setFocused(false);
-                    _playlistView->setFocused(true);
+                    _playQueueView->setFocused(true);
                 }
             }
             else
             {
                 _focus = FocusPanel::FileBrowser;
                 _fileBrowser->setFocused(true);
-                _playlistView->setFocused(false);
+                _playQueueView->setFocused(false);
             }
             return;
         }
@@ -770,10 +740,10 @@ namespace vtplayer
             {
                 _audio.play();
             }
-            else if (!_playlistView->empty())
+            else if (!_playQueueView->empty())
             {
                 // Start playing selected or first track
-                int idx = _playlistView->selectedIndex();
+                int idx = _playQueueView->selectedIndex();
                 playTrack(idx);
             }
             return;
@@ -791,10 +761,10 @@ namespace vtplayer
             return;
         }
 
-        // s: shuffle current playlist (one-shot reorder)
+        // s: shuffle current play queue (one-shot reorder)
         if (event.key == Key::Char && (ch == 's' || ch == 'S') && !event.alt && !event.ctrl)
         {
-            _playlistView->shuffle();
+            _playQueueView->shuffle();
             return;
         }
 
@@ -833,26 +803,33 @@ namespace vtplayer
             return;
         }
 
-        // a: add selected file to playlist
+        // a: add selected file (or every audio file in the selected directory) to play queue
         if (event.key == Key::Char && (ch == 'a' || ch == 'A') && !event.alt && !event.ctrl && _screen == Screen::Browser)
         {
             auto const *entry = _fileBrowser->selectedEntry();
             if (entry && entry->isAudio)
             {
-                addToPlaylist(entry->path);
+                addToPlayQueue(entry->path);
+            }
+            else if (entry && entry->isDirectory)
+            {
+                for (auto const & p : _fileBrowser->collectAudioFiles(entry->path))
+                {
+                    addToPlayQueue(p);
+                }
             }
             return;
         }
 
-        // Ctrl+Up/Down: move playlist item
+        // Ctrl+Up/Down: move play-queue item
         if (event.ctrl && event.key == Key::Up)
         {
-            _playlistView->moveSelectedUp();
+            _playQueueView->moveSelectedUp();
             return;
         }
         if (event.ctrl && event.key == Key::Down)
         {
-            _playlistView->moveSelectedDown();
+            _playQueueView->moveSelectedDown();
             return;
         }
 
@@ -864,12 +841,6 @@ namespace vtplayer
             return;
         }
 
-        // Ctrl+S: save current playlist
-        if (event.ctrl && event.key == Key::Char && (ch == 's' || ch == 'S' || ch == 19))
-        {
-            saveCurrentPlaylist();
-            return;
-        }
     }
 
     void Application::openContextMenu()
@@ -911,27 +882,19 @@ namespace vtplayer
 
     void Application::onContextMenuSelect(int index)
     {
-        // Menu order (Exit is always last):
-        //   0 = New playlist
-        //   1 = Save playlist
-        //   2 = Set current directory as start directory
-        //   3 = Exit
+        // Menu order:
+        //   0 = Set current directory as start directory
+        //   1 = Exit
         switch (index)
         {
         case 0:
-            newPlaylist();
-            break;
-        case 1:
-            saveCurrentPlaylist();
-            break;
-        case 2:
             if (_fileBrowser)
             {
                 _config.startDirectory = _fileBrowser->currentDirectory();
                 _config.save();
             }
             break;
-        case 3:
+        case 1:
             quit();
             break;
         default:
@@ -942,7 +905,7 @@ namespace vtplayer
 
     void Application::playTrack(int index)
     {
-        auto const *track = _playlistView->track(index);
+        auto const *track = _playQueueView->track(index);
         if (!track)
             return;
 
@@ -950,18 +913,18 @@ namespace vtplayer
         if (_audio.load(track->path))
         {
             _audio.play();
-            _playlistView->setPlayingIndex(index);
+            _playQueueView->setPlayingIndex(index);
         }
         else
         {
-            _playlistView->setPlayingIndex(-1);
+            _playQueueView->setPlayingIndex(-1);
         }
     }
 
     void Application::playNext()
     {
-        int current = _playlistView->playingIndex();
-        int count = _playlistView->trackCount();
+        int current = _playQueueView->playingIndex();
+        int count = _playQueueView->trackCount();
         if (count == 0)
             return;
 
@@ -971,8 +934,8 @@ namespace vtplayer
 
     void Application::playPrev()
     {
-        int current = _playlistView->playingIndex();
-        int count = _playlistView->trackCount();
+        int current = _playQueueView->playingIndex();
+        int count = _playQueueView->trackCount();
         if (count == 0)
             return;
 
@@ -980,7 +943,7 @@ namespace vtplayer
         playTrack(prev);
     }
 
-    void Application::addToPlaylist(std::filesystem::path const &path)
+    void Application::addToPlayQueue(std::filesystem::path const &path)
     {
         TrackInfo info;
         info.path = path;
@@ -989,7 +952,7 @@ namespace vtplayer
 
         // Try to get duration by briefly loading
         // For now just add with unknown duration
-        _playlistView->addTrack(info);
+        _playQueueView->addTrack(info);
     }
 
     void Application::activateFromBrowser(std::vector<std::filesystem::path> const &paths, bool quietAppend)
@@ -1007,80 +970,33 @@ namespace vtplayer
 
         if (quietAppend)
         {
-            // Shift+Enter: append to the end of the playlist without disturbing
+            // Shift+Enter: append to the end of the play queue without disturbing
             // current playback.
-            for (auto const &p : paths) _playlistView->addTrack(buildInfo(p));
+            for (auto const &p : paths) _playQueueView->addTrack(buildInfo(p));
             return;
         }
 
-        // Enter: replace the current playlist with the selected files and play
+        // Enter: replace the current play queue with the selected files and play
         // the first newly-added track. setTracks fires onPlayingRemoved which
         // stops audio if a track was playing.
         std::vector<TrackInfo> newTracks;
         newTracks.reserve(paths.size());
         for (auto const &p : paths) newTracks.push_back(buildInfo(p));
-        _playlistView->setTracks(std::move(newTracks));
+        _playQueueView->setTracks(std::move(newTracks));
         playTrack(0);
     }
 
-    void Application::openPlaylist(std::filesystem::path const &path)
+    void Application::appendPlayQueueFile(std::filesystem::path const &path)
     {
-        // Persist any pending edits in the outgoing playlist before switching.
-        if (!_currentPlaylist.path().empty() && _playlistView)
+        if (!_playQueueView) return;
+
+        auto loaded = PlayQueue::load(path);
+        if (!loaded) return;
+
+        for (auto const &track : loaded->tracks())
         {
-            _currentPlaylist.setTracks(_playlistView->tracks());
-            _currentPlaylist.save();
+            _playQueueView->addTrack(track);
         }
-
-        _audio.stop();
-        if (_playlistView) _playlistView->setPlayingIndex(-1);
-
-        auto loaded = Playlist::load(path);
-        if (!loaded)
-        {
-            return;
-        }
-
-        _currentPlaylist = std::move(*loaded);
-        _playlistView->setTracks(_currentPlaylist.tracks());
-        _playlistView->setCurrentPlaylistName(_currentPlaylist.name());
-
-        _config.playlistCurrentPath = _currentPlaylist.path();
-        _config.save();
-    }
-
-    void Application::newPlaylist()
-    {
-        // Save the outgoing playlist's edits first.
-        if (!_currentPlaylist.path().empty() && _playlistView)
-        {
-            _currentPlaylist.setTracks(_playlistView->tracks());
-            _currentPlaylist.save();
-        }
-
-        _audio.stop();
-        if (_playlistView) _playlistView->setPlayingIndex(-1);
-
-        auto path = PlaylistRepository::newUntitledPath();
-        _currentPlaylist = Playlist(path);
-        _currentPlaylist.save();  // materialize the empty file on disk
-
-        if (_playlistView)
-        {
-            _playlistView->setTracks({});
-            _playlistView->setCurrentPlaylistName(_currentPlaylist.name());
-        }
-
-        _config.playlistCurrentPath = _currentPlaylist.path();
-        _config.save();
-    }
-
-    void Application::saveCurrentPlaylist()
-    {
-        if (_currentPlaylist.path().empty() || !_playlistView) return;
-
-        _currentPlaylist.setTracks(_playlistView->tracks());
-        _currentPlaylist.save();
     }
 
 } // namespace vtplayer

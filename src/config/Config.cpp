@@ -163,20 +163,6 @@ void Config::applyValues(std::unordered_map<std::string, std::string> const & va
     {
         extensions = *v;
     }
-    if (auto * v = get("playlist.current_path"))
-    {
-        std::string dir = *v;
-        if (!dir.empty() && dir[0] == '~')
-        {
-            char const * home = std::getenv("HOME");
-            if (home)
-            {
-                dir = std::string(home) + dir.substr(1);
-            }
-        }
-        playlistCurrentPath = dir;
-    }
-
     // Collect all theme.* keys
     for (auto const & [key, value] : values)
     {
@@ -227,10 +213,7 @@ std::string Config::serializeIni() const
     out << "index = " << visualizerIndex << "\n\n";
 
     out << "[formats]\n";
-    out << "extensions = " << extensions << "\n\n";
-
-    out << "[playlist]\n";
-    out << "current_path = " << playlistCurrentPath.string() << "\n";
+    out << "extensions = " << extensions << "\n";
 
     if (!themeColors.empty())
     {

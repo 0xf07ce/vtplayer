@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Leon J. Lee
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
-#include "PlaylistView.h"
+#include "PlayQueueView.h"
 
 #include "../util/UnicodeNormalize.h"
 
@@ -16,12 +16,12 @@ namespace vtplayer
 
 using Key = ventty::KeyEvent::Key;
 
-void PlaylistView::addTrack(TrackInfo const & track)
+void PlayQueueView::addTrack(TrackInfo const & track)
 {
     _tracks.push_back(track);
 }
 
-void PlaylistView::insertTrack(int idx, TrackInfo const & track)
+void PlayQueueView::insertTrack(int idx, TrackInfo const & track)
 {
     if (idx < 0) idx = 0;
     if (idx > static_cast<int>(_tracks.size())) idx = static_cast<int>(_tracks.size());
@@ -31,7 +31,7 @@ void PlaylistView::insertTrack(int idx, TrackInfo const & track)
     clearMultiSelection();
 }
 
-void PlaylistView::removeSelected()
+void PlayQueueView::removeSelected()
 {
     if (_tracks.empty()) return;
 
@@ -74,7 +74,7 @@ void PlaylistView::removeSelected()
     }
 }
 
-void PlaylistView::moveSelectedUp()
+void PlayQueueView::moveSelectedUp()
 {
     if (_selectedIndex <= 0 || _selectedIndex >= static_cast<int>(_tracks.size()))
     {
@@ -90,7 +90,7 @@ void PlaylistView::moveSelectedUp()
     scrollToSelected();
 }
 
-void PlaylistView::moveSelectedDown()
+void PlayQueueView::moveSelectedDown()
 {
     if (_selectedIndex < 0 || _selectedIndex >= static_cast<int>(_tracks.size()) - 1)
     {
@@ -106,7 +106,7 @@ void PlaylistView::moveSelectedDown()
     scrollToSelected();
 }
 
-void PlaylistView::clear()
+void PlayQueueView::clear()
 {
     bool const hadPlaying = (_playingIndex >= 0);
     _tracks.clear();
@@ -120,7 +120,7 @@ void PlaylistView::clear()
     }
 }
 
-void PlaylistView::shuffle()
+void PlayQueueView::shuffle()
 {
     if (_tracks.size() < 2) return;
 
@@ -151,7 +151,7 @@ void PlaylistView::shuffle()
     scrollToSelected();
 }
 
-void PlaylistView::setTracks(std::vector<TrackInfo> tracks)
+void PlayQueueView::setTracks(std::vector<TrackInfo> tracks)
 {
     bool const hadPlaying = (_playingIndex >= 0);
     _tracks = std::move(tracks);
@@ -165,13 +165,13 @@ void PlaylistView::setTracks(std::vector<TrackInfo> tracks)
     }
 }
 
-void PlaylistView::clearMultiSelection()
+void PlayQueueView::clearMultiSelection()
 {
     _multiSelected.clear();
     _selectionAnchor = -1;
 }
 
-void PlaylistView::selectAll()
+void PlayQueueView::selectAll()
 {
     _multiSelected.clear();
     for (int i = 0; i < static_cast<int>(_tracks.size()); ++i)
@@ -181,7 +181,7 @@ void PlaylistView::selectAll()
     _selectionAnchor = _selectedIndex;
 }
 
-void PlaylistView::extendSelectionTo(int newIndex)
+void PlayQueueView::extendSelectionTo(int newIndex)
 {
     if (_selectionAnchor < 0) _selectionAnchor = _selectedIndex;
     int const lo = std::min(_selectionAnchor, newIndex);
@@ -190,7 +190,7 @@ void PlaylistView::extendSelectionTo(int newIndex)
     for (int i = lo; i <= hi; ++i) _multiSelected.insert(i);
 }
 
-void PlaylistView::onFocusChanged()
+void PlayQueueView::onFocusChanged()
 {
     if (!isFocused())
     {
@@ -198,13 +198,13 @@ void PlaylistView::onFocusChanged()
     }
 }
 
-void PlaylistView::setSelectedIndex(int idx)
+void PlayQueueView::setSelectedIndex(int idx)
 {
     _selectedIndex = std::clamp(idx, 0, std::max(0, static_cast<int>(_tracks.size()) - 1));
     scrollToSelected();
 }
 
-TrackInfo const * PlaylistView::selectedTrack() const
+TrackInfo const * PlayQueueView::selectedTrack() const
 {
     if (_selectedIndex >= 0 && _selectedIndex < static_cast<int>(_tracks.size()))
     {
@@ -213,7 +213,7 @@ TrackInfo const * PlaylistView::selectedTrack() const
     return nullptr;
 }
 
-TrackInfo const * PlaylistView::track(int idx) const
+TrackInfo const * PlayQueueView::track(int idx) const
 {
     if (idx >= 0 && idx < static_cast<int>(_tracks.size()))
     {
@@ -236,7 +236,7 @@ static std::string formatDuration(float seconds)
     return buf;
 }
 
-void PlaylistView::draw(ventty::Window & window)
+void PlayQueueView::draw(ventty::Window & window)
 {
     auto const & r = rect();
 
@@ -244,18 +244,14 @@ void PlaylistView::draw(ventty::Window & window)
     for (int y = 0; y < r.height; ++y)
     {
         window.putChar(r.x + r.width - 1, r.y + y, ventty::DOUBLE_BOX.v,
-                       ventty::Style{_theme.border, _theme.playlistBg});
+                       ventty::Style{_theme.border, _theme.playQueueBg});
     }
 
     // Header
-    ventty::Style headerStyle{_theme.playlistHeaderFg, _theme.playlistBg, ventty::Attr::Bold};
+    ventty::Style headerStyle{_theme.playQueueHeaderFg, _theme.playQueueBg, ventty::Attr::Bold};
     window.fill(r.x, r.y, r.width - 1, 1, U' ', headerStyle);
 
-    std::string header = " Playlist";
-    if (!_playlistName.empty())
-    {
-        header += ": " + _playlistName;
-    }
+    std::string header = " Play Queue";
     if (!_tracks.empty())
     {
         header += " (" + std::to_string(_tracks.size()) + ")";
@@ -264,7 +260,7 @@ void PlaylistView::draw(ventty::Window & window)
     window.drawText(r.x, r.y, header, headerStyle);
 
     // Separator
-    ventty::Style sepStyle{_theme.border, _theme.playlistBg};
+    ventty::Style sepStyle{_theme.border, _theme.playQueueBg};
     for (int x = r.x; x < r.x + r.width - 1; ++x)
     {
         window.putChar(x, r.y + 1, ventty::HR_THIN, sepStyle);
@@ -282,7 +278,7 @@ void PlaylistView::draw(ventty::Window & window)
         if (idx >= static_cast<int>(_tracks.size()))
         {
             window.fill(r.x, y, r.width - 1, 1, U' ',
-                        ventty::Style{_theme.playlistFg, _theme.playlistBg});
+                        ventty::Style{_theme.playQueueFg, _theme.playQueueBg});
             continue;
         }
 
@@ -292,22 +288,22 @@ void PlaylistView::draw(ventty::Window & window)
         bool const playing = (idx == _playingIndex);
 
         Color fg;
-        Color bg = (cursor || multi) ? _theme.playlistSelBg : _theme.playlistBg;
+        Color bg = (cursor || multi) ? _theme.playQueueSelBg : _theme.playQueueBg;
         if (cursor)
         {
-            fg = _theme.playlistSelFg;
+            fg = _theme.playQueueSelFg;
         }
         else if (multi)
         {
-            fg = _theme.playlistFg;
+            fg = _theme.playQueueFg;
         }
         else if (playing)
         {
-            fg = _theme.playlistPlayingFg;
+            fg = _theme.playQueuePlayingFg;
         }
         else
         {
-            fg = _theme.playlistFg;
+            fg = _theme.playQueueFg;
         }
 
         ventty::Style style{fg, bg};
@@ -319,7 +315,7 @@ void PlaylistView::draw(ventty::Window & window)
         // with the "%2d." format used for non-playing rows.
         if (playing)
         {
-            Color arrowFg = cursor ? _theme.playlistSelFg : _theme.playlistPlayingFg;
+            Color arrowFg = cursor ? _theme.playQueueSelFg : _theme.playQueuePlayingFg;
             window.drawText(r.x + 1, y, " \xE2\x96\xB6 ", // " ▶ "
                             ventty::Style{arrowFg, bg});
         }
@@ -327,7 +323,7 @@ void PlaylistView::draw(ventty::Window & window)
         {
             char numBuf[8];
             std::snprintf(numBuf, sizeof(numBuf), "%2d.", idx + 1);
-            ventty::Style indexStyle{cursor ? fg : _theme.playlistIndexFg, bg};
+            ventty::Style indexStyle{cursor ? fg : _theme.playQueueIndexFg, bg};
             window.drawText(r.x + 1, y, numBuf, indexStyle);
         }
 
@@ -340,12 +336,12 @@ void PlaylistView::draw(ventty::Window & window)
         // Duration (right-aligned)
         std::string dur = formatDuration(track.duration);
         int durX = r.x + r.width - 2 - static_cast<int>(dur.size());
-        ventty::Style durStyle{cursor ? fg : _theme.playlistDurationFg, bg};
+        ventty::Style durStyle{cursor ? fg : _theme.playQueueDurationFg, bg};
         window.drawText(durX, y, dur, durStyle);
     }
 }
 
-bool PlaylistView::handleKey(ventty::KeyEvent const & event)
+bool PlayQueueView::handleKey(ventty::KeyEvent const & event)
 {
     // Ctrl+A: select all tracks.
     if (event.key == Key::Char && event.ctrl &&
@@ -462,7 +458,7 @@ bool PlaylistView::handleKey(ventty::KeyEvent const & event)
     return false;
 }
 
-bool PlaylistView::handleMouse(ventty::MouseEvent const & event)
+bool PlayQueueView::handleMouse(ventty::MouseEvent const & event)
 {
     auto const & r = rect();
     if (!r.contains(event.x, event.y))
@@ -521,7 +517,7 @@ bool PlaylistView::handleMouse(ventty::MouseEvent const & event)
     return false;
 }
 
-void PlaylistView::scrollToSelected()
+void PlayQueueView::scrollToSelected()
 {
     int listH = rect().height - 2;
     if (listH <= 0) return;

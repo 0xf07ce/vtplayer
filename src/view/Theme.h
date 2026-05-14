@@ -36,15 +36,15 @@ namespace vtplayer
         Color browserSelFg{0xE0, 0xD8, 0xEC};
         Color browserHeaderFg{0x8B, 0x5C, 0x8B};
 
-        // Playlist
-        Color playlistBg{0x12, 0x10, 0x1A};
-        Color playlistFg{0xB0, 0xA8, 0xC0};
-        Color playlistSelBg{0x2A, 0x22, 0x35};
-        Color playlistSelFg{0xE0, 0xD8, 0xEC};
-        Color playlistPlayingFg{0xA0, 0x88, 0xB0};
-        Color playlistIndexFg{0x3A, 0x32, 0x45};
-        Color playlistDurationFg{0x3A, 0x32, 0x45};
-        Color playlistHeaderFg{0x8B, 0x5C, 0x8B};
+        // Play queue
+        Color playQueueBg{0x12, 0x10, 0x1A};
+        Color playQueueFg{0xB0, 0xA8, 0xC0};
+        Color playQueueSelBg{0x2A, 0x22, 0x35};
+        Color playQueueSelFg{0xE0, 0xD8, 0xEC};
+        Color playQueuePlayingFg{0xA0, 0x88, 0xB0};
+        Color playQueueIndexFg{0x3A, 0x32, 0x45};
+        Color playQueueDurationFg{0x3A, 0x32, 0x45};
+        Color playQueueHeaderFg{0x8B, 0x5C, 0x8B};
 
         // Transport bar
         Color transportBg{0x12, 0x10, 0x1A};
@@ -112,15 +112,15 @@ namespace vtplayer
             set("browser_sel_fg", browserSelFg);
             set("browser_header_fg", browserHeaderFg);
 
-            // Playlist
-            set("playlist_bg", playlistBg);
-            set("playlist_fg", playlistFg);
-            set("playlist_sel_bg", playlistSelBg);
-            set("playlist_sel_fg", playlistSelFg);
-            set("playlist_playing_fg", playlistPlayingFg);
-            set("playlist_index_fg", playlistIndexFg);
-            set("playlist_duration_fg", playlistDurationFg);
-            set("playlist_header_fg", playlistHeaderFg);
+            // Play queue
+            set("play_queue_bg", playQueueBg);
+            set("play_queue_fg", playQueueFg);
+            set("play_queue_sel_bg", playQueueSelBg);
+            set("play_queue_sel_fg", playQueueSelFg);
+            set("play_queue_playing_fg", playQueuePlayingFg);
+            set("play_queue_index_fg", playQueueIndexFg);
+            set("play_queue_duration_fg", playQueueDurationFg);
+            set("play_queue_header_fg", playQueueHeaderFg);
 
             // Transport
             set("transport_bg", transportBg);

@@ -107,11 +107,11 @@ void ContextMenu::draw(ventty::Window & window)
     if (x < 0) x = 0;
     if (y < 0) y = 0;
 
-    ventty::Style bgStyle{_theme.playlistFg, _theme.playlistBg};
-    ventty::Style borderStyle{_theme.border, _theme.playlistBg};
-    ventty::Style titleStyle{_theme.headerTitleFg, _theme.playlistBg};
-    ventty::Style itemStyle{_theme.playlistFg, _theme.playlistBg};
-    ventty::Style selStyle{_theme.playlistSelFg, _theme.playlistSelBg};
+    ventty::Style bgStyle{_theme.playQueueFg, _theme.playQueueBg};
+    ventty::Style borderStyle{_theme.border, _theme.playQueueBg};
+    ventty::Style titleStyle{_theme.headerTitleFg, _theme.playQueueBg};
+    ventty::Style itemStyle{_theme.playQueueFg, _theme.playQueueBg};
+    ventty::Style selStyle{_theme.playQueueSelFg, _theme.playQueueSelBg};
 
     // Opaque background
     window.fill(x, y, boxW, boxH, U' ', bgStyle);

@@ -47,16 +47,14 @@ void TransportBar::draw(ventty::Window & window)
 
     // Repeat-mode indicator. The play/pause/stop state is conveyed by the
     // play-time on the right, so this slot is reused for the repeat mode:
-    //   R = repeat-all, r = repeat-1, . = no repeat.
-    char repeatGlyph = '.';
-    switch (_repeatMode)
+    //   R = repeat-all, r = repeat-1. When no repeat, leave the existing
+    //   double-line border glyph untouched so the slot blends in.
+    if (_repeatMode != RepeatMode::None)
     {
-    case RepeatMode::All: repeatGlyph = 'R'; break;
-    case RepeatMode::One: repeatGlyph = 'r'; break;
-    case RepeatMode::None: repeatGlyph = '.'; break;
+        char repeatGlyph = (_repeatMode == RepeatMode::One) ? 'r' : 'R';
+        window.drawText(cx, y1, std::string(1, repeatGlyph),
+                        ventty::Style{_theme.transportStateFg, _theme.transportBg});
     }
-    window.drawText(cx, y1, std::string(1, repeatGlyph),
-                    ventty::Style{_theme.transportStateFg, _theme.transportBg});
     cx += 2;
 
     // Track name (display-width truncation; advance cx by display width, not byte size)

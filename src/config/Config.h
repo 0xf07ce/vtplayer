@@ -27,9 +27,6 @@ struct Config
     // [formats]
     std::string extensions = "mp3,wav,ogg,flac";
 
-    // [playlist]
-    std::filesystem::path playlistCurrentPath;  ///< absolute path to the playlist file to load on startup
-
     // [theme] — color overrides as "#RRGGBB" hex strings
     std::unordered_map<std::string, std::string> themeColors;
 
