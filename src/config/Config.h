@@ -14,7 +14,7 @@ struct Config
 {
     // [audio]
     float volume = 1.0f;
-    bool autoGain = false;  ///< runtime RMS-based loudness normalization
+    bool gainNorm = false;  ///< master switch: prefer ReplayGain tag, fall back to runtime RMS
 
     // [ui]
     std::filesystem::path startDirectory;

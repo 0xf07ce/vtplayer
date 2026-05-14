@@ -8,6 +8,8 @@ add_executable(vtplayer
     # audio
     audio/AudioEngine.h
     audio/AudioEngine.cpp
+    audio/ReplayGain.h
+    audio/ReplayGain.cpp
     audio/TrackInfo.h
     audio/RingBuffer.h
     audio/Fft.h
@@ -37,6 +39,8 @@ add_executable(vtplayer
     visualizer/MatrixRain.cpp
     visualizer/DebugBars.h
     visualizer/DebugBars.cpp
+    visualizer/TagInfoView.h
+    visualizer/TagInfoView.cpp
 
     # config
     config/Config.h

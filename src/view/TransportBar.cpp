@@ -70,8 +70,8 @@ void TransportBar::draw(ventty::Window & window)
 
     // Progress bar
     int timeLen = 13; // " MM:SS/MM:SS "
-    int agLen = _autoGainEnabled ? 11 : 0; // " AG:+99.9 "
-    int progressW = r.width - cx - timeLen - agLen - 2;
+    int gainLen = _gainNormEnabled ? 11 : 0; // " RG:+99.9 " / " AG:+99.9 "
+    int progressW = r.width - cx - timeLen - gainLen - 2;
     if (progressW > 4)
     {
         _progressX = cx;
@@ -90,12 +90,16 @@ void TransportBar::draw(ventty::Window & window)
                     ventty::Style{_theme.transportTimeFg, _theme.transportBg});
     cx += static_cast<int>(timeStr.size());
 
-    // Auto-gain indicator (only when enabled)
-    if (_autoGainEnabled)
+    // Gain-normalization indicator (only when enabled).
+    // Label shows which source is driving the current gain: RG (ReplayGain
+    // tag) or AG (runtime auto-gain). Source is set by AudioEngine on load().
+    if (_gainNormEnabled)
     {
-        char agBuf[16];
-        std::snprintf(agBuf, sizeof(agBuf), " AG:%+5.1f ", _autoGainDb);
-        window.drawText(cx, y1, agBuf,
+        char const * label =
+            (_gainSource == GainSource::ReplayGain) ? "RG" : "AG";
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), " %s:%+5.1f ", label, _gainDb);
+        window.drawText(cx, y1, buf,
                         ventty::Style{_theme.transportStateFg, _theme.transportBg});
     }
 }

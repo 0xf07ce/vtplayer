@@ -8,6 +8,7 @@
 #include "../visualizer/DebugBars.h"
 #include "../visualizer/MatrixRain.h"
 #include "../visualizer/Oscilloscope.h"
+#include "../visualizer/TagInfoView.h"
 
 #ifdef VTPLAYER_BUILD_BUNDLE
 #include <ventty/ventty_gfx.h>
@@ -133,7 +134,7 @@ namespace vtplayer
 
         _audio.init();
         _audio.setVolume(1.0f);
-        _audio.setAutoGain(_config.autoGain);
+        _audio.setGainNorm(_config.gainNorm);
 
         // Init terminal
         initTerminal();
@@ -221,7 +222,7 @@ namespace vtplayer
     void Application::cleanup()
     {
         // Sync runtime-mutable settings back before persisting.
-        _config.autoGain = _audio.autoGainEnabled();
+        _config.gainNorm = _audio.gainNormEnabled();
         _config.visualizerIndex = _visualizerIndex;
         _config.save();
 
@@ -310,7 +311,7 @@ namespace vtplayer
         _transportBar->setTrackName(_audio.currentTrack().title);
         _transportBar->setPosition(_audio.position());
         _transportBar->setDuration(_audio.duration());
-        _transportBar->setAutoGain(_audio.autoGainEnabled(), _audio.autoGainDb());
+        _transportBar->setGainNorm(_audio.gainNormEnabled(), _audio.gainNormDb(), _audio.gainSource());
 
         // Update visualizer
         if (_screen == Screen::Visualizer)
@@ -387,7 +388,7 @@ namespace vtplayer
             {"  < / >",                 "Seek -5s / +5s", false},
             {"  R",                     "Cycle repeat: none -> all -> one", false},
             {"  S",                     "Shuffle play queue", false},
-            {"  G",                     "Toggle auto-gain", false},
+            {"  G",                     "Toggle gain normalization (ReplayGain / auto-gain)", false},
             {"", "", false},
             {"Browser", "", true},
             {"  Tab",                   "Switch focus (browser <-> play queue)", false},
@@ -408,6 +409,8 @@ namespace vtplayer
             {"  0",                     "Oscilloscope", false},
             {"  1",                     "Spectrum analyzer", false},
             {"  2",                     "Matrix rain", false},
+            {"  3",                     "Debug bars", false},
+            {"  4",                     "Tag info (Up/Down/PgUp/PgDn/Home/End/wheel scroll)", false},
             {"", "", false},
             {"Misc", "", true},
             {"  H / Up / Down / PgUp / PgDn", "Show / scroll this help", false},
@@ -669,6 +672,20 @@ namespace vtplayer
                 _playQueueView->handleMouse(event);
             }
         }
+        else if (_screen == Screen::Visualizer && _visualizerView
+                 && event.action == Action::Press)
+        {
+            // One wheel tick → 3 lines; matches typical terminal scroll feel.
+            constexpr int kWheelStep = 3;
+            if (event.button == Button::ScrollUp)
+            {
+                _visualizerView->scrollBy(-kWheelStep);
+            }
+            else if (event.button == Button::ScrollDown)
+            {
+                _visualizerView->scrollBy(+kWheelStep);
+            }
+        }
     }
 
     void Application::handleGlobalKeys(ventty::KeyEvent const &event)
@@ -704,6 +721,20 @@ namespace vtplayer
         {
             setVisualizerByIndex(static_cast<int>(ch - '0'));
             return;
+        }
+
+        // Vertical scroll for the active visualizer (TagInfoView etc.).
+        // Audio-reactive visualizers ignore these via the base class no-op.
+        if (_screen == Screen::Visualizer && _visualizerView && !event.ctrl && !event.alt)
+        {
+            constexpr int kPage = 8;
+            constexpr int kHomeEnd = 1 << 20;
+            if (event.key == Key::Up        && _visualizerView->scrollBy(-1))         return;
+            if (event.key == Key::Down      && _visualizerView->scrollBy(+1))         return;
+            if (event.key == Key::PageUp    && _visualizerView->scrollBy(-kPage))     return;
+            if (event.key == Key::PageDown  && _visualizerView->scrollBy(+kPage))     return;
+            if (event.key == Key::Home      && _visualizerView->scrollBy(-kHomeEnd))  return;
+            if (event.key == Key::End       && _visualizerView->scrollBy(+kHomeEnd))  return;
         }
 
         // Tab: switch focus between panels (browser screen only)
@@ -796,10 +827,10 @@ namespace vtplayer
             return;
         }
 
-        // g: toggle auto-gain (runtime loudness normalization)
+        // g: toggle gain normalization (ReplayGain tag → auto-gain fallback)
         if (event.key == Key::Char && (ch == 'g' || ch == 'G') && !event.alt && !event.ctrl)
         {
-            _audio.setAutoGain(!_audio.autoGainEnabled());
+            _audio.setGainNorm(!_audio.gainNormEnabled());
             return;
         }
 
@@ -870,8 +901,11 @@ namespace vtplayer
         case 3:
             vis = std::make_unique<DebugBars>();
             break;
+        case 4:
+            vis = std::make_unique<TagInfoView>();
+            break;
         default:
-            // Slots 4-9 reserved; ignore until implemented.
+            // Slots 5-9 reserved; ignore until implemented.
             return;
         }
 

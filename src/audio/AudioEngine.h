@@ -25,6 +25,14 @@ enum class PlayState
     Paused,
 };
 
+/// Source of the current gain-normalization value applied to playback.
+enum class GainSource
+{
+    None,        ///< No gain normalization (or no track loaded).
+    Auto,        ///< RMS-based runtime estimate.
+    ReplayGain,  ///< Static value from REPLAYGAIN_TRACK_GAIN tag.
+};
+
 class AudioEngine
 {
 public:
@@ -48,12 +56,15 @@ public:
     float volume() const { return _volume.load(std::memory_order_relaxed); }
     void setVolume(float v);
 
-    /// Runtime auto-gain: RMS-based loudness normalization toward -18 dBFS.
-    /// Disabled by default; no effect on file tags.
-    void setAutoGain(bool enabled);
-    bool autoGainEnabled() const { return _autoGainEnabled.load(std::memory_order_relaxed); }
-    /// Current applied auto-gain in dB (for UI display).
-    float autoGainDb() const;
+    /// Master switch for gain normalization. When enabled, the engine uses the
+    /// track's REPLAYGAIN_TRACK_GAIN tag if present, otherwise falls back to a
+    /// runtime RMS-based estimate targeted at -18 dBFS.
+    void setGainNorm(bool enabled);
+    bool gainNormEnabled() const { return _gainNormEnabled.load(std::memory_order_relaxed); }
+    /// Currently applied gain in dB (smoothed; reflects ramp).
+    float gainNormDb() const;
+    /// Which source is driving the current track's gain target.
+    GainSource gainSource() const { return _gainSource.load(std::memory_order_relaxed); }
 
     TrackInfo const & currentTrack() const { return _currentTrack; }
 
@@ -80,8 +91,11 @@ private:
     std::atomic<float> _position{0.0f};
     std::atomic<float> _duration{0.0f};
     std::atomic<float> _volume{1.0f};
-    std::atomic<bool> _autoGainEnabled{false};
-    std::atomic<float> _autoGain{1.0f}; ///< current smoothed auto-gain (linear)
+
+    std::atomic<bool> _gainNormEnabled{false};
+    std::atomic<float> _currentGain{1.0f};       ///< smoothed applied gain (linear)
+    std::atomic<float> _replayGainLinear{1.0f};  ///< static target from RG tag (1.0 if absent)
+    std::atomic<GainSource> _gainSource{GainSource::None};
 
     std::string _lastError;
     mutable std::mutex _audioMutex; ///< protects _decoder, seek

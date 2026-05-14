@@ -1,6 +1,8 @@
 # CHANGELOG
 
-## 0.3.0 (Unreleased)
+## 0.4.0 (Unreleased)
+
+## 0.3.0 (2026-05-14)
 
 - CI: release workflow builds arm64_tahoe/sequoia bottles on tag push.
 - Repeat now has three modes (none / all / one). `R` key cycles through them, and the transport bar shows the current mode on its left edge as `.` / `R` / `r`. The play/pause/stop glyph in that slot is removed — playback state is already conveyed by the time display on the right.
@@ -26,10 +28,9 @@
 
 ## 0.1.0 (2026-03-31)
 
-- Initial VTAMP release.
+- Initial vtplayer release.
 - CLI file argument for direct playback.
 - Auto-gain and configurable visualizer; dropped game-music-emu backend.
-- Renamed project from `vtamp` to `vtplayer` to avoid name collision.
 - Fixed Tab key panel switching and shortcut keys during Korean IME composition.
 - Fixed Tab switching when playlist is empty.
 - README rewritten in English; added developer documentation.
