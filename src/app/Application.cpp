@@ -5,6 +5,7 @@
 
 #include "../library/LibraryRepository.h"
 #include "../library/LibraryScanner.h"
+#include "../playqueue/PlayQueueCache.h"
 #include "../util/M3uReader.h"
 #include "../util/UnicodeNormalize.h"
 #include "../visualizer/DebugBars.h"
@@ -205,6 +206,7 @@ namespace vtplayer
             "Set current directory as start directory",
             "Set current directory as library root",
             "Rescan library",
+            "Send library to play queue",
             "Exit",
         });
         _contextMenu->setOnSelect([this](int idx) { onContextMenuSelect(idx); });
@@ -218,6 +220,16 @@ namespace vtplayer
         {
             _libraryRepo->loadInto(_library);
             scanLibrary();
+        }
+
+        // Restore the previous session's play queue (path list, resolved
+        // against the library index for full metadata).
+        {
+            auto restored = PlayQueueCache::restore(_library);
+            if (!restored.empty())
+            {
+                _playQueueView->setTracks(std::move(restored));
+            }
         }
 
         // If an initial file was provided, add it to the play queue and play
@@ -234,6 +246,13 @@ namespace vtplayer
         _config.gainNorm = _audio.gainNormEnabled();
         _config.visualizerIndex = _visualizerIndex;
         _config.save();
+
+        // Snapshot the play queue (path list only) so the next run can
+        // restore it. Failure is silent — the queue is volatile by design.
+        if (_playQueueView)
+        {
+            PlayQueueCache::save(_playQueueView->tracks());
+        }
 
         // Audio must stop before terminal restores — otherwise audio thread
         // output can corrupt the restored terminal.
@@ -922,7 +941,8 @@ namespace vtplayer
         //   0 = Set current directory as start directory
         //   1 = Set current directory as library root
         //   2 = Rescan library
-        //   3 = Exit
+        //   3 = Send library to play queue
+        //   4 = Exit
         switch (index)
         {
         case 0:
@@ -942,6 +962,9 @@ namespace vtplayer
             scanLibrary();
             break;
         case 3:
+            sendLibraryToPlayQueue();
+            break;
+        case 4:
             quit();
             break;
         default:
@@ -1082,6 +1105,13 @@ namespace vtplayer
         }
 
         scanLibrary();
+    }
+
+    void Application::sendLibraryToPlayQueue()
+    {
+        if (!_playQueueView) return;
+        if (_library.empty()) return;
+        _playQueueView->setTracks(_library.tracks());
     }
 
 } // namespace vtplayer

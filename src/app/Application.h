@@ -90,6 +90,11 @@ namespace vtplayer
         /// Re-point the library at `root`, wiping any prior index, then scan.
         void setLibraryRoot(std::filesystem::path root);
 
+        /// Replace the play queue with every track currently in the library.
+        /// Stops audio if a track was playing (PlayQueueView::setTracks fires
+        /// the onPlayingRemoved callback).
+        void sendLibraryToPlayQueue();
+
         bool _running = false;
         std::unique_ptr<ventty::TerminalBase> _terminal;
         ventty::Window *_rootWindow = nullptr;

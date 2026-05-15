@@ -57,6 +57,8 @@ add_executable(vtplayer
     # playqueue
     playqueue/PlayQueue.h
     playqueue/PlayQueue.cpp
+    playqueue/PlayQueueCache.h
+    playqueue/PlayQueueCache.cpp
 
     # util
     util/M3uReader.h
