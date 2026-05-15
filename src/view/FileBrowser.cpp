@@ -253,7 +253,11 @@ void FileBrowser::draw(ventty::Window & window)
     dirName = toNfc(dirName);
     std::string header = " " + dirName;
     header = truncateToWidth(header, r.width - 2, "...");
-    window.drawText(r.x + 1, r.y, header, headerStyle);
+    // The header names the current directory, so tint it with the same blue
+    // used for directory entries in the list below (keeps the filled
+    // header background + bold weight).
+    ventty::Style headerTextStyle{_theme.browserDirFg, _theme.browserBg, ventty::Attr::Bold};
+    window.drawText(r.x + 1, r.y, header, headerTextStyle);
 
     // Separator line
     ventty::Style sepStyle{_theme.border, _theme.browserBg};
@@ -470,7 +474,7 @@ bool FileBrowser::handleKey(ventty::KeyEvent const & event)
             {
                 paths.push_back(entry->path);
             }
-            _onActivate(paths, event.shift);
+            _onActivate(paths);
             return true;
         }
         return true;
@@ -543,7 +547,7 @@ bool FileBrowser::handleMouse(ventty::MouseEvent const & event)
                     }
                     else if (entry && entry->isAudio && _onActivate)
                     {
-                        _onActivate({entry->path}, false);
+                        _onActivate({entry->path});
                     }
                 }
                 else

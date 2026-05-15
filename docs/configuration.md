@@ -15,8 +15,9 @@ vtplayer reads settings from `~/.config/ventty-player/config.ini`.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `start_directory` | `~` | Starting directory for the file browser (`~` is expanded) |
 | `show_hidden` | `false` | Show hidden files and directories |
+
+The file browser always opens at the directory the player was launched from.
 
 ### [visualizer]
 
@@ -30,6 +31,13 @@ vtplayer reads settings from `~/.config/ventty-player/config.ini`.
 |-----|---------|-------------|
 | `extensions` | `mp3,wav,ogg,flac` | Comma-separated list of recognized audio file extensions |
 
+### [library]
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `root` | _(unset)_ | Library root directory (set via the ESC menu) |
+| `left_mode` | `album` | Left-panel mode restored on launch: `artist`, `album`, or `directory`. The transient `filebrowser` mode (F4) is never persisted. |
+
 ### [theme]
 
 Color overrides in `#RRGGBB` hex format. See `src/view/Theme.h` for all available color fields.
@@ -41,7 +49,6 @@ Color overrides in `#RRGGBB` hex format. See `src/view/Theme.h` for all availabl
 volume = 90
 
 [ui]
-start_directory = ~/Music
 show_hidden = false
 
 [visualizer]
@@ -49,6 +56,9 @@ bar_count = 64
 
 [formats]
 extensions = mp3,wav,ogg,flac
+
+[library]
+left_mode = album
 
 [theme]
 theme.primary = #61AFEF

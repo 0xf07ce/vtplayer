@@ -68,6 +68,89 @@ namespace vtplayer
         // clang-format on
     }
 
+    namespace
+    {
+        LeftMode leftModeFromConfig(std::string const &s)
+        {
+            if (s == "artist")    return LeftMode::Artist;
+            if (s == "directory") return LeftMode::Directory;
+            return LeftMode::Album; // default; "filebrowser" is never persisted
+        }
+
+        char const *leftModeToConfig(LeftMode m)
+        {
+            switch (m)
+            {
+            case LeftMode::Artist:    return "artist";
+            case LeftMode::Directory: return "directory";
+            case LeftMode::Album:     return "album";
+            // FileBrowser is transient — normalize so a fresh run starts
+            // back in the indexed library.
+            case LeftMode::FileBrowser: return "album";
+            }
+            return "album";
+        }
+
+        /// Greedy word-wrap of ASCII help text to `width` columns. Splits on
+        /// spaces; a single word longer than `width` is hard-broken. Always
+        /// returns at least one (possibly empty) line.
+        std::vector<std::string> wrapWords(std::string const &text, int width)
+        {
+            std::vector<std::string> lines;
+            if (width < 1)
+            {
+                lines.push_back(text);
+                return lines;
+            }
+
+            std::string line;
+            std::size_t i = 0;
+            while (i < text.size())
+            {
+                // Skip a run of spaces (collapse at wrap points).
+                while (i < text.size() && text[i] == ' ')
+                    ++i;
+                if (i >= text.size())
+                    break;
+
+                std::size_t end = text.find(' ', i);
+                if (end == std::string::npos)
+                    end = text.size();
+                std::string word = text.substr(i, end - i);
+                i = end;
+
+                // Hard-break a word that cannot fit on its own line.
+                while (static_cast<int>(word.size()) > width)
+                {
+                    if (!line.empty())
+                    {
+                        lines.push_back(line);
+                        line.clear();
+                    }
+                    lines.push_back(word.substr(0, width));
+                    word = word.substr(width);
+                }
+
+                if (line.empty())
+                {
+                    line = word;
+                }
+                else if (static_cast<int>(line.size() + 1 + word.size()) <= width)
+                {
+                    line += ' ';
+                    line += word;
+                }
+                else
+                {
+                    lines.push_back(line);
+                    line = word;
+                }
+            }
+            lines.push_back(line);
+            return lines;
+        }
+    } // namespace
+
     Application::Application() = default;
 
     Application::~Application()
@@ -172,9 +255,15 @@ namespace vtplayer
         _fileBrowser->setFocused(true);
         _fileBrowser->setShowHidden(_config.showHidden);
         _fileBrowser->setAllowedExtensions(_config.extensions);
-        _fileBrowser->setDirectory(_config.startDirectory);
-        _fileBrowser->setOnActivate([this](std::vector<std::filesystem::path> const &paths, bool quietAppend)
-                                    { activateFromBrowser(paths, quietAppend); });
+        {
+            // FileBrowser always opens at the directory the player was
+            // launched from (no persisted start directory anymore).
+            std::error_code ec;
+            auto cwd = std::filesystem::current_path(ec);
+            _fileBrowser->setDirectory(ec ? std::filesystem::path("/") : cwd);
+        }
+        _fileBrowser->setOnActivate([this](std::vector<std::filesystem::path> const &paths)
+                                    { activateFromBrowser(paths); });
         _fileBrowser->setOnOpenPlaylist([this](std::filesystem::path const &path)
                                         { appendPlayQueueFile(path); });
 
@@ -205,11 +294,23 @@ namespace vtplayer
         _libraryView = std::make_unique<LibraryView>();
         _libraryView->setTheme(_theme);
         _libraryView->setOnSendToQueue(sendToQueue);
-        _libraryView->setOnSearch([this] { if (_searchDialog) _searchDialog->open(); });
+        _libraryView->setOnSearch([this]
+                                  {
+                                      // Search is library-only; never open it
+                                      // over the FileBrowser panel.
+                                      if (_searchDialog && leftIsLibrary())
+                                          _searchDialog->open();
+                                  });
 
         _searchDialog = std::make_unique<LibrarySearchDialog>();
         _searchDialog->setTheme(_theme);
-        _searchDialog->setOnSendToQueue(sendToQueue);
+        _searchDialog->setOnLocate([this](std::filesystem::path const &path)
+                                   {
+                                       if (_libraryView)
+                                           _libraryView->locate(path);
+                                       if (_terminal)
+                                           _terminal->forceRedraw();
+                                   });
 
         _transportBar = std::make_unique<TransportBar>();
         _transportBar->setTheme(_theme);
@@ -225,14 +326,8 @@ namespace vtplayer
         _contextMenu = std::make_unique<ContextMenu>();
         _contextMenu->setTheme(_theme);
         _contextMenu->setTitle("Menu");
-        _contextMenu->setItems({
-            "Set current directory as start directory",
-            "Set current directory as library root",
-            "Rescan library",
-            "Send library to play queue",
-            "Locate playing track in library",
-            "Exit",
-        });
+        // Items are rebuilt per-open in openContextMenu() since the visible
+        // set depends on the current left-panel mode.
         _contextMenu->setOnSelect([this](int idx) { onContextMenuSelect(idx); });
 
         resize();
@@ -247,6 +342,18 @@ namespace vtplayer
         }
         _libraryView->setLibrary(&_library);
         _searchDialog->setLibrary(&_library);
+
+        // Resolve the initial left-panel mode. The persisted library mode is
+        // honored unless the index is empty — then fall back to FileBrowser
+        // so the user can navigate to a folder and register a library root.
+        {
+            LeftMode initMode = leftModeFromConfig(_config.leftMode);
+            if (initMode != LeftMode::FileBrowser && _library.empty())
+            {
+                initMode = LeftMode::FileBrowser;
+            }
+            setLeftMode(initMode);
+        }
 
         // Restore the previous session's play queue (path list, resolved
         // against the library index for full metadata).
@@ -271,6 +378,7 @@ namespace vtplayer
         // Sync runtime-mutable settings back before persisting.
         _config.gainNorm = _audio.gainNormEnabled();
         _config.visualizerIndex = _visualizerIndex;
+        _config.leftMode = leftModeToConfig(_leftMode);
         _config.save();
 
         // Snapshot the play queue (path list only) so the next run can
@@ -407,7 +515,7 @@ namespace vtplayer
 
     void Application::drawBrowserScreen()
     {
-        if (_browserLeft == BrowserLeft::Library)
+        if (leftIsLibrary())
         {
             _libraryView->draw(*_rootWindow);
         }
@@ -451,10 +559,16 @@ namespace vtplayer
             {"  S",                     "Shuffle play queue", false},
             {"  G",                     "Toggle gain normalization (ReplayGain / auto-gain)", false},
             {"", "", false},
-            {"Browser", "", true},
+            {"Browser - Library", "", true},
+            {"  F1 / F2 / F3 / F4",     "Left panel: Artist / Album / Directory / Files", false},
             {"  Tab",                   "Switch focus (browser <-> play queue)", false},
+            {"  Left / Right",          "Collapse / expand selected group", false},
+            {"  Enter",                 "Replace play queue with artist/album/track and play", false},
+            {"  A",                     "Append artist/album/track to play queue", false},
+            {"  /",                     "Search library", false},
+            {"", "", false},
+            {"Browser - Files", "", true},
             {"  Enter",                 "Replace play queue with selection and play", false},
-            {"  Shift+Enter",           "Append selection to play queue", false},
             {"  A",                     "Add selected file (or every audio file in selected dir) to play queue", false},
             {"  Backspace",             "Go up to parent directory", false},
             {"  F5",                    "Refresh listing", false},
@@ -479,6 +593,81 @@ namespace vtplayer
             {"  Q",                     "Quit", false},
         };
         // clang-format on
+
+        // Force a re-flow on next draw/scroll-clamp.
+        _helpLines.clear();
+        _helpLayoutWidth = -1;
+    }
+
+    void Application::ensureHelpLayout() const
+    {
+        if (!_terminal) return;
+        int const w = _terminal->cols();
+        if (w == _helpLayoutWidth)
+            return; // already laid out for this width
+        _helpLayoutWidth = w;
+        _helpLines.clear();
+
+        // Last drawable column is w-2 (w-1 holds the right border), so a span
+        // starting at x can hold (w-1)-x characters.
+        int const headerX = 2;
+        int const keyX = 4;
+        int const desiredDescX = keyX + 32;
+        constexpr int kMinDescW = 12;
+        bool const twoColumn = ((w - 1) - desiredDescX) >= kMinDescW;
+        int const descX = twoColumn ? desiredDescX : (keyX + 2);
+        int const descW = std::max(1, (w - 1) - descX);
+        int const headerW = std::max(1, (w - 1) - headerX);
+
+        for (auto const &row : _helpRows)
+        {
+            if (row.isHeader)
+            {
+                for (auto const &seg : wrapWords(row.left, headerW))
+                {
+                    HelpLine ln;
+                    ln.spans.push_back({headerX, seg, 0});
+                    _helpLines.push_back(std::move(ln));
+                }
+                continue;
+            }
+            if (row.left.empty() && row.right.empty())
+            {
+                _helpLines.push_back(HelpLine{}); // blank spacer
+                continue;
+            }
+
+            auto segs = wrapWords(row.right, descW);
+            if (twoColumn)
+            {
+                HelpLine first;
+                first.spans.push_back({keyX, row.left, 1});
+                if (!row.right.empty())
+                    first.spans.push_back({descX, segs[0], 2});
+                _helpLines.push_back(std::move(first));
+                for (std::size_t k = 1; k < segs.size(); ++k)
+                {
+                    HelpLine ln;
+                    ln.spans.push_back({descX, segs[k], 2});
+                    _helpLines.push_back(std::move(ln));
+                }
+            }
+            else
+            {
+                HelpLine keyLine;
+                keyLine.spans.push_back({keyX, row.left, 1});
+                _helpLines.push_back(std::move(keyLine));
+                if (!row.right.empty())
+                {
+                    for (auto const &seg : segs)
+                    {
+                        HelpLine ln;
+                        ln.spans.push_back({descX, seg, 2});
+                        _helpLines.push_back(std::move(ln));
+                    }
+                }
+            }
+        }
     }
 
     int Application::helpVisibleRows() const
@@ -492,7 +681,8 @@ namespace vtplayer
 
     int Application::helpMaxScroll() const
     {
-        int const total = static_cast<int>(_helpRows.size());
+        ensureHelpLayout();
+        int const total = static_cast<int>(_helpLines.size());
         int const visible = helpVisibleRows();
         return std::max(0, total - visible);
     }
@@ -528,27 +718,27 @@ namespace vtplayer
         ventty::Style keyStyle{_theme.browserAudioFg, _theme.background};
         ventty::Style descStyle{_theme.foreground, _theme.background};
 
-        int const leftX = 4;
-        int const colWidth = 32;
+        ensureHelpLayout();
         int const visible = bottom - top + 1;
-        int const total = static_cast<int>(_helpRows.size());
+        int const total = static_cast<int>(_helpLines.size());
         int const drawRows = std::min(visible, total - _helpScroll);
 
         for (int i = 0; i < drawRows; ++i)
         {
             int const y = top + i;
-            auto const & row = _helpRows[_helpScroll + i];
-            if (row.isHeader)
+            for (auto const &span : _helpLines[_helpScroll + i].spans)
             {
-                _rootWindow->drawText(leftX - 2, y, row.left, headerStyle);
-            }
-            else if (!row.left.empty())
-            {
-                _rootWindow->drawText(leftX, y, row.left, keyStyle);
-                if (!row.right.empty())
-                {
-                    _rootWindow->drawText(leftX + colWidth, y, row.right, descStyle);
-                }
+                int const maxChars = (w - 1) - span.x;
+                if (maxChars <= 0)
+                    continue;
+                std::string text = span.text;
+                if (static_cast<int>(text.size()) > maxChars)
+                    text = text.substr(0, maxChars);
+                ventty::Style const &style =
+                    (span.kind == 0) ? headerStyle
+                    : (span.kind == 1) ? keyStyle
+                                       : descStyle;
+                _rootWindow->drawText(span.x, y, text, style);
             }
         }
 
@@ -678,7 +868,7 @@ namespace vtplayer
         {
             if (_focus == FocusPanel::FileBrowser)
             {
-                if (_browserLeft == BrowserLeft::Library)
+                if (leftIsLibrary())
                 {
                     _libraryView->handleKey(event);
                 }
@@ -722,8 +912,8 @@ namespace vtplayer
                     if (_focus != FocusPanel::FileBrowser)
                     {
                         _focus = FocusPanel::FileBrowser;
-                        _fileBrowser->setFocused(_browserLeft == BrowserLeft::Files);
-                        _libraryView->setFocused(_browserLeft == BrowserLeft::Library);
+                        _fileBrowser->setFocused(!leftIsLibrary());
+                        _libraryView->setFocused(leftIsLibrary());
                         _playQueueView->setFocused(false);
                     }
                 }
@@ -740,11 +930,11 @@ namespace vtplayer
             }
 
             // Delegate to focused panel
-            if (_browserLeft == BrowserLeft::Library && _libraryView->rect().contains(event.x, event.y))
+            if (leftIsLibrary() && _libraryView->rect().contains(event.x, event.y))
             {
                 _libraryView->handleMouse(event);
             }
-            else if (_browserLeft == BrowserLeft::Files && _fileBrowser->rect().contains(event.x, event.y))
+            else if (!leftIsLibrary() && _fileBrowser->rect().contains(event.x, event.y))
             {
                 _fileBrowser->handleMouse(event);
             }
@@ -790,28 +980,21 @@ namespace vtplayer
             return;
         }
 
-        // l/L: toggle the Browser-screen left panel between Files and Library.
-        if (event.key == Key::Char && (ch == 'l' || ch == 'L') && !event.alt && !event.ctrl)
+        // F1-F4: pick the Browser-screen left panel directly.
+        //   F1 Artist · F2 Album · F3 Directory (all from the library index)
+        //   F4 FileBrowser (live filesystem from the launch CWD)
+        if (_screen == Screen::Browser
+            && (event.key == Key::F1 || event.key == Key::F2
+                || event.key == Key::F3 || event.key == Key::F4))
         {
-            if (_screen != Screen::Browser) return;
-            _browserLeft = (_browserLeft == BrowserLeft::Files) ? BrowserLeft::Library : BrowserLeft::Files;
-            if (_focus == FocusPanel::FileBrowser)
+            switch (event.key)
             {
-                _fileBrowser->setFocused(_browserLeft == BrowserLeft::Files);
-                _libraryView->setFocused(_browserLeft == BrowserLeft::Library);
+            case Key::F1: setLeftMode(LeftMode::Artist);      break;
+            case Key::F2: setLeftMode(LeftMode::Album);       break;
+            case Key::F3: setLeftMode(LeftMode::Directory);   break;
+            case Key::F4: setLeftMode(LeftMode::FileBrowser); break;
+            default: break;
             }
-            _terminal->forceRedraw();
-            return;
-        }
-
-        // g/G: toggle the Library group axis (Directory ↔ ArtistAlbum).
-        // Only meaningful when the left panel is showing the Library.
-        if (event.key == Key::Char && (ch == 'g' || ch == 'G') && !event.alt && !event.ctrl)
-        {
-            if (_screen != Screen::Browser) return;
-            if (_browserLeft != BrowserLeft::Library) return;
-            _libraryView->toggleMode();
-            _terminal->forceRedraw();
             return;
         }
 
@@ -860,8 +1043,8 @@ namespace vtplayer
             else
             {
                 _focus = FocusPanel::FileBrowser;
-                _fileBrowser->setFocused(_browserLeft == BrowserLeft::Files);
-                _libraryView->setFocused(_browserLeft == BrowserLeft::Library);
+                _fileBrowser->setFocused(!leftIsLibrary());
+                _libraryView->setFocused(leftIsLibrary());
                 _playQueueView->setFocused(false);
             }
             return;
@@ -942,9 +1125,18 @@ namespace vtplayer
             return;
         }
 
-        // a: add selected file (or every audio file in the selected directory) to play queue
+        // a: append the current selection to the bottom of the play queue,
+        // keeping the existing queue intact.
         if (event.key == Key::Char && (ch == 'a' || ch == 'A') && !event.alt && !event.ctrl && _screen == Screen::Browser)
         {
+            // Library panel: append the selected artist / album / track.
+            if (leftIsLibrary())
+            {
+                _libraryView->sendSelectionToQueue(/*replace=*/false);
+                return;
+            }
+            // File browser: append the selected file (or every audio file in
+            // the selected directory).
             auto const *entry = _fileBrowser->selectedEntry();
             if (entry && entry->isAudio)
             {
@@ -985,6 +1177,31 @@ namespace vtplayer
     void Application::openContextMenu()
     {
         if (!_contextMenu) return;
+
+        // Build the item set for the current left-panel mode:
+        //   FileBrowser → "Set current directory as library root"
+        //   library     → "Rescan library"
+        std::vector<std::string> items;
+        _contextMenuActions.clear();
+
+        if (!leftIsLibrary())
+        {
+            items.emplace_back("Set current directory as library root");
+            _contextMenuActions.push_back(MenuAction::SetLibraryRoot);
+        }
+        else
+        {
+            items.emplace_back("Rescan library");
+            _contextMenuActions.push_back(MenuAction::RescanLibrary);
+        }
+
+        items.emplace_back("Locate playing track in library");
+        _contextMenuActions.push_back(MenuAction::LocatePlaying);
+
+        items.emplace_back("Exit");
+        _contextMenuActions.push_back(MenuAction::Exit);
+
+        _contextMenu->setItems(std::move(items));
         _contextMenu->open();
         _terminal->forceRedraw();
     }
@@ -1022,43 +1239,50 @@ namespace vtplayer
         if (_terminal) _terminal->forceRedraw();
     }
 
+    void Application::setLeftMode(LeftMode mode)
+    {
+        _leftMode = mode;
+        if (_libraryView)
+        {
+            switch (mode)
+            {
+            case LeftMode::Artist:    _libraryView->setMode(LibraryView::Mode::Artist);    break;
+            case LeftMode::Album:     _libraryView->setMode(LibraryView::Mode::Album);     break;
+            case LeftMode::Directory: _libraryView->setMode(LibraryView::Mode::Directory); break;
+            case LeftMode::FileBrowser: break;
+            }
+        }
+        // Keep keyboard focus on whichever widget now occupies the left slot.
+        if (_focus == FocusPanel::FileBrowser)
+        {
+            bool const fb = (mode == LeftMode::FileBrowser);
+            if (_fileBrowser) _fileBrowser->setFocused(fb);
+            if (_libraryView) _libraryView->setFocused(!fb);
+        }
+        if (_terminal) _terminal->forceRedraw();
+    }
+
     void Application::onContextMenuSelect(int index)
     {
-        // Menu order:
-        //   0 = Set current directory as start directory
-        //   1 = Set current directory as library root
-        //   2 = Rescan library
-        //   3 = Send library to play queue
-        //   4 = Locate playing track in library
-        //   5 = Exit
-        switch (index)
+        if (index < 0 || index >= static_cast<int>(_contextMenuActions.size()))
+            return;
+
+        switch (_contextMenuActions[index])
         {
-        case 0:
-            if (_fileBrowser)
-            {
-                _config.startDirectory = _fileBrowser->currentDirectory();
-                _config.save();
-            }
-            break;
-        case 1:
+        case MenuAction::SetLibraryRoot:
             if (_fileBrowser)
             {
                 setLibraryRoot(_fileBrowser->currentDirectory());
             }
             break;
-        case 2:
+        case MenuAction::RescanLibrary:
             scanLibrary();
             break;
-        case 3:
-            sendLibraryToPlayQueue();
-            break;
-        case 4:
+        case MenuAction::LocatePlaying:
             locatePlayingInLibrary();
             break;
-        case 5:
+        case MenuAction::Exit:
             quit();
-            break;
-        default:
             break;
         }
         if (_terminal) _terminal->forceRedraw();
@@ -1116,7 +1340,7 @@ namespace vtplayer
         _playQueueView->addTrack(info);
     }
 
-    void Application::activateFromBrowser(std::vector<std::filesystem::path> const &paths, bool quietAppend)
+    void Application::activateFromBrowser(std::vector<std::filesystem::path> const &paths)
     {
         if (paths.empty()) return;
 
@@ -1128,14 +1352,6 @@ namespace vtplayer
             info.format = TrackInfo::formatFromPath(p);
             return info;
         };
-
-        if (quietAppend)
-        {
-            // Shift+Enter: append to the end of the play queue without disturbing
-            // current playback.
-            for (auto const &p : paths) _playQueueView->addTrack(buildInfo(p));
-            return;
-        }
 
         // Enter: replace the current play queue with the selected files and play
         // the first newly-added track. setTracks fires onPlayingRemoved which
@@ -1200,27 +1416,17 @@ namespace vtplayer
         scanLibrary();
     }
 
-    void Application::sendLibraryToPlayQueue()
-    {
-        if (!_playQueueView) return;
-        if (_library.empty()) return;
-        _playQueueView->setTracks(_library.tracks());
-    }
-
     void Application::locatePlayingInLibrary()
     {
         if (!_libraryView) return;
         auto const & path = _audio.currentTrack().path;
         if (path.empty()) return;
 
-        if (_browserLeft != BrowserLeft::Library)
+        // Locate only makes sense in a library projection; switch out of
+        // FileBrowser into Album mode if needed.
+        if (!leftIsLibrary())
         {
-            _browserLeft = BrowserLeft::Library;
-            if (_focus == FocusPanel::FileBrowser)
-            {
-                _fileBrowser->setFocused(false);
-                _libraryView->setFocused(true);
-            }
+            setLeftMode(LeftMode::Album);
         }
         _libraryView->locate(path);
     }

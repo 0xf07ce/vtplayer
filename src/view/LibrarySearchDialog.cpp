@@ -179,10 +179,9 @@ bool LibrarySearchDialog::handleKey(ventty::KeyEvent const & event)
 
     if (event.key == Key::Enter)
     {
-        if (!_matches.empty() && _onSend)
+        if (!_matches.empty() && _onLocate)
         {
-            std::vector<TrackInfo> picked{ *_matches[_selectedIndex] };
-            _onSend(std::move(picked), /*replace=*/!event.shift);
+            _onLocate(_matches[_selectedIndex]->path);
         }
         close();
         return true;

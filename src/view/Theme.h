@@ -36,6 +36,13 @@ namespace vtplayer
         Color browserSelFg{0xE0, 0xD8, 0xEC};
         Color browserHeaderFg{0x8B, 0x5C, 0x8B};
 
+        // Library tree — three muted tones so the hierarchy reads at a
+        // glance while staying in vtplayer's tone: amber artists → muted
+        // periwinkle (blue→slight-violet) albums → sage tracks.
+        Color libraryArtistFg{0xC9, 0xA0, 0x62};
+        Color libraryAlbumFg{0x8C, 0x93, 0xC2};
+        Color libraryTrackFg{0x8E, 0x9A, 0x77};
+
         // Play queue
         Color playQueueBg{0x12, 0x10, 0x1A};
         Color playQueueFg{0xB0, 0xA8, 0xC0};
@@ -111,6 +118,11 @@ namespace vtplayer
             set("browser_sel_bg", browserSelBg);
             set("browser_sel_fg", browserSelFg);
             set("browser_header_fg", browserHeaderFg);
+
+            // Library tree
+            set("library_artist_fg", libraryArtistFg);
+            set("library_album_fg", libraryAlbumFg);
+            set("library_track_fg", libraryTrackFg);
 
             // Play queue
             set("play_queue_bg", playQueueBg);

@@ -9,6 +9,7 @@
 #include <ventty/core/Window.h>
 #include <ventty/terminal/TerminalBase.h>
 
+#include <filesystem>
 #include <functional>
 #include <string>
 #include <vector>
@@ -21,16 +22,19 @@ class MediaLibrary;
 /// Modal search overlay backed by the in-memory MediaLibrary index.
 /// One-line query field on top, live-filtered results below. Matching is
 /// case-insensitive substring on title / artist / album / albumArtist /
-/// genre. Enter on a result replaces the play queue and starts playback;
-/// Shift+Enter appends. ESC closes.
+/// genre. Enter on a result closes the dialog and locates that track in
+/// the library tree (cursor moves there, parents expand) — it does not
+/// touch the play queue or playback. ESC closes without locating.
 class LibrarySearchDialog
 {
 public:
-    using OnSendToQueue = std::function<void(std::vector<TrackInfo> tracks, bool replace)>;
+    /// Fired with the chosen track's path when the user presses Enter on a
+    /// result. The host moves the LibraryView cursor to it.
+    using OnLocate = std::function<void(std::filesystem::path const & path)>;
 
     void setTheme(Theme const & theme) { _theme = theme; }
     void setLibrary(MediaLibrary const * library) { _library = library; }
-    void setOnSendToQueue(OnSendToQueue cb) { _onSend = std::move(cb); }
+    void setOnLocate(OnLocate cb) { _onLocate = std::move(cb); }
 
     void open();
     void close();
@@ -49,7 +53,7 @@ private:
 
     Theme _theme;
     MediaLibrary const * _library = nullptr;
-    OnSendToQueue _onSend;
+    OnLocate _onLocate;
 
     bool _open = false;
     std::string _query;                              ///< UTF-8 query text

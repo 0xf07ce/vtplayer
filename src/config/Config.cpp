@@ -29,28 +29,6 @@ namespace vtplayer
             loadFrom(path);
         }
 
-        // Set default start directory if not specified
-        if (startDirectory.empty())
-        {
-            char const *home = std::getenv("HOME");
-            if (home)
-            {
-                auto musicDir = std::filesystem::path(home) / "Music";
-                if (std::filesystem::exists(musicDir))
-                {
-                    startDirectory = musicDir;
-                }
-                else
-                {
-                    startDirectory = home;
-                }
-            }
-            else
-            {
-                startDirectory = "/";
-            }
-        }
-
         // First run: materialize defaults so the user can discover/edit them.
         if (!existed && !path.empty())
         {
@@ -146,20 +124,6 @@ namespace vtplayer
         {
             gainNorm = (*v == "true" || *v == "1" || *v == "yes" || *v == "on");
         }
-        if (auto *v = get("ui.start_directory"))
-        {
-            std::string dir = *v;
-            // Expand ~
-            if (!dir.empty() && dir[0] == '~')
-            {
-                char const *home = std::getenv("HOME");
-                if (home)
-                {
-                    dir = std::string(home) + dir.substr(1);
-                }
-            }
-            startDirectory = dir;
-        }
         if (auto *v = get("ui.show_hidden"))
         {
             showHidden = (*v == "true" || *v == "1" || *v == "yes");
@@ -201,6 +165,13 @@ namespace vtplayer
                 }
             }
             libraryRoot = dir;
+        }
+        if (auto *v = get("library.left_mode"))
+        {
+            if (*v == "artist" || *v == "album" || *v == "directory")
+            {
+                leftMode = *v;
+            }
         }
         // Collect all theme.* keys
         for (auto const &[key, value] : values)
@@ -247,7 +218,6 @@ namespace vtplayer
         out << "gain_norm = " << (gainNorm ? "true" : "false") << "\n\n";
 
         out << "[ui]\n";
-        out << "start_directory = " << startDirectory.string() << "\n";
         out << "show_hidden = " << (showHidden ? "true" : "false") << "\n\n";
 
         out << "[visualizer]\n";
@@ -259,6 +229,7 @@ namespace vtplayer
 
         out << "[library]\n";
         out << "root = " << libraryRoot.string() << "\n";
+        out << "left_mode = " << leftMode << "\n";
 
         if (!themeColors.empty())
         {
