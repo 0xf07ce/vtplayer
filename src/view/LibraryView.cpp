@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <functional>
+#include <map>
 
 namespace vtplayer
 {
@@ -138,7 +139,52 @@ void LibraryView::buildDirectoryTree()
 
 void LibraryView::buildArtistAlbumTree()
 {
-    // Placeholder until 5c. Empty tree → "(switch group axis)" hint visible.
+    auto createGroup = [&](std::size_t parentIdx, std::string const & label, int depth) -> std::size_t
+    {
+        Node n;
+        n.kind     = Node::Kind::Group;
+        n.label    = label;
+        n.depth    = depth;
+        n.expanded = (depth == 0);
+        n.parent   = parentIdx;
+        std::size_t const idx = _nodes.size();
+        _nodes.push_back(std::move(n));
+        if (parentIdx == kNoIdx) _roots.push_back(idx);
+        else                     _nodes[parentIdx].children.push_back(idx);
+        return idx;
+    };
+
+    // Group tracks by AlbumArtist (fall back to Artist) → Album.
+    // std::map keeps both axes alphabetically ordered for stable display.
+    std::map<std::string, std::map<std::string, std::vector<TrackInfo const *>>> tree;
+    for (auto const & t : _library->tracks())
+    {
+        std::string artist = !t.albumArtist.empty() ? t.albumArtist : t.artist;
+        if (artist.empty()) artist = "(Unknown Artist)";
+        std::string album = t.album.empty() ? "(Unknown Album)" : t.album;
+        tree[artist][album].push_back(&t);
+    }
+
+    for (auto const & [artistKey, albums] : tree)
+    {
+        std::size_t const artistIdx = createGroup(kNoIdx, artistKey, 0);
+        for (auto const & [albumKey, tracks] : albums)
+        {
+            std::size_t const albumIdx = createGroup(artistIdx, albumKey, 1);
+            for (auto const * t : tracks)
+            {
+                Node trackNode;
+                trackNode.kind   = Node::Kind::Track;
+                trackNode.label  = formatTrackLabel(*t);
+                trackNode.depth  = 2;
+                trackNode.track  = t;
+                trackNode.parent = albumIdx;
+                std::size_t const idx = _nodes.size();
+                _nodes.push_back(std::move(trackNode));
+                _nodes[albumIdx].children.push_back(idx);
+            }
+        }
+    }
 }
 
 void LibraryView::sortNodeChildren()

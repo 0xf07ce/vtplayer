@@ -783,6 +783,17 @@ namespace vtplayer
             return;
         }
 
+        // g/G: toggle the Library group axis (Directory ↔ ArtistAlbum).
+        // Only meaningful when the left panel is showing the Library.
+        if (event.key == Key::Char && (ch == 'g' || ch == 'G') && !event.alt && !event.ctrl)
+        {
+            if (_screen != Screen::Browser) return;
+            if (_browserLeft != BrowserLeft::Library) return;
+            _libraryView->toggleMode();
+            _terminal->forceRedraw();
+            return;
+        }
+
         // h/H: open the help overlay (dismissed by H or ESC).
         if (event.key == Key::Char && (ch == 'h' || ch == 'H') && !event.alt && !event.ctrl)
         {
