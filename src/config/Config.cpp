@@ -188,6 +188,20 @@ namespace vtplayer
         {
             extensions = *v;
         }
+        if (auto *v = get("library.root"))
+        {
+            std::string dir = *v;
+            // Expand ~
+            if (!dir.empty() && dir[0] == '~')
+            {
+                char const *home = std::getenv("HOME");
+                if (home)
+                {
+                    dir = std::string(home) + dir.substr(1);
+                }
+            }
+            libraryRoot = dir;
+        }
         // Collect all theme.* keys
         for (auto const &[key, value] : values)
         {
@@ -241,7 +255,10 @@ namespace vtplayer
         out << "index = " << visualizerIndex << "\n\n";
 
         out << "[formats]\n";
-        out << "extensions = " << extensions << "\n";
+        out << "extensions = " << extensions << "\n\n";
+
+        out << "[library]\n";
+        out << "root = " << libraryRoot.string() << "\n";
 
         if (!themeColors.empty())
         {

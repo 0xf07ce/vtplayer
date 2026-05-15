@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 
@@ -23,8 +24,19 @@ struct TrackInfo
     std::filesystem::path path;
     std::string title;
     std::string artist;
-    float duration = 0.0f;   ///< seconds
+    std::string album;
+    std::string albumArtist;
+    std::string genre;
+    int   trackNumber = 0;
+    int   discNumber  = 0;
+    int   year        = 0;
+    float duration    = 0.0f;   ///< seconds
     AudioFormat format = AudioFormat::Unknown;
+
+    /// File modification time (unix seconds) and size in bytes — used by the
+    /// MediaLibrary scanner for incremental updates. Zero when unknown.
+    std::int64_t mtime = 0;
+    std::int64_t size  = 0;
 
     /// Derive format from file extension
     static AudioFormat formatFromPath(std::filesystem::path const & p)

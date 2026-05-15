@@ -27,6 +27,9 @@ struct Config
     // [formats]
     std::string extensions = "mp3,wav,ogg,flac";
 
+    // [library]
+    std::filesystem::path libraryRoot;
+
     // [theme] — color overrides as "#RRGGBB" hex strings
     std::unordered_map<std::string, std::string> themeColors;
 
