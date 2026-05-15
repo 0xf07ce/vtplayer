@@ -82,6 +82,14 @@ namespace vtplayer
         /// Read an .m3u file and append its tracks to the current play queue.
         void appendPlayQueueFile(std::filesystem::path const &path);
 
+        /// Scan the configured `libraryRoot` (incremental: skips files whose
+        /// mtime matches the SQLite cache). No-op when the root is unset or
+        /// the repository failed to open.
+        void scanLibrary();
+
+        /// Re-point the library at `root`, wiping any prior index, then scan.
+        void setLibraryRoot(std::filesystem::path root);
+
         bool _running = false;
         std::unique_ptr<ventty::TerminalBase> _terminal;
         ventty::Window *_rootWindow = nullptr;

@@ -203,6 +203,8 @@ namespace vtplayer
         _contextMenu->setTitle("Menu");
         _contextMenu->setItems({
             "Set current directory as start directory",
+            "Set current directory as library root",
+            "Rescan library",
             "Exit",
         });
         _contextMenu->setOnSelect([this](int idx) { onContextMenuSelect(idx); });
@@ -215,23 +217,7 @@ namespace vtplayer
         if (_libraryRepo->open())
         {
             _libraryRepo->loadInto(_library);
-            if (!_config.libraryRoot.empty())
-            {
-                _library.setRoot(_config.libraryRoot);
-
-                // Split "mp3,wav,ogg,flac" → ["mp3","wav","ogg","flac"].
-                std::vector<std::string> exts;
-                std::string token;
-                for (char c : _config.extensions)
-                {
-                    if (c == ',') { if (!token.empty()) exts.push_back(token); token.clear(); }
-                    else if (c != ' ' && c != '\t') { token.push_back(c); }
-                }
-                if (!token.empty()) exts.push_back(std::move(token));
-
-                LibraryScanner scanner(_library, *_libraryRepo);
-                scanner.scan(_config.libraryRoot, exts);
-            }
+            scanLibrary();
         }
 
         // If an initial file was provided, add it to the play queue and play
@@ -934,7 +920,9 @@ namespace vtplayer
     {
         // Menu order:
         //   0 = Set current directory as start directory
-        //   1 = Exit
+        //   1 = Set current directory as library root
+        //   2 = Rescan library
+        //   3 = Exit
         switch (index)
         {
         case 0:
@@ -945,6 +933,15 @@ namespace vtplayer
             }
             break;
         case 1:
+            if (_fileBrowser)
+            {
+                setLibraryRoot(_fileBrowser->currentDirectory());
+            }
+            break;
+        case 2:
+            scanLibrary();
+            break;
+        case 3:
             quit();
             break;
         default:
@@ -1047,6 +1044,44 @@ namespace vtplayer
         {
             _playQueueView->addTrack(track);
         }
+    }
+
+    void Application::scanLibrary()
+    {
+        if (!_libraryRepo || !_libraryRepo->isOpen()) return;
+        if (_config.libraryRoot.empty()) return;
+
+        _library.setRoot(_config.libraryRoot);
+
+        // Split "mp3,wav,ogg,flac" → ["mp3","wav","ogg","flac"].
+        std::vector<std::string> exts;
+        std::string token;
+        for (char c : _config.extensions)
+        {
+            if (c == ',') { if (!token.empty()) exts.push_back(token); token.clear(); }
+            else if (c != ' ' && c != '\t') { token.push_back(c); }
+        }
+        if (!token.empty()) exts.push_back(std::move(token));
+
+        LibraryScanner scanner(_library, *_libraryRepo);
+        scanner.scan(_config.libraryRoot, exts);
+    }
+
+    void Application::setLibraryRoot(std::filesystem::path root)
+    {
+        _config.libraryRoot = std::move(root);
+        _config.save();
+
+        // Wipe the previous root's entries before scanning the new one;
+        // otherwise tracks from outside the new root would linger as dead
+        // entries.
+        _library.clear();
+        if (_libraryRepo && _libraryRepo->isOpen())
+        {
+            _libraryRepo->clear();
+        }
+
+        scanLibrary();
     }
 
 } // namespace vtplayer

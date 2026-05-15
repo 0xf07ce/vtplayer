@@ -215,6 +215,15 @@ bool LibraryRepository::erase(std::filesystem::path const & path)
     return sqlite3_step(_eraseStmt) == SQLITE_DONE;
 }
 
+bool LibraryRepository::clear()
+{
+    if (!_db) return false;
+    char * err = nullptr;
+    int const rc = sqlite3_exec(_db, "DELETE FROM tracks;", nullptr, nullptr, &err);
+    if (err) sqlite3_free(err);
+    return rc == SQLITE_OK;
+}
+
 std::unordered_map<std::string, std::int64_t> LibraryRepository::mtimes() const
 {
     std::unordered_map<std::string, std::int64_t> out;

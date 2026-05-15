@@ -47,6 +47,9 @@ public:
     bool upsert(TrackInfo const & track);
     bool erase(std::filesystem::path const & path);
 
+    /// Wipe every row. Used when the library root is reassigned.
+    bool clear();
+
     /// path → mtime map for incremental scans (compare against on-disk mtime).
     std::unordered_map<std::string, std::int64_t> mtimes() const;
 
