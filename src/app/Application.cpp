@@ -3,6 +3,8 @@
 
 #include "Application.h"
 
+#include "../library/LibraryRepository.h"
+#include "../library/LibraryScanner.h"
 #include "../util/M3uReader.h"
 #include "../util/UnicodeNormalize.h"
 #include "../visualizer/DebugBars.h"
@@ -206,6 +208,31 @@ namespace vtplayer
         _contextMenu->setOnSelect([this](int idx) { onContextMenuSelect(idx); });
 
         resize();
+
+        // Open the media library index. Failure is non-fatal — the player
+        // still works without a library; only library-backed features are off.
+        _libraryRepo = std::make_unique<LibraryRepository>(LibraryRepository::defaultPath());
+        if (_libraryRepo->open())
+        {
+            _libraryRepo->loadInto(_library);
+            if (!_config.libraryRoot.empty())
+            {
+                _library.setRoot(_config.libraryRoot);
+
+                // Split "mp3,wav,ogg,flac" → ["mp3","wav","ogg","flac"].
+                std::vector<std::string> exts;
+                std::string token;
+                for (char c : _config.extensions)
+                {
+                    if (c == ',') { if (!token.empty()) exts.push_back(token); token.clear(); }
+                    else if (c != ' ' && c != '\t') { token.push_back(c); }
+                }
+                if (!token.empty()) exts.push_back(std::move(token));
+
+                LibraryScanner scanner(_library, *_libraryRepo);
+                scanner.scan(_config.libraryRoot, exts);
+            }
+        }
 
         // If an initial file was provided, add it to the play queue and play
         if (!_initialFile.empty())

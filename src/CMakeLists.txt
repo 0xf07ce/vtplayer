@@ -49,6 +49,10 @@ add_executable(vtplayer
     # library
     library/MediaLibrary.h
     library/MediaLibrary.cpp
+    library/LibraryRepository.h
+    library/LibraryRepository.cpp
+    library/LibraryScanner.h
+    library/LibraryScanner.cpp
 
     # playqueue
     playqueue/PlayQueue.h

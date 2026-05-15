@@ -47,6 +47,10 @@ target_include_directories(tag INTERFACE
 
 # miniaudio: header-only (public domain), placed in deps/include/miniaudio/miniaudio.h
 
+# SQLite: system library. macOS provides libsqlite3 in the base SDK; Linux
+# distros ship libsqlite3-dev. Avoids vendoring a multi-MB amalgamation.
+find_package(SQLite3 REQUIRED)
+
 add_library(vtplayerDep INTERFACE)
 target_include_directories(vtplayerDep INTERFACE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -54,4 +58,5 @@ target_include_directories(vtplayerDep INTERFACE
 target_link_libraries(vtplayerDep INTERFACE
     cxxopts
     tag
+    SQLite3::SQLite3
 )

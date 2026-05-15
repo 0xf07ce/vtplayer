@@ -5,6 +5,7 @@
 
 #include "../audio/AudioEngine.h"
 #include "../config/Config.h"
+#include "../library/MediaLibrary.h"
 #include "../view/ContextMenu.h"
 #include "../view/FileBrowser.h"
 #include "../view/HeaderBar.h"
@@ -22,6 +23,8 @@
 
 namespace vtplayer
 {
+
+    class LibraryRepository;
 
     enum class Screen
     {
@@ -86,6 +89,10 @@ namespace vtplayer
         // Audio
         AudioEngine _audio;
         Config _config;
+
+        // Media library (track index of the configured root directory)
+        MediaLibrary _library;
+        std::unique_ptr<LibraryRepository> _libraryRepo;
 
         // UI state
         Screen _screen = Screen::Browser;
