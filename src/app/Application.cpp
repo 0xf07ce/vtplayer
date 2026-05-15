@@ -188,22 +188,28 @@ namespace vtplayer
                                                _playQueueView->setPlayingIndex(-1);
                                            });
 
+        auto const sendToQueue = [this](std::vector<TrackInfo> tracks, bool replace)
+        {
+            if (!_playQueueView || tracks.empty()) return;
+            if (replace)
+            {
+                _playQueueView->setTracks(std::move(tracks));
+                playTrack(0);
+            }
+            else
+            {
+                for (auto const &t : tracks) _playQueueView->addTrack(t);
+            }
+        };
+
         _libraryView = std::make_unique<LibraryView>();
         _libraryView->setTheme(_theme);
-        _libraryView->setOnSendToQueue([this](std::vector<TrackInfo> tracks, bool replace)
-                                      {
-                                          if (!_playQueueView || tracks.empty()) return;
-                                          if (replace)
-                                          {
-                                              int const startIdx = 0;
-                                              _playQueueView->setTracks(std::move(tracks));
-                                              playTrack(startIdx);
-                                          }
-                                          else
-                                          {
-                                              for (auto const &t : tracks) _playQueueView->addTrack(t);
-                                          }
-                                      });
+        _libraryView->setOnSendToQueue(sendToQueue);
+        _libraryView->setOnSearch([this] { if (_searchDialog) _searchDialog->open(); });
+
+        _searchDialog = std::make_unique<LibrarySearchDialog>();
+        _searchDialog->setTheme(_theme);
+        _searchDialog->setOnSendToQueue(sendToQueue);
 
         _transportBar = std::make_unique<TransportBar>();
         _transportBar->setTheme(_theme);
@@ -239,6 +245,7 @@ namespace vtplayer
             scanLibrary();
         }
         _libraryView->setLibrary(&_library);
+        _searchDialog->setLibrary(&_library);
 
         // Restore the previous session's play queue (path list, resolved
         // against the library index for full metadata).
@@ -383,6 +390,12 @@ namespace vtplayer
 
         // Transport
         _transportBar->draw(*_rootWindow);
+
+        // Library search dialog (overlay).
+        if (_searchDialog && _searchDialog->isOpen())
+        {
+            _searchDialog->draw(*_rootWindow);
+        }
 
         // Context menu overlay (drawn last so it sits on top)
         if (_contextMenu)
@@ -575,6 +588,13 @@ namespace vtplayer
     {
         if (event.key == Key::None)
             return;
+
+        // Modal search dialog consumes all input while open.
+        if (_searchDialog && _searchDialog->isOpen())
+        {
+            _searchDialog->handleKey(event);
+            return;
+        }
 
         // Modal context menu consumes all input while open.
         if (_contextMenu && _contextMenu->isOpen())

@@ -10,6 +10,7 @@
 #include "../view/FileBrowser.h"
 #include "../view/HeaderBar.h"
 #include "../view/LibraryView.h"
+#include "../view/LibrarySearchDialog.h"
 #include "../view/PlayQueueView.h"
 #include "../view/Theme.h"
 #include "../view/TransportBar.h"
@@ -140,6 +141,7 @@ namespace vtplayer
         std::unique_ptr<TransportBar> _transportBar;
         std::unique_ptr<VisualizerView> _visualizerView;
         std::unique_ptr<ContextMenu> _contextMenu;
+        std::unique_ptr<LibrarySearchDialog> _searchDialog;
 
         std::filesystem::path _initialFile;
     };

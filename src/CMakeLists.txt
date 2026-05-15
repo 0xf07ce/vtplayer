@@ -22,6 +22,8 @@ add_executable(vtplayer
     view/FileBrowser.cpp
     view/LibraryView.h
     view/LibraryView.cpp
+    view/LibrarySearchDialog.h
+    view/LibrarySearchDialog.cpp
     view/PlayQueueView.h
     view/PlayQueueView.cpp
     view/TransportBar.h
