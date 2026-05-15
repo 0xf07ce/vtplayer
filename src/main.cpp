@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
 #include "app/Application.h"
+#include "audio/ReplayGain.h"
 
 #include <cxxopts.hpp>
 
@@ -16,9 +17,10 @@ int main(int argc, char *argv[])
 {
     cxxopts::Options options("vtplayer", "Terminal-based music player for MP3, OGG, and FLAC");
     options.add_options()
-        ("h,help",    "Show this help message")
-        ("v,version", "Show version and exit")
-        ("file",      "Audio file to play", cxxopts::value<std::string>());
+        ("h,help",      "Show this help message")
+        ("v,version",   "Show version and exit")
+        ("dump-tags",   "Print every TagLib property of FILE and exit (diagnostic)")
+        ("file",        "Audio file to play", cxxopts::value<std::string>());
     options.parse_positional({"file"});
     options.positional_help("[FILE]");
 
@@ -34,6 +36,17 @@ int main(int argc, char *argv[])
     {
         std::cout << "vtplayer " << VTPLAYER_VERSION << std::endl;
         return 0;
+    }
+
+    if (result.count("dump-tags"))
+    {
+        if (!result.count("file"))
+        {
+            std::cerr << "vtplayer: --dump-tags requires a FILE argument" << std::endl;
+            return 1;
+        }
+        auto path = std::filesystem::absolute(result["file"].as<std::string>());
+        return vtplayer::dumpTags(path) ? 0 : 1;
     }
 
     vtplayer::Application app;

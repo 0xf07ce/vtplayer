@@ -30,6 +30,10 @@ namespace vtplayer
         /// Call each frame with latest audio samples.
         void update(AudioEngine const &engine);
 
+        /// Forward a scroll-delta to the active visualizer.
+        /// Returns true if the visualizer consumed the input.
+        bool scrollBy(int delta) { return _vis && _vis->scrollBy(delta); }
+
         void draw(ventty::Window &window) override;
 
     private:

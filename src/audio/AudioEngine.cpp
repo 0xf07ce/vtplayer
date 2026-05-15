@@ -7,6 +7,7 @@
 
 #include "AudioEngine.h"
 
+#include "ReplayGain.h"
 #include "../util/UnicodeNormalize.h"
 
 #include <algorithm>
@@ -29,13 +30,15 @@ inline float softClip(float x)
     return sign * (knee + headroom * (1.0f - std::exp(-over / headroom)));
 }
 
-// Auto-gain tuning (ReplayGain-style reference, runtime only — no tags written).
-constexpr float kAutoGainTargetRms = 0.12589f;  ///< -18 dBFS
-constexpr float kAutoGainNoiseGate = 0.003162f; ///< -50 dBFS, skip updates below
-constexpr float kAutoGainMaxLin = 3.981f;       ///< +12 dB ceiling
-constexpr float kAutoGainMinLin = 0.2512f;      ///< -12 dB floor
-constexpr float kAutoGainAttackSamples  = 0.15f * 44100.0f; ///< 150ms (when reducing gain)
-constexpr float kAutoGainReleaseSamples = 2.5f  * 44100.0f; ///< 2.5s (when raising gain)
+// Gain-normalization tuning. Targets and limits are shared between the auto-gain
+// RMS estimator and the ReplayGain-tag path; only the RMS path uses TargetRms /
+// NoiseGate.
+constexpr float kAutoGainTargetRms = 0.12589f;  ///< -18 dBFS (AG only)
+constexpr float kAutoGainNoiseGate = 0.003162f; ///< -50 dBFS, skip updates below (AG only)
+constexpr float kGainMaxLin = 3.981f;           ///< +12 dB ceiling
+constexpr float kGainMinLin = 0.2512f;          ///< -12 dB floor
+constexpr float kGainAttackSamples  = 0.15f * 44100.0f; ///< 150ms (when reducing gain)
+constexpr float kGainReleaseSamples = 2.5f  * 44100.0f; ///< 2.5s (when raising gain)
 
 } // namespace
 
@@ -104,7 +107,27 @@ bool AudioEngine::load(std::filesystem::path const & path)
 
     _framesPlayed = 0;
     _position.store(0.0f, std::memory_order_relaxed);
-    _autoGain.store(1.0f, std::memory_order_relaxed);
+
+    // Resolve gain source for this track.
+    ReplayGainInfo rg = readReplayGain(path);
+    if (rg.hasTrackGain)
+    {
+        float linear = std::pow(10.0f, rg.trackGainDb / 20.0f);
+        linear = std::clamp(linear, kGainMinLin, kGainMaxLin);
+        _replayGainLinear.store(linear, std::memory_order_relaxed);
+        _gainSource.store(GainSource::ReplayGain, std::memory_order_relaxed);
+        // Snap to target when normalization is on, so the first sample is not
+        // a ramp from unity (would briefly play at original loudness).
+        bool normOn = _gainNormEnabled.load(std::memory_order_relaxed);
+        _currentGain.store(normOn ? linear : 1.0f, std::memory_order_relaxed);
+    }
+    else
+    {
+        _replayGainLinear.store(1.0f, std::memory_order_relaxed);
+        _gainSource.store(GainSource::Auto, std::memory_order_relaxed);
+        _currentGain.store(1.0f, std::memory_order_relaxed);
+    }
+
     _lastError.clear();
 
     return true;
@@ -186,7 +209,9 @@ void AudioEngine::stop()
     _trackEnded.store(false, std::memory_order_relaxed);
     _framesPlayed = 0;
     _position.store(0.0f, std::memory_order_relaxed);
-    _autoGain.store(1.0f, std::memory_order_relaxed);
+    _currentGain.store(1.0f, std::memory_order_relaxed);
+    _replayGainLinear.store(1.0f, std::memory_order_relaxed);
+    _gainSource.store(GainSource::None, std::memory_order_relaxed);
 }
 
 void AudioEngine::seek(float seconds)
@@ -215,15 +240,15 @@ void AudioEngine::setVolume(float v)
     _volume.store(std::clamp(v, 0.0f, VOLUME_MAX), std::memory_order_relaxed);
 }
 
-void AudioEngine::setAutoGain(bool enabled)
+void AudioEngine::setGainNorm(bool enabled)
 {
-    _autoGainEnabled.store(enabled, std::memory_order_relaxed);
-    // _autoGain itself is ramped smoothly by fillBuffer, no hard reset.
+    _gainNormEnabled.store(enabled, std::memory_order_relaxed);
+    // _currentGain itself is ramped smoothly by fillBuffer, no hard reset.
 }
 
-float AudioEngine::autoGainDb() const
+float AudioEngine::gainNormDb() const
 {
-    float g = _autoGain.load(std::memory_order_relaxed);
+    float g = _currentGain.load(std::memory_order_relaxed);
     return 20.0f * std::log10(std::max(g, 1e-6f));
 }
 
@@ -253,7 +278,8 @@ void AudioEngine::dataCallback(
 void AudioEngine::fillBuffer(float * output, unsigned int frameCount)
 {
     float vol = _volume.load(std::memory_order_relaxed);
-    bool agOn = _autoGainEnabled.load(std::memory_order_relaxed);
+    bool normOn = _gainNormEnabled.load(std::memory_order_relaxed);
+    GainSource src = _gainSource.load(std::memory_order_relaxed);
     unsigned int totalSamples = frameCount * CHANNELS;
 
     std::lock_guard<std::mutex> lock(_audioMutex);
@@ -275,13 +301,20 @@ void AudioEngine::fillBuffer(float * output, unsigned int frameCount)
         _trackEnded.store(true, std::memory_order_release);
     }
 
-    // --- Auto-gain analysis (on pre-gain mono mixdown) ---
-    float autoStart = _autoGain.load(std::memory_order_relaxed);
-    float autoEnd = autoStart;
+    // --- Resolve target gain and smooth toward it ---
+    float gainStart = _currentGain.load(std::memory_order_relaxed);
+    float gainEnd = gainStart;
     if (framesRead > 0)
     {
-        if (agOn)
+        float desired = 1.0f;
+
+        if (normOn && src == GainSource::ReplayGain)
         {
+            desired = _replayGainLinear.load(std::memory_order_relaxed);
+        }
+        else if (normOn /* GainSource::Auto or fallback */)
+        {
+            // RMS-based estimate on pre-gain mono mixdown.
             double sumSq = 0.0;
             for (ma_uint64 i = 0; i < framesRead; ++i)
             {
@@ -289,30 +322,28 @@ void AudioEngine::fillBuffer(float * output, unsigned int frameCount)
                 sumSq += static_cast<double>(m) * m;
             }
             float rms = std::sqrt(static_cast<float>(sumSq / framesRead));
-            float desired = autoStart;
             if (rms > kAutoGainNoiseGate)
             {
                 desired = std::clamp(kAutoGainTargetRms / rms,
-                                     kAutoGainMinLin, kAutoGainMaxLin);
+                                     kGainMinLin, kGainMaxLin);
             }
-            float tauSamples = (desired < autoStart)
-                                   ? kAutoGainAttackSamples
-                                   : kAutoGainReleaseSamples;
-            float alpha = std::min(1.0f, static_cast<float>(frameCount) / tauSamples);
-            autoEnd = autoStart + (desired - autoStart) * alpha;
+            else
+            {
+                desired = gainStart; // hold during silence
+            }
         }
-        else
-        {
-            // Smoothly ramp back to unity when disabled, avoiding a click on toggle.
-            float alpha = std::min(1.0f, static_cast<float>(frameCount) / kAutoGainReleaseSamples);
-            autoEnd = autoStart + (1.0f - autoStart) * alpha;
-        }
-        _autoGain.store(autoEnd, std::memory_order_relaxed);
+        // else: normalization disabled → desired = 1.0 (ramp back to unity)
+
+        float tauSamples = (desired < gainStart) ? kGainAttackSamples
+                                                 : kGainReleaseSamples;
+        float alpha = std::min(1.0f, static_cast<float>(frameCount) / tauSamples);
+        gainEnd = gainStart + (desired - gainStart) * alpha;
+        _currentGain.store(gainEnd, std::memory_order_relaxed);
     }
 
     // --- Apply combined gain with per-sample linear ramp ---
-    float totalStart = autoStart * vol;
-    float totalEnd = autoEnd * vol;
+    float totalStart = gainStart * vol;
+    float totalEnd = gainEnd * vol;
     float step = (framesRead > 0)
                      ? (totalEnd - totalStart) / static_cast<float>(framesRead)
                      : 0.0f;

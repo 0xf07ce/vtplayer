@@ -26,6 +26,11 @@ namespace vtplayer
 
         /// Set the color theme.
         virtual void setTheme(Theme const &theme) = 0;
+
+        /// Optional vertical scroll input from arrow keys / mouse wheel.
+        /// Default is a no-op for audio-reactive visualizers; static views
+        /// (e.g. TagInfoView) override. Returns true if the input was used.
+        virtual bool scrollBy(int /*delta*/) { return false; }
     };
 
 } // namespace vtplayer

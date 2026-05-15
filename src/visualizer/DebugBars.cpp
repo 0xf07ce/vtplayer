@@ -104,8 +104,8 @@ namespace vtplayer
         // Engine-level metrics that don't depend on FFT — same across
         // playing/idle, so compute up front.
         PlayState const ps = engine.state();
-        // Auto-gain in dB. Center 0 dB at 0.5; ±20 dB hits the bar edges.
-        float const gainDb = engine.autoGainDb();
+        // Applied gain-normalization in dB (RG or AG). Center 0 dB at 0.5; ±20 dB hits the bar edges.
+        float const gainDb = engine.gainNormDb();
         float const gain = std::clamp((gainDb + 20.0f) / 40.0f, 0.0f, 1.0f);
         // Position fraction; guard duration=0 (radio / unknown length).
         float const dur = engine.duration();

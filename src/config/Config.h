@@ -14,10 +14,9 @@ struct Config
 {
     // [audio]
     float volume = 1.0f;
-    bool autoGain = false;  ///< runtime RMS-based loudness normalization
+    bool gainNorm = false;  ///< master switch: prefer ReplayGain tag, fall back to runtime RMS
 
     // [ui]
-    std::filesystem::path startDirectory;
     bool showHidden = false;
 
     // [visualizer]
@@ -26,6 +25,14 @@ struct Config
 
     // [formats]
     std::string extensions = "mp3,wav,ogg,flac";
+
+    // [library]
+    std::filesystem::path libraryRoot;
+    /// Left-panel mode persisted across sessions: "artist" | "album" |
+    /// "directory". The transient "filebrowser" mode is never persisted —
+    /// it normalizes back to "album" on save so a fresh run starts in the
+    /// indexed library.
+    std::string leftMode = "album";
 
     // [theme] — color overrides as "#RRGGBB" hex strings
     std::unordered_map<std::string, std::string> themeColors;

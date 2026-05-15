@@ -8,6 +8,8 @@ add_executable(vtplayer
     # audio
     audio/AudioEngine.h
     audio/AudioEngine.cpp
+    audio/ReplayGain.h
+    audio/ReplayGain.cpp
     audio/TrackInfo.h
     audio/RingBuffer.h
     audio/Fft.h
@@ -18,6 +20,10 @@ add_executable(vtplayer
     view/HeaderBar.cpp
     view/FileBrowser.h
     view/FileBrowser.cpp
+    view/LibraryView.h
+    view/LibraryView.cpp
+    view/LibrarySearchDialog.h
+    view/LibrarySearchDialog.cpp
     view/PlayQueueView.h
     view/PlayQueueView.cpp
     view/TransportBar.h
@@ -37,18 +43,30 @@ add_executable(vtplayer
     visualizer/MatrixRain.cpp
     visualizer/DebugBars.h
     visualizer/DebugBars.cpp
+    visualizer/TagInfoView.h
+    visualizer/TagInfoView.cpp
 
     # config
     config/Config.h
     config/Config.cpp
 
+    # library
+    library/MediaLibrary.h
+    library/MediaLibrary.cpp
+    library/LibraryRepository.h
+    library/LibraryRepository.cpp
+    library/LibraryScanner.h
+    library/LibraryScanner.cpp
+
     # playqueue
     playqueue/PlayQueue.h
     playqueue/PlayQueue.cpp
-    playqueue/PlayQueueRepository.h
-    playqueue/PlayQueueRepository.cpp
+    playqueue/PlayQueueCache.h
+    playqueue/PlayQueueCache.cpp
 
     # util
+    util/M3uReader.h
+    util/M3uReader.cpp
     util/UnicodeNormalize.h
     util/UnicodeNormalize.cpp
 )

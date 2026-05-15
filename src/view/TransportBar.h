@@ -30,7 +30,12 @@ public:
     void setPosition(float pos) { _position = pos; }
     void setDuration(float dur) { _duration = dur; }
     void setVolume(float vol) { _volume = vol; }
-    void setAutoGain(bool enabled, float gainDb) { _autoGainEnabled = enabled; _autoGainDb = gainDb; }
+    void setGainNorm(bool enabled, float gainDb, GainSource source)
+    {
+        _gainNormEnabled = enabled;
+        _gainDb = gainDb;
+        _gainSource = source;
+    }
 
     void draw(ventty::Window & window) override;
 
@@ -47,8 +52,9 @@ private:
     float _position = 0.0f;
     float _duration = 0.0f;
     float _volume = 1.0f;
-    bool _autoGainEnabled = false;
-    float _autoGainDb = 0.0f;
+    bool _gainNormEnabled = false;
+    float _gainDb = 0.0f;
+    GainSource _gainSource = GainSource::None;
 
     // Progress bar position (set during draw for mouse hit testing)
     int _progressX = 0;
