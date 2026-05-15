@@ -5,7 +5,6 @@
 
 #include "../audio/AudioEngine.h"
 #include "../config/Config.h"
-#include "../playqueue/PlayQueue.h"
 #include "../view/ContextMenu.h"
 #include "../view/FileBrowser.h"
 #include "../view/HeaderBar.h"
@@ -87,9 +86,6 @@ namespace vtplayer
         // Audio
         AudioEngine _audio;
         Config _config;
-
-        // Current play queue (persisted to M3U on disk)
-        PlayQueue _currentPlayQueue;
 
         // UI state
         Screen _screen = Screen::Browser;

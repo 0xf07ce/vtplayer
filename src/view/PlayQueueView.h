@@ -4,7 +4,7 @@
 #pragma once
 
 #include "Theme.h"
-#include "../audio/TrackInfo.h"
+#include "../playqueue/PlayQueue.h"
 
 #include <ventty/widget/Widget.h>
 
@@ -41,7 +41,7 @@ public:
     void setTracks(std::vector<TrackInfo> tracks);
 
     /// Snapshot of the current tracks for persistence.
-    std::vector<TrackInfo> const & tracks() const { return _tracks; }
+    std::vector<TrackInfo> const & tracks() const { return _queue.tracks(); }
 
     int selectedIndex() const { return _selectedIndex; }
     void setSelectedIndex(int idx);
@@ -50,8 +50,8 @@ public:
 
     TrackInfo const * selectedTrack() const;
     TrackInfo const * track(int idx) const;
-    int trackCount() const { return static_cast<int>(_tracks.size()); }
-    bool empty() const { return _tracks.empty(); }
+    int trackCount() const { return _queue.size(); }
+    bool empty() const { return _queue.empty(); }
 
     using OnPlayCallback = std::function<void(int index)>;
     void setOnPlay(OnPlayCallback cb) { _onPlay = std::move(cb); }
@@ -79,7 +79,7 @@ private:
     void extendSelectionTo(int newIndex);
 
     Theme _theme;
-    std::vector<TrackInfo> _tracks;
+    PlayQueue _queue;
     int _selectedIndex = 0;
     int _scrollOffset = 0;
     int _playingIndex = -1;

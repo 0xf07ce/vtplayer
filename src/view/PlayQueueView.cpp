@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <random>
 
 namespace vtplayer
 {
@@ -18,14 +17,15 @@ using Key = ventty::KeyEvent::Key;
 
 void PlayQueueView::addTrack(TrackInfo const & track)
 {
-    _tracks.push_back(track);
+    _queue.addTrack(track);
 }
 
 void PlayQueueView::insertTrack(int idx, TrackInfo const & track)
 {
+    int const sz = _queue.size();
     if (idx < 0) idx = 0;
-    if (idx > static_cast<int>(_tracks.size())) idx = static_cast<int>(_tracks.size());
-    _tracks.insert(_tracks.begin() + idx, track);
+    if (idx > sz) idx = sz;
+    _queue.insertTrack(idx, track);
     if (_playingIndex >= idx) _playingIndex++;
     if (_selectedIndex >= idx) _selectedIndex++;
     clearMultiSelection();
@@ -33,10 +33,10 @@ void PlayQueueView::insertTrack(int idx, TrackInfo const & track)
 
 void PlayQueueView::removeSelected()
 {
-    if (_tracks.empty()) return;
+    if (_queue.empty()) return;
 
     std::set<int> targets = _multiSelected;
-    if (_selectedIndex >= 0 && _selectedIndex < static_cast<int>(_tracks.size()))
+    if (_selectedIndex >= 0 && _selectedIndex < _queue.size())
     {
         targets.insert(_selectedIndex);
     }
@@ -49,20 +49,20 @@ void PlayQueueView::removeSelected()
     for (auto it = targets.rbegin(); it != targets.rend(); ++it)
     {
         int const idx = *it;
-        if (idx < 0 || idx >= static_cast<int>(_tracks.size())) continue;
-        _tracks.erase(_tracks.begin() + idx);
+        if (idx < 0 || idx >= _queue.size()) continue;
+        _queue.removeAt(idx);
         if (!removingPlaying && _playingIndex > idx) _playingIndex--;
     }
 
     if (removingPlaying) _playingIndex = -1;
 
-    if (_tracks.empty())
+    if (_queue.empty())
     {
         _selectedIndex = 0;
     }
     else
     {
-        _selectedIndex = std::min(firstRemoved, static_cast<int>(_tracks.size()) - 1);
+        _selectedIndex = std::min(firstRemoved, _queue.size() - 1);
     }
 
     clearMultiSelection();
@@ -76,12 +76,12 @@ void PlayQueueView::removeSelected()
 
 void PlayQueueView::moveSelectedUp()
 {
-    if (_selectedIndex <= 0 || _selectedIndex >= static_cast<int>(_tracks.size()))
+    if (_selectedIndex <= 0 || _selectedIndex >= _queue.size())
     {
         return;
     }
 
-    std::swap(_tracks[_selectedIndex], _tracks[_selectedIndex - 1]);
+    _queue.swap(_selectedIndex, _selectedIndex - 1);
 
     if (_playingIndex == _selectedIndex) _playingIndex--;
     else if (_playingIndex == _selectedIndex - 1) _playingIndex++;
@@ -92,12 +92,12 @@ void PlayQueueView::moveSelectedUp()
 
 void PlayQueueView::moveSelectedDown()
 {
-    if (_selectedIndex < 0 || _selectedIndex >= static_cast<int>(_tracks.size()) - 1)
+    if (_selectedIndex < 0 || _selectedIndex >= _queue.size() - 1)
     {
         return;
     }
 
-    std::swap(_tracks[_selectedIndex], _tracks[_selectedIndex + 1]);
+    _queue.swap(_selectedIndex, _selectedIndex + 1);
 
     if (_playingIndex == _selectedIndex) _playingIndex++;
     else if (_playingIndex == _selectedIndex + 1) _playingIndex--;
@@ -109,7 +109,7 @@ void PlayQueueView::moveSelectedDown()
 void PlayQueueView::clear()
 {
     bool const hadPlaying = (_playingIndex >= 0);
-    _tracks.clear();
+    _queue.clear();
     _selectedIndex = 0;
     _scrollOffset = 0;
     _playingIndex = -1;
@@ -122,22 +122,22 @@ void PlayQueueView::clear()
 
 void PlayQueueView::shuffle()
 {
-    if (_tracks.size() < 2) return;
+    if (_queue.size() < 2) return;
 
     std::filesystem::path playingPath;
-    if (_playingIndex >= 0 && _playingIndex < static_cast<int>(_tracks.size()))
+    if (_playingIndex >= 0 && _playingIndex < _queue.size())
     {
-        playingPath = _tracks[_playingIndex].path;
+        playingPath = _queue.tracks()[_playingIndex].path;
     }
 
-    static std::mt19937 rng{std::random_device{}()};
-    std::shuffle(_tracks.begin(), _tracks.end(), rng);
+    _queue.shuffle();
 
     if (!playingPath.empty())
     {
-        for (int i = 0; i < static_cast<int>(_tracks.size()); ++i)
+        auto const & tracks = _queue.tracks();
+        for (int i = 0; i < static_cast<int>(tracks.size()); ++i)
         {
-            if (_tracks[i].path == playingPath)
+            if (tracks[i].path == playingPath)
             {
                 _playingIndex = i;
                 break;
@@ -154,7 +154,7 @@ void PlayQueueView::shuffle()
 void PlayQueueView::setTracks(std::vector<TrackInfo> tracks)
 {
     bool const hadPlaying = (_playingIndex >= 0);
-    _tracks = std::move(tracks);
+    _queue.setTracks(std::move(tracks));
     _selectedIndex = 0;
     _scrollOffset = 0;
     _playingIndex = -1;
@@ -174,7 +174,7 @@ void PlayQueueView::clearMultiSelection()
 void PlayQueueView::selectAll()
 {
     _multiSelected.clear();
-    for (int i = 0; i < static_cast<int>(_tracks.size()); ++i)
+    for (int i = 0; i < _queue.size(); ++i)
     {
         _multiSelected.insert(i);
     }
@@ -200,26 +200,18 @@ void PlayQueueView::onFocusChanged()
 
 void PlayQueueView::setSelectedIndex(int idx)
 {
-    _selectedIndex = std::clamp(idx, 0, std::max(0, static_cast<int>(_tracks.size()) - 1));
+    _selectedIndex = std::clamp(idx, 0, std::max(0, _queue.size() - 1));
     scrollToSelected();
 }
 
 TrackInfo const * PlayQueueView::selectedTrack() const
 {
-    if (_selectedIndex >= 0 && _selectedIndex < static_cast<int>(_tracks.size()))
-    {
-        return &_tracks[_selectedIndex];
-    }
-    return nullptr;
+    return _queue.at(_selectedIndex);
 }
 
 TrackInfo const * PlayQueueView::track(int idx) const
 {
-    if (idx >= 0 && idx < static_cast<int>(_tracks.size()))
-    {
-        return &_tracks[idx];
-    }
-    return nullptr;
+    return _queue.at(idx);
 }
 
 static std::string formatDuration(float seconds)
@@ -239,6 +231,7 @@ static std::string formatDuration(float seconds)
 void PlayQueueView::draw(ventty::Window & window)
 {
     auto const & r = rect();
+    auto const & tracks = _queue.tracks();
 
     // Right border
     for (int y = 0; y < r.height; ++y)
@@ -252,9 +245,9 @@ void PlayQueueView::draw(ventty::Window & window)
     window.fill(r.x, r.y, r.width - 1, 1, U' ', headerStyle);
 
     std::string header = " Play Queue";
-    if (!_tracks.empty())
+    if (!tracks.empty())
     {
-        header += " (" + std::to_string(_tracks.size()) + ")";
+        header += " (" + std::to_string(tracks.size()) + ")";
     }
     header = truncateToWidth(header, r.width - 1, "...");
     window.drawText(r.x, r.y, header, headerStyle);
@@ -275,14 +268,14 @@ void PlayQueueView::draw(ventty::Window & window)
         int idx = _scrollOffset + i;
         int y = r.y + 2 + i;
 
-        if (idx >= static_cast<int>(_tracks.size()))
+        if (idx >= static_cast<int>(tracks.size()))
         {
             window.fill(r.x, y, r.width - 1, 1, U' ',
                         ventty::Style{_theme.playQueueFg, _theme.playQueueBg});
             continue;
         }
 
-        auto const & track = _tracks[idx];
+        auto const & track = tracks[idx];
         bool const cursor = (idx == _selectedIndex) && isFocused();
         bool const multi  = isFocused() && _multiSelected.count(idx) > 0;
         bool const playing = (idx == _playingIndex);
@@ -347,7 +340,7 @@ bool PlayQueueView::handleKey(ventty::KeyEvent const & event)
     if (event.key == Key::Char && event.ctrl &&
         (event.ch == 'a' || event.ch == 'A' || event.ch == 1))
     {
-        if (!_tracks.empty()) selectAll();
+        if (!_queue.empty()) selectAll();
         return true;
     }
 
@@ -378,7 +371,7 @@ bool PlayQueueView::handleKey(ventty::KeyEvent const & event)
 
     if (event.key == Key::Down)
     {
-        if (_selectedIndex < static_cast<int>(_tracks.size()) - 1)
+        if (_selectedIndex < _queue.size() - 1)
         {
             int const target = _selectedIndex + 1;
             if (event.shift)
@@ -414,7 +407,7 @@ bool PlayQueueView::handleKey(ventty::KeyEvent const & event)
     {
         clearMultiSelection();
         int listH = rect().height - 2;
-        _selectedIndex = std::min(static_cast<int>(_tracks.size()) - 1, _selectedIndex + listH);
+        _selectedIndex = std::min(_queue.size() - 1, _selectedIndex + listH);
         scrollToSelected();
         return true;
     }
@@ -430,9 +423,9 @@ bool PlayQueueView::handleKey(ventty::KeyEvent const & event)
     if (event.key == Key::End || event.key == Key::Right)
     {
         clearMultiSelection();
-        if (!_tracks.empty())
+        if (!_queue.empty())
         {
-            _selectedIndex = static_cast<int>(_tracks.size()) - 1;
+            _selectedIndex = _queue.size() - 1;
         }
         scrollToSelected();
         return true;
@@ -440,7 +433,7 @@ bool PlayQueueView::handleKey(ventty::KeyEvent const & event)
 
     if (event.key == Key::Enter)
     {
-        if (_onPlay && !_tracks.empty())
+        if (_onPlay && !_queue.empty())
         {
             _onPlay(_selectedIndex);
         }
@@ -481,7 +474,7 @@ bool PlayQueueView::handleMouse(ventty::MouseEvent const & event)
     }
     if (event.button == Button::ScrollDown)
     {
-        if (_selectedIndex < static_cast<int>(_tracks.size()) - 1)
+        if (_selectedIndex < _queue.size() - 1)
         {
             _selectedIndex++;
             scrollToSelected();
@@ -497,7 +490,7 @@ bool PlayQueueView::handleMouse(ventty::MouseEvent const & event)
         {
             int clickedRow = event.y - listY;
             int clickedIdx = _scrollOffset + clickedRow;
-            if (clickedIdx >= 0 && clickedIdx < static_cast<int>(_tracks.size()))
+            if (clickedIdx >= 0 && clickedIdx < _queue.size())
             {
                 if (_selectedIndex == clickedIdx && _onPlay)
                 {

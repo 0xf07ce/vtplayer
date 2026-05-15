@@ -3,7 +3,7 @@
 
 #include "Application.h"
 
-#include "../playqueue/PlayQueueRepository.h"
+#include "../util/M3uReader.h"
 #include "../util/UnicodeNormalize.h"
 #include "../visualizer/DebugBars.h"
 #include "../visualizer/MatrixRain.h"
@@ -185,10 +185,6 @@ namespace vtplayer
                                                _playQueueView->setPlayingIndex(-1);
                                            });
 
-        // Load the persistent play queue from ~/.config/ventty-player/playqueue.m3u.
-        _currentPlayQueue = PlayQueueRepository::load();
-        _playQueueView->setTracks(_currentPlayQueue.tracks());
-
         _transportBar = std::make_unique<TransportBar>();
         _transportBar->setTheme(_theme);
 
@@ -225,13 +221,6 @@ namespace vtplayer
         _config.gainNorm = _audio.gainNormEnabled();
         _config.visualizerIndex = _visualizerIndex;
         _config.save();
-
-        // Persist the current play queue's track list to disk.
-        if (!_currentPlayQueue.path().empty() && _playQueueView)
-        {
-            _currentPlayQueue.setTracks(_playQueueView->tracks());
-            _currentPlayQueue.save();
-        }
 
         // Audio must stop before terminal restores — otherwise audio thread
         // output can corrupt the restored terminal.
@@ -1024,10 +1013,10 @@ namespace vtplayer
     {
         if (!_playQueueView) return;
 
-        auto loaded = PlayQueue::load(path);
+        auto loaded = M3uReader::read(path);
         if (!loaded) return;
 
-        for (auto const &track : loaded->tracks())
+        for (auto const &track : *loaded)
         {
             _playQueueView->addTrack(track);
         }

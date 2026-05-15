@@ -49,10 +49,10 @@ add_executable(vtplayer
     # playqueue
     playqueue/PlayQueue.h
     playqueue/PlayQueue.cpp
-    playqueue/PlayQueueRepository.h
-    playqueue/PlayQueueRepository.cpp
 
     # util
+    util/M3uReader.h
+    util/M3uReader.cpp
     util/UnicodeNormalize.h
     util/UnicodeNormalize.cpp
 )
