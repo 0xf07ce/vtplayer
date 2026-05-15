@@ -103,6 +103,11 @@ namespace vtplayer
         /// the onPlayingRemoved callback).
         void sendLibraryToPlayQueue();
 
+        /// Switch the left panel to Library and move the cursor to the track
+        /// that is currently playing. No-op if nothing is playing or the
+        /// track isn't in the index.
+        void locatePlayingInLibrary();
+
         bool _running = false;
         std::unique_ptr<ventty::TerminalBase> _terminal;
         ventty::Window *_rootWindow = nullptr;

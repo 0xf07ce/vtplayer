@@ -230,6 +230,7 @@ namespace vtplayer
             "Set current directory as library root",
             "Rescan library",
             "Send library to play queue",
+            "Locate playing track in library",
             "Exit",
         });
         _contextMenu->setOnSelect([this](int idx) { onContextMenuSelect(idx); });
@@ -1028,7 +1029,8 @@ namespace vtplayer
         //   1 = Set current directory as library root
         //   2 = Rescan library
         //   3 = Send library to play queue
-        //   4 = Exit
+        //   4 = Locate playing track in library
+        //   5 = Exit
         switch (index)
         {
         case 0:
@@ -1051,6 +1053,9 @@ namespace vtplayer
             sendLibraryToPlayQueue();
             break;
         case 4:
+            locatePlayingInLibrary();
+            break;
+        case 5:
             quit();
             break;
         default:
@@ -1200,6 +1205,24 @@ namespace vtplayer
         if (!_playQueueView) return;
         if (_library.empty()) return;
         _playQueueView->setTracks(_library.tracks());
+    }
+
+    void Application::locatePlayingInLibrary()
+    {
+        if (!_libraryView) return;
+        auto const & path = _audio.currentTrack().path;
+        if (path.empty()) return;
+
+        if (_browserLeft != BrowserLeft::Library)
+        {
+            _browserLeft = BrowserLeft::Library;
+            if (_focus == FocusPanel::FileBrowser)
+            {
+                _fileBrowser->setFocused(false);
+                _libraryView->setFocused(true);
+            }
+        }
+        _libraryView->locate(path);
     }
 
 } // namespace vtplayer

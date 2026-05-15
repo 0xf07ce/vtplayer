@@ -349,6 +349,29 @@ void LibraryView::draw(ventty::Window & window)
     int const listH    = r.height - 2;
     int const contentW = r.width - 2;
 
+    // Empty state: guide the user to register a library root.
+    if (_visible.empty())
+    {
+        ventty::Style hintStyle{_theme.browserFg, _theme.browserBg};
+        char const * lines[] = {
+            "Library is empty.",
+            "",
+            "Press ESC to open the menu, then:",
+            "  Set current directory as library root",
+            "or:",
+            "  Rescan library",
+        };
+        constexpr int kLineCount = static_cast<int>(sizeof(lines) / sizeof(lines[0]));
+        int const top = r.y + 2 + std::max(0, (listH - kLineCount) / 2);
+        for (int i = 0; i < kLineCount && i < listH; ++i)
+        {
+            std::string const text = truncateToWidth(lines[i], contentW - 1);
+            int const cx = r.x + 2;
+            window.drawText(cx, top + i, text, hintStyle);
+        }
+        return;
+    }
+
     for (int i = 0; i < listH; ++i)
     {
         int const visIdx = _scrollOffset + i;
