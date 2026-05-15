@@ -188,6 +188,23 @@ namespace vtplayer
                                                _playQueueView->setPlayingIndex(-1);
                                            });
 
+        _libraryView = std::make_unique<LibraryView>();
+        _libraryView->setTheme(_theme);
+        _libraryView->setOnSendToQueue([this](std::vector<TrackInfo> tracks, bool replace)
+                                      {
+                                          if (!_playQueueView || tracks.empty()) return;
+                                          if (replace)
+                                          {
+                                              int const startIdx = 0;
+                                              _playQueueView->setTracks(std::move(tracks));
+                                              playTrack(startIdx);
+                                          }
+                                          else
+                                          {
+                                              for (auto const &t : tracks) _playQueueView->addTrack(t);
+                                          }
+                                      });
+
         _transportBar = std::make_unique<TransportBar>();
         _transportBar->setTheme(_theme);
 
@@ -221,6 +238,7 @@ namespace vtplayer
             _libraryRepo->loadInto(_library);
             scanLibrary();
         }
+        _libraryView->setLibrary(&_library);
 
         // Restore the previous session's play queue (path list, resolved
         // against the library index for full metadata).
@@ -288,6 +306,7 @@ namespace vtplayer
             browserW = 20;
         int playQueueW = w - browserW;
         _fileBrowser->setRect(0, contentY, browserW, contentH);
+        _libraryView->setRect(0, contentY, browserW, contentH);
         _playQueueView->setRect(browserW, contentY, playQueueW, contentH);
 
         // Visualizer takes the full content area.
@@ -374,7 +393,14 @@ namespace vtplayer
 
     void Application::drawBrowserScreen()
     {
-        _fileBrowser->draw(*_rootWindow);
+        if (_browserLeft == BrowserLeft::Library)
+        {
+            _libraryView->draw(*_rootWindow);
+        }
+        else
+        {
+            _fileBrowser->draw(*_rootWindow);
+        }
         _playQueueView->draw(*_rootWindow);
 
         // Draw vertical separator between panels
@@ -631,7 +657,14 @@ namespace vtplayer
         {
             if (_focus == FocusPanel::FileBrowser)
             {
-                _fileBrowser->handleKey(event);
+                if (_browserLeft == BrowserLeft::Library)
+                {
+                    _libraryView->handleKey(event);
+                }
+                else
+                {
+                    _fileBrowser->handleKey(event);
+                }
             }
             else
             {
@@ -668,7 +701,8 @@ namespace vtplayer
                     if (_focus != FocusPanel::FileBrowser)
                     {
                         _focus = FocusPanel::FileBrowser;
-                        _fileBrowser->setFocused(true);
+                        _fileBrowser->setFocused(_browserLeft == BrowserLeft::Files);
+                        _libraryView->setFocused(_browserLeft == BrowserLeft::Library);
                         _playQueueView->setFocused(false);
                     }
                 }
@@ -678,13 +712,18 @@ namespace vtplayer
                     {
                         _focus = FocusPanel::PlayQueue;
                         _fileBrowser->setFocused(false);
+                        _libraryView->setFocused(false);
                         _playQueueView->setFocused(true);
                     }
                 }
             }
 
             // Delegate to focused panel
-            if (_fileBrowser->rect().contains(event.x, event.y))
+            if (_browserLeft == BrowserLeft::Library && _libraryView->rect().contains(event.x, event.y))
+            {
+                _libraryView->handleMouse(event);
+            }
+            else if (_browserLeft == BrowserLeft::Files && _fileBrowser->rect().contains(event.x, event.y))
             {
                 _fileBrowser->handleMouse(event);
             }
@@ -730,6 +769,20 @@ namespace vtplayer
             return;
         }
 
+        // l/L: toggle the Browser-screen left panel between Files and Library.
+        if (event.key == Key::Char && (ch == 'l' || ch == 'L') && !event.alt && !event.ctrl)
+        {
+            if (_screen != Screen::Browser) return;
+            _browserLeft = (_browserLeft == BrowserLeft::Files) ? BrowserLeft::Library : BrowserLeft::Files;
+            if (_focus == FocusPanel::FileBrowser)
+            {
+                _fileBrowser->setFocused(_browserLeft == BrowserLeft::Files);
+                _libraryView->setFocused(_browserLeft == BrowserLeft::Library);
+            }
+            _terminal->forceRedraw();
+            return;
+        }
+
         // h/H: open the help overlay (dismissed by H or ESC).
         if (event.key == Key::Char && (ch == 'h' || ch == 'H') && !event.alt && !event.ctrl)
         {
@@ -768,13 +821,15 @@ namespace vtplayer
                 {
                     _focus = FocusPanel::PlayQueue;
                     _fileBrowser->setFocused(false);
+                    _libraryView->setFocused(false);
                     _playQueueView->setFocused(true);
                 }
             }
             else
             {
                 _focus = FocusPanel::FileBrowser;
-                _fileBrowser->setFocused(true);
+                _fileBrowser->setFocused(_browserLeft == BrowserLeft::Files);
+                _libraryView->setFocused(_browserLeft == BrowserLeft::Library);
                 _playQueueView->setFocused(false);
             }
             return;
@@ -1088,6 +1143,8 @@ namespace vtplayer
 
         LibraryScanner scanner(_library, *_libraryRepo);
         scanner.scan(_config.libraryRoot, exts);
+
+        if (_libraryView) _libraryView->rebuild();
     }
 
     void Application::setLibraryRoot(std::filesystem::path root)

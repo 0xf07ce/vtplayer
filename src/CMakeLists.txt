@@ -20,6 +20,8 @@ add_executable(vtplayer
     view/HeaderBar.cpp
     view/FileBrowser.h
     view/FileBrowser.cpp
+    view/LibraryView.h
+    view/LibraryView.cpp
     view/PlayQueueView.h
     view/PlayQueueView.cpp
     view/TransportBar.h

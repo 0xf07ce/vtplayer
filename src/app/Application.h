@@ -9,6 +9,7 @@
 #include "../view/ContextMenu.h"
 #include "../view/FileBrowser.h"
 #include "../view/HeaderBar.h"
+#include "../view/LibraryView.h"
 #include "../view/PlayQueueView.h"
 #include "../view/Theme.h"
 #include "../view/TransportBar.h"
@@ -37,6 +38,12 @@ namespace vtplayer
     {
         FileBrowser,
         PlayQueue,
+    };
+
+    enum class BrowserLeft
+    {
+        Files,
+        Library,
     };
 
     class Application
@@ -111,6 +118,7 @@ namespace vtplayer
         Screen _screen = Screen::Browser;
         Screen _previousScreen = Screen::Browser; // restored when leaving Help
         FocusPanel _focus = FocusPanel::FileBrowser;
+        BrowserLeft _browserLeft = BrowserLeft::Files;
 
         struct HelpRow
         {
@@ -127,6 +135,7 @@ namespace vtplayer
         // Views
         std::unique_ptr<HeaderBar> _headerBar;
         std::unique_ptr<FileBrowser> _fileBrowser;
+        std::unique_ptr<LibraryView> _libraryView;
         std::unique_ptr<PlayQueueView> _playQueueView;
         std::unique_ptr<TransportBar> _transportBar;
         std::unique_ptr<VisualizerView> _visualizerView;
