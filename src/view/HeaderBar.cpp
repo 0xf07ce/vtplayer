@@ -5,6 +5,10 @@
 
 #include <ventty/art/AsciiArt.h>
 
+#ifndef VTPLAYER_VERSION
+#define VTPLAYER_VERSION "unknown"
+#endif
+
 namespace vtplayer
 {
 
@@ -25,7 +29,7 @@ void HeaderBar::draw(ventty::Window & window)
     window.putChar(x++, r.y, ventty::DOUBLE_BOX.h, borderStyle);
     window.putChar(x++, r.y, U'[', borderStyle);
 
-    std::string title = " VT-PLAYER ";
+    std::string title = " VT-PLAYER " VTPLAYER_VERSION " ";
     window.drawText(x, r.y, title, titleStyle);
     x += static_cast<int>(title.size());
 

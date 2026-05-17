@@ -21,7 +21,7 @@ struct Config
 
     // [visualizer]
     int barCount = 48;
-    int visualizerIndex = 1;  ///< 0=Oscilloscope, 1=Spectrum, 2=MatrixRain, 3=DebugBars
+    int visualizerIndex = 1;  ///< 0=Oscilloscope, 1=Spectrum, 2=MatrixRain, 3=DebugBars, 4=TagInfo, 5=Vinyl
 
     // [formats]
     std::string extensions = "mp3,wav,ogg,flac";

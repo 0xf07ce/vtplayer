@@ -1,6 +1,22 @@
 include(FetchContent)
 
-# ventty: terminal UI framework
+# When ON, taglib / cxxopts / SQLite3 are taken from the
+# system (e.g. Homebrew-provided bottles) via find_package instead of being
+# git-cloned and built from source by FetchContent. This is the mode the
+# Homebrew formula uses so `brew install --build-bottle` does not have to
+# compile TagLib from source on every bottle. Default OFF keeps the plain
+# `cmake -B build` developer workflow unchanged (no regression).
+option(VTPLAYER_USE_SYSTEM_DEPS
+    "Use system/Homebrew-provided deps (find_package) instead of FetchContent"
+    OFF)
+
+# ventty: terminal UI framework.
+#
+# ventty is always consumed via FetchContent because upstream (v0.2.0) ships
+# no install()/export() rules, so there is no find_package(ventty) package to
+# depend on. Offline / Homebrew builds stage the source and point CMake at it
+# with -DFETCHCONTENT_SOURCE_DIR_VENTTY=<path>, which FetchContent honors
+# transparently (no network during the build).
 FetchContent_Declare(ventty
     GIT_REPOSITORY https://github.com/0xf07ce/ventty.git
     GIT_TAG        v0.2.0   # 970e9d1e6ff7da225f2ea4ac9ef0aa999c8b0efa
@@ -11,39 +27,56 @@ set(VENTTY_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(VENTTY_BUILD_GFX      OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(ventty)
 
-# cxxopts: header-only CLI option parser (MIT)
-FetchContent_Declare(cxxopts
-    GIT_REPOSITORY https://github.com/jarro2783/cxxopts.git
-    GIT_TAG        v3.2.1
-    GIT_SHALLOW    TRUE
-)
-set(CXXOPTS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(CXXOPTS_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(cxxopts)
+if(VTPLAYER_USE_SYSTEM_DEPS)
+    # cxxopts: header-only CLI option parser. Homebrew `cxxopts` ships a CMake
+    # package config exposing the cxxopts::cxxopts target.
+    find_package(cxxopts CONFIG REQUIRED)
 
-# TagLib: audio metadata library (dual-licensed LGPL-2.1 / MPL-1.1; used under MPL-1.1)
-FetchContent_Declare(taglib
-    GIT_REPOSITORY https://github.com/taglib/taglib.git
-    GIT_TAG        v2.0.2
-    GIT_SHALLOW    TRUE
-)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(BUILD_TESTING     OFF CACHE BOOL "" FORCE)
-set(BUILD_EXAMPLES    OFF CACHE BOOL "" FORCE)
-set(BUILD_BINDINGS    OFF CACHE BOOL "" FORCE)
-set(VISIBILITY_HIDDEN ON  CACHE BOOL "" FORCE)
-set(WITH_ZLIB         ON  CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(taglib)
+    # TagLib: audio metadata library. TagLib 2.x ships a CMake package config
+    # exposing the TagLib::tag target (Homebrew `taglib`). Using the prebuilt
+    # bottle avoids the multi-minute TagLib source build per Homebrew bottle.
+    find_package(taglib CONFIG REQUIRED)
 
-# TagLib only sets INSTALL_INTERFACE include dirs on its `tag` target; expose
-# the source tree so `#include <taglib/...>` works when consumed via subdir.
-# `toolkit` is needed because TagLib's public headers use unqualified
-# `#include "tfile.h"` etc. for cross-references between subdirectories.
-target_include_directories(tag INTERFACE
-    $<BUILD_INTERFACE:${taglib_SOURCE_DIR}>
-    $<BUILD_INTERFACE:${taglib_SOURCE_DIR}/taglib>
-    $<BUILD_INTERFACE:${taglib_SOURCE_DIR}/taglib/toolkit>
-)
+    set(VTPLAYER_CXXOPTS_TARGET cxxopts::cxxopts)
+    set(VTPLAYER_TAGLIB_TARGET  TagLib::tag)
+else()
+    # cxxopts: header-only CLI option parser (MIT)
+    FetchContent_Declare(cxxopts
+        GIT_REPOSITORY https://github.com/jarro2783/cxxopts.git
+        GIT_TAG        v3.2.1
+        GIT_SHALLOW    TRUE
+    )
+    set(CXXOPTS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(CXXOPTS_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(cxxopts)
+
+    # TagLib: audio metadata library (dual-licensed LGPL-2.1 / MPL-1.1; used under MPL-1.1)
+    FetchContent_Declare(taglib
+        GIT_REPOSITORY https://github.com/taglib/taglib.git
+        GIT_TAG        v2.0.2
+        GIT_SHALLOW    TRUE
+    )
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    set(BUILD_TESTING     OFF CACHE BOOL "" FORCE)
+    set(BUILD_EXAMPLES    OFF CACHE BOOL "" FORCE)
+    set(BUILD_BINDINGS    OFF CACHE BOOL "" FORCE)
+    set(VISIBILITY_HIDDEN ON  CACHE BOOL "" FORCE)
+    set(WITH_ZLIB         ON  CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(taglib)
+
+    # TagLib only sets INSTALL_INTERFACE include dirs on its `tag` target; expose
+    # the source tree so `#include <taglib/...>` works when consumed via subdir.
+    # `toolkit` is needed because TagLib's public headers use unqualified
+    # `#include "tfile.h"` etc. for cross-references between subdirectories.
+    target_include_directories(tag INTERFACE
+        $<BUILD_INTERFACE:${taglib_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${taglib_SOURCE_DIR}/taglib>
+        $<BUILD_INTERFACE:${taglib_SOURCE_DIR}/taglib/toolkit>
+    )
+
+    set(VTPLAYER_CXXOPTS_TARGET cxxopts)
+    set(VTPLAYER_TAGLIB_TARGET  tag)
+endif()
 
 # miniaudio: header-only (public domain), placed in deps/include/miniaudio/miniaudio.h
 
@@ -56,7 +89,7 @@ target_include_directories(vtplayerDep INTERFACE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 target_link_libraries(vtplayerDep INTERFACE
-    cxxopts
-    tag
+    ${VTPLAYER_CXXOPTS_TARGET}
+    ${VTPLAYER_TAGLIB_TARGET}
     SQLite3::SQLite3
 )

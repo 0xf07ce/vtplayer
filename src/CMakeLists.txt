@@ -45,6 +45,8 @@ add_executable(vtplayer
     visualizer/DebugBars.cpp
     visualizer/TagInfoView.h
     visualizer/TagInfoView.cpp
+    visualizer/VinylVis.h
+    visualizer/VinylVis.cpp
 
     # config
     config/Config.h

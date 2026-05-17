@@ -108,6 +108,11 @@ namespace vtplayer
         /// True when the left panel is a MediaLibrary projection (Artist /
         /// Album / Directory) rather than the live FileBrowser.
         bool leftIsLibrary() const { return _leftMode != LeftMode::FileBrowser; }
+
+        /// Show/hide the Browser-screen left panel (Library / FileBrowser).
+        /// When hidden, PlayQueueView takes the full content width and focus
+        /// is pinned to it. Bound to the `l` key.
+        void setLibraryPanelVisible(bool visible);
         void setVisualizerByIndex(int index);
 
         void playTrack(int index);
@@ -149,6 +154,7 @@ namespace vtplayer
         Screen _previousScreen = Screen::Browser; // restored when leaving Help
         FocusPanel _focus = FocusPanel::FileBrowser;
         LeftMode _leftMode = LeftMode::Album;
+        bool _libraryPanelVisible = true; // `l` toggles the left panel
 
         struct HelpRow
         {

@@ -1,5 +1,16 @@
 name: Release Bottles
 
+# Push a tag `vX.Y.Z` (or run manually) and everything is automated:
+#   prepare -> bumps the tap formula (url/source sha + ventty resource sha)
+#   bottle  -> builds + uploads bottles on each macOS runner
+#   merge   -> writes the `bottle do` sha256 lines back into the tap formula
+#
+# No manual formula version bump and no copy-pasting bottle hashes.
+#
+# Requires the `TAP_PUSH_TOKEN` secret: a PAT with Contents:write on
+# 0xf07ce/homebrew-tap (the default GITHUB_TOKEN cannot push cross-repo).
+# See packaging/homebrew/README.md.
+
 on:
   push:
     tags:
@@ -10,27 +21,103 @@ on:
         description: 'Tag to build bottles for (e.g., v0.3.0). Must already exist on this repo.'
         required: true
 
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+  REPO: ${{ github.repository }}
+  TAP_REPO: 0xf07ce/homebrew-tap
+  TAP_NAME: 0xf07ce/tap
+  FORMULA: 0xf07ce/tap/vtplayer
+
 jobs:
-  ensure-release:
+  prepare:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    env:
-      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
+      - name: Checkout vtplayer
+        uses: actions/checkout@v4
+
       - name: Ensure GitHub Release exists
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if ! gh release view "${TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release create "${TAG}" \
-              --repo "${{ github.repository }}" \
-              --title "${TAG}" \
-              --generate-notes
+          if ! gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            gh release create "${TAG}" --repo "${REPO}" --title "${TAG}" --generate-notes
           fi
 
+      - name: Resolve versions and source checksums
+        id: vers
+        run: |
+          set -euo pipefail
+          ventty_tag=$(sed -n '/FetchContent_Declare(ventty/,/)/p' deps/CMakeLists.txt \
+            | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          [ -n "${ventty_tag}" ] || { echo "::error::could not parse ventty GIT_TAG from deps/CMakeLists.txt"; exit 1; }
+
+          src_sha=$(curl -fsSL "https://github.com/${REPO}/archive/refs/tags/${TAG}.tar.gz" | sha256sum | awk '{print $1}')
+          ventty_sha=$(curl -fsSL "https://github.com/0xf07ce/ventty/archive/refs/tags/${ventty_tag}.tar.gz" | sha256sum | awk '{print $1}')
+
+          {
+            echo "ventty_tag=${ventty_tag}"
+            echo "src_sha=${src_sha}"
+            echo "ventty_sha=${ventty_sha}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout tap
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TAP_REPO }}
+          token: ${{ secrets.TAP_PUSH_TOKEN }}
+          path: tap
+
+      - name: Bump formula (url / source sha / ventty resource)
+        env:
+          VENTTY_TAG: ${{ steps.vers.outputs.ventty_tag }}
+          SRC_SHA: ${{ steps.vers.outputs.src_sha }}
+          VENTTY_SHA: ${{ steps.vers.outputs.ventty_sha }}
+        run: |
+          set -euo pipefail
+          ruby - "tap/Formula/vtplayer.rb" <<'RUBY'
+          path = ARGV[0]
+          tag        = ENV.fetch("TAG")
+          ventty_tag = ENV.fetch("VENTTY_TAG")
+          src_sha    = ENV.fetch("SRC_SHA")
+          ventty_sha = ENV.fetch("VENTTY_SHA")
+          s = File.read(path)
+
+          # vtplayer source: url tag + the sha256 line immediately following it.
+          s.sub!(%r{(url "https://github\.com/0xf07ce/vtplayer/archive/refs/tags/)v[^"]+(\.tar\.gz"\s+sha256 ")[0-9a-f]{64}}m) do
+            "#{$1}#{tag}#{$2}#{src_sha}"
+          end
+
+          # Bottle root_url points at the matching GitHub Release.
+          s.sub!(%r{(root_url "https://github\.com/0xf07ce/vtplayer/releases/download/)v[^"]+"}) do
+            %(#{$1}#{tag}")
+          end
+
+          # ventty resource: url tag + its sha256.
+          s.sub!(%r{(url "https://github\.com/0xf07ce/ventty/archive/refs/tags/)v[^"]+(\.tar\.gz"\s+sha256 ")[0-9a-f]{64}}m) do
+            "#{$1}#{ventty_tag}#{$2}#{ventty_sha}"
+          end
+
+          File.write(path, s)
+          RUBY
+
+      - name: Commit bumped formula
+        run: |
+          set -euo pipefail
+          cd tap
+          if git diff --quiet -- Formula/vtplayer.rb; then
+            echo "Formula already up to date for ${TAG}."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/vtplayer.rb
+          git commit -m "vtplayer: ${TAG#v}"
+          git push
+
   bottle:
-    needs: ensure-release
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -38,69 +125,81 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
-    env:
-      TAG: ${{ inputs.tag || github.ref_name }}
-      REPO: ${{ github.repository }}
-      TAP: 0xf07ce/tap
-      FORMULA: 0xf07ce/tap/vtplayer
-
     steps:
-      - name: Tap
+      - name: Tap (picks up the bump from prepare)
         run: |
           brew update --quiet
-          brew tap "${TAP}"
-
-      - name: Verify tap formula version matches tag
-        run: |
-          formula_version=$(brew info --json=v2 "${FORMULA}" | jq -r '.formulae[0].versions.stable')
-          expected="${TAG#v}"
-          if [ "${formula_version}" != "${expected}" ]; then
-            echo "::error::Tap formula version (${formula_version}) does not match tag (${expected})."
-            echo "::error::Update Formula/vtplayer.rb in homebrew-tap to ${TAG} before triggering this workflow."
-            exit 1
-          fi
+          brew tap "${TAP_NAME}"
 
       - name: Build with --build-bottle
         run: brew install --build-bottle "${FORMULA}"
 
       - name: Bottle
         run: |
+          set -euo pipefail
           brew bottle \
+            --json \
             --no-rebuild \
             --root-url="https://github.com/${REPO}/releases/download/${TAG}" \
             "${FORMULA}"
 
           # `brew bottle` emits files with a double dash between formula name
           # and version (e.g. vtplayer--0.2.0.arm64_tahoe.bottle.tar.gz). The
-          # release asset must use the single-dash form that brew install
-          # looks up from `root_url`.
+          # release asset must use the single-dash form that `brew install`
+          # looks up from `root_url`. The .json keeps its name (consumed by
+          # the merge job, not by clients).
           for f in vtplayer--*.bottle.tar.gz; do
             mv "$f" "${f//--/-}"
           done
-          ls -la vtplayer-*.bottle.tar.gz
+          ls -la vtplayer-*.bottle.tar.gz vtplayer--*.bottle.json
 
       - name: Upload bottle to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${TAG}" \
-            vtplayer-*.bottle.tar.gz \
-            --repo "${REPO}" \
-            --clobber
+          gh release upload "${TAG}" vtplayer-*.bottle.tar.gz --repo "${REPO}" --clobber
 
-      - name: Emit formula DSL snippet
+      - name: Upload bottle JSON artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bottle-json-${{ matrix.os }}
+          path: vtplayer--*.bottle.json
+          if-no-files-found: error
+
+  merge:
+    needs: bottle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download bottle JSON artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bottle-json-*
+          merge-multiple: true
+
+      - name: Clone tap into Homebrew taps dir
         run: |
-          {
-            echo "### Bottle for ${{ matrix.os }}"
-            echo ""
-            echo "Add this line inside the \`bottle do\` block in"
-            echo "[\`Formula/vtplayer.rb\`](https://github.com/0xf07ce/homebrew-tap/blob/main/Formula/vtplayer.rb):"
-            echo ""
-            for f in vtplayer-*.bottle.tar.gz; do
-              sha=$(shasum -a 256 "$f" | awk '{print $1}')
-              tag=$(echo "$f" | sed -E 's/^vtplayer-[0-9.]+\.(.+)\.bottle\.tar\.gz$/\1/')
-              echo '```ruby'
-              echo "sha256 cellar: :any_skip_relocation, ${tag}: \"${sha}\""
-              echo '```'
-            done
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          tap_dir="$(brew --repository)/Library/Taps/0xf07ce/homebrew-tap"
+          mkdir -p "$(dirname "$tap_dir")"
+          git clone "https://x-access-token:${{ secrets.TAP_PUSH_TOKEN }}@github.com/${TAP_REPO}.git" "$tap_dir"
+          echo "TAP_DIR=$tap_dir" >> "$GITHUB_ENV"
+
+      - name: Merge bottle blocks into formula
+        run: |
+          set -euo pipefail
+          ls -la vtplayer--*.bottle.json
+          brew bottle --merge --write --no-rebuild --no-commit vtplayer--*.bottle.json
+
+      - name: Commit updated bottle block
+        run: |
+          set -euo pipefail
+          cd "$TAP_DIR"
+          if git diff --quiet -- Formula/vtplayer.rb; then
+            echo "No bottle changes to commit."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/vtplayer.rb
+          git commit -m "vtplayer: ${TAG#v} bottles"
+          git push
