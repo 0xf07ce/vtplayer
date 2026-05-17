@@ -168,7 +168,9 @@ jobs:
 
   merge:
     needs: bottle
-    runs-on: ubuntu-latest
+    # macOS runner so Homebrew (`brew`) is preinstalled and on PATH;
+    # ubuntu-latest has Linuxbrew but not on PATH (brew: command not found).
+    runs-on: macos-15
     steps:
       - name: Download bottle JSON artifacts
         uses: actions/download-artifact@v4
