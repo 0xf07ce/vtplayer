@@ -1,6 +1,46 @@
 # CHANGELOG
 
-## 0.4.0 (Unreleased)
+## 0.6.0 (Unreleased)
+
+- Library scan is now two phases. Pass 1 walks the filesystem and collects
+  the file list inline (no pre-count pass); it pumps input every 512 entries
+  so ESC cancels, and shows a running "Collecting N" count. Pass 2 reads
+  tags on a background thread, writing only the SQLite repository so the UI
+  keeps using the pre-scan index; progress shows as a plain yellow `NN%` in
+  the bottom-right corner that disappears at 100%. The full-screen modal and
+  progress bar are gone. Pass 2 is not user-cancellable but stops promptly
+  on exit (no hang while a scan is in flight). On startup the whole scan is
+  skipped when the library root's signature (path + mtime, persisted as
+  `[library] scan_sig`) is unchanged and the DB index is non-empty, so an
+  unchanged library no longer re-walks the tree every launch; "Rescan
+  library" and a root change always force a full scan. A path/dir CLI
+  argument and a directory startup target are also supported.
+- Suppressed TagLib's stderr warnings (e.g. "Invalid UTF16 string. BOM is
+  broken." from legacy ID3v2 tags) via a no-op debug listener, so library
+  scanning no longer corrupts the terminal UI.
+- CI: release workflow `merge` job moved to a macOS runner.
+
+## 0.5.0 (2026-05-18)
+
+- New Vinyl/CD disc visualizer (VinylVis) registered on slot 5.
+- `l` key toggles the left panel; PlayQueue uses the full width when it is hidden.
+- Header bar now shows the player version.
+- Packaging: added Homebrew formula/README and rewrote `release.yml` to automate prepare/bottle/merge on tag push.
+- Build: new `VTPLAYER_USE_SYSTEM_DEPS` option to source TagLib/cxxopts/SQLite3 from system (Homebrew) packages.
+
+## 0.4.0 (2026-05-15)
+
+- ReplayGain normalization: read `REPLAYGAIN_TRACK_GAIN`/`PEAK` on load, falling back to RMS auto-gain when absent. Renamed `auto_gain` config and `AudioEngine` API to `gain_norm`; transport bar shows an RG/AG label.
+- New TagInfoView (slot 4) with scroll via arrow keys / PgUp-Dn / Home-End / wheel.
+- Added `--dump-tags` CLI flag to inspect a file's TagLib PropertyMap.
+- Integrated TagLib via FetchContent; consolidated the ventty dependency under `deps/`.
+- Split PlayQueue into a volatile container plus a standalone M3uReader.
+- New MediaLibrary domain with extended TrackInfo metadata fields.
+- Library index persisted in SQLite and scanned via TagLib; library actions exposed in the context menu.
+- Connected the library to the play queue with session restore.
+- New LibraryView panel with directory tree and ArtistAlbum group mode (`G` toggle).
+- Modal search dialog with live filtering; "locate playing track" action and empty-library guidance.
+- Unified the left panel into a single F1-F4 mode axis (Artist / Album / Directory / FileBrowser), persisted in `[library] left_mode`. Dropped `[ui] start_directory` and the Shift+Enter quiet-append feature; ESC menu is now built per mode.
 
 ## 0.3.0 (2026-05-14)
 
