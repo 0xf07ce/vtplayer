@@ -14,7 +14,9 @@
 
 #include <ventty/core/Utf8.h>
 
+#include <cstdint>
 #include <cstdio>
+#include <system_error>
 
 namespace vtplayer
 {
@@ -59,6 +61,20 @@ std::string joinValues(TagLib::PropertyMap const & props, char const * key, char
     return out;
 }
 
+std::string formatSize(std::uintmax_t bytes)
+{
+    char buf[32];
+    if (bytes >= 1024ULL * 1024 * 1024)
+        std::snprintf(buf, sizeof(buf), "%.2f GiB", bytes / (1024.0 * 1024 * 1024));
+    else if (bytes >= 1024ULL * 1024)
+        std::snprintf(buf, sizeof(buf), "%.2f MiB", bytes / (1024.0 * 1024));
+    else if (bytes >= 1024ULL)
+        std::snprintf(buf, sizeof(buf), "%.2f KiB", bytes / 1024.0);
+    else
+        std::snprintf(buf, sizeof(buf), "%ju B", bytes);
+    return buf;
+}
+
 std::string formatDuration(int seconds)
 {
     if (seconds < 0) seconds = 0;
@@ -98,6 +114,19 @@ void TagInfoView::refresh(std::filesystem::path const & path)
 
     _hasFile = true;
     TagLib::PropertyMap props = ref.file()->properties();
+
+    // --- File ---
+    {
+        std::vector<Row> rows;
+        rows.emplace_back("Path", path.string());
+        std::error_code ec;
+        std::uintmax_t const bytes = std::filesystem::file_size(path, ec);
+        if (!ec)
+        {
+            rows.emplace_back("Size", formatSize(bytes));
+        }
+        _sections.emplace_back("File", std::move(rows));
+    }
 
     // --- Metadata ---
     {
