@@ -4,7 +4,6 @@
 #include "LibraryScanner.h"
 
 #include "LibraryRepository.h"
-#include "MediaLibrary.h"
 #include "../util/UnicodeNormalize.h"
 
 // Bare header names — see audio/ReplayGain.cpp for rationale.
@@ -109,19 +108,34 @@ TrackInfo extractMetadata(fs::path const & path)
 
 } // namespace
 
-LibraryScanner::LibraryScanner(MediaLibrary & library, LibraryRepository & repo)
-    : _library(library), _repo(repo)
+LibraryScanner::LibraryScanner(LibraryRepository & repo)
+    : _repo(repo)
 {
 }
 
-LibraryScanner::Result LibraryScanner::scan(fs::path const & root,
-                                            std::vector<std::string> const & extensions)
+std::string LibraryScanner::rootSignature(fs::path const & root)
 {
-    Result result;
-    if (root.empty()) return result;
+    if (root.empty()) return {};
+    std::error_code ec;
+    if (!fs::is_directory(root, ec)) return {};
+    auto t = fs::last_write_time(root, ec);
+    if (ec) return {};
+    return root.string() + "|" + std::to_string(toUnixSeconds(t));
+}
+
+std::vector<LibraryScanner::ScanEntry>
+LibraryScanner::collect(fs::path const & root,
+                        std::vector<std::string> const & extensions,
+                        CollectTickFn const & onTick,
+                        bool & canceled)
+{
+    canceled = false;
+    std::vector<ScanEntry> entries;
+
+    if (root.empty()) return entries;
 
     std::error_code ec;
-    if (!fs::exists(root, ec) || !fs::is_directory(root, ec)) return result;
+    if (!fs::exists(root, ec) || !fs::is_directory(root, ec)) return entries;
 
     std::unordered_set<std::string> extSet;
     for (auto e : extensions)
@@ -131,61 +145,116 @@ LibraryScanner::Result LibraryScanner::scan(fs::path const & root,
         if (!e.empty()) extSet.insert(std::move(e));
     }
 
-    auto known = _repo.mtimes();
-    std::unordered_set<std::string> seen;
-    seen.reserve(known.size());
+    // Tick cadence in *iterated* directory entries (not just matching files)
+    // so ESC stays responsive even inside subtrees that contain no audio.
+    constexpr int kTickEvery = 512;
 
+    auto tick = [&]() -> bool
+    {
+        if (!onTick) return true;
+        return onTick(static_cast<int>(entries.size()));
+    };
+
+    if (!tick()) { canceled = true; return entries; }
+
+    int iterated = 0;
     fs::recursive_directory_iterator it(
         root, fs::directory_options::skip_permission_denied, ec);
     fs::recursive_directory_iterator end;
     for (; it != end; it.increment(ec))
     {
         if (ec) { ec.clear(); continue; }
-        auto const & entry = *it;
 
+        if (++iterated % kTickEvery == 0)
+        {
+            if (!tick()) { canceled = true; return entries; }
+        }
+
+        auto const & entry = *it;
         if (!entry.is_regular_file(ec)) { ec.clear(); continue; }
         auto const & p = entry.path();
+        if (extSet.find(lowerExt(p)) == extSet.end()) continue;
 
-        std::string const ext = lowerExt(p);
-        if (extSet.find(ext) == extSet.end()) continue;
+        ScanEntry se;
+        se.path = p;
+        if (auto t = entry.last_write_time(ec); !ec) se.mtime = toUnixSeconds(t);
+        ec.clear();
+        if (auto sz = entry.file_size(ec); !ec) se.size = static_cast<std::int64_t>(sz);
+        ec.clear();
+        entries.push_back(std::move(se));
+    }
 
-        std::string const key = p.string();
+    tick(); // final tick — return value irrelevant, walk is done
+    return entries;
+}
+
+LibraryScanner::Result
+LibraryScanner::ingest(std::vector<ScanEntry> const & entries,
+                       IngestProgressFn const & onProgress,
+                       StopFn const & shouldStop)
+{
+    Result result;
+
+    auto report = [&](int percent)
+    {
+        if (onProgress) onProgress(std::clamp(percent, 0, 100));
+    };
+
+    report(0);
+
+    auto known = _repo.mtimes();
+    std::unordered_set<std::string> seen;
+    seen.reserve(entries.size());
+
+    int const total = static_cast<int>(entries.size());
+    int lastPercent = -1;
+
+    for (int i = 0; i < total; ++i)
+    {
+        // Bail out promptly on teardown. The repository keeps whatever was
+        // written so far; the deletion sweep is skipped so unseen rows are
+        // not wrongly purged — the next scan reconciles incrementally.
+        if (shouldStop && shouldStop())
+            return result;
+
+        ScanEntry const & e = entries[i];
+        std::string const key = e.path.string();
         seen.insert(key);
-
-        std::int64_t mtime = 0;
-        std::int64_t size  = 0;
-        if (auto t = entry.last_write_time(ec); !ec) mtime = toUnixSeconds(t);
-        ec.clear();
-        if (auto sz = entry.file_size(ec); !ec) size = static_cast<std::int64_t>(sz);
-        ec.clear();
 
         auto known_it = known.find(key);
         bool const present = (known_it != known.end());
-        if (present && mtime != 0 && known_it->second == mtime)
+        if (present && e.mtime != 0 && known_it->second == e.mtime)
         {
             ++result.skipped;
-            continue;
+        }
+        else
+        {
+            TrackInfo info = extractMetadata(e.path);
+            info.mtime = e.mtime;
+            info.size  = e.size;
+            _repo.upsert(info);
+            if (present) ++result.updated;
+            else         ++result.added;
         }
 
-        TrackInfo info = extractMetadata(p);
-        info.mtime = mtime;
-        info.size  = size;
-        _library.upsert(info);
-        _repo.upsert(info);
-
-        if (present) ++result.updated;
-        else         ++result.added;
+        // Report only when the integer percentage actually advances.
+        int const percent = total > 0 ? (i + 1) * 100 / total : 100;
+        if (percent != lastPercent)
+        {
+            lastPercent = percent;
+            report(percent);
+        }
     }
 
     // Sweep deletions: anything in the repo that we didn't see on disk.
     for (auto const & [key, _] : known)
     {
         if (seen.find(key) != seen.end()) continue;
-        _library.erase(key);
         _repo.erase(key);
         ++result.removed;
     }
 
+    report(100);
     return result;
 }
 

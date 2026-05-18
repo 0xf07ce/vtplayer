@@ -42,9 +42,20 @@ public:
     /// change). Preserves cursor position by best-effort path match.
     void rebuild();
 
+    /// Drop the entire node tree without touching the library. Used while a
+    /// background scan owns the MediaLibrary: `Node::track` points into the
+    /// library's vector, which the scan reallocates, so the stale tree must
+    /// be released before the worker runs. rebuild() restores it afterwards.
+    void clear();
+
     /// Expand parents and move the cursor to the node holding `path`. No-op
     /// if the path is not in the index.
     void locate(std::filesystem::path const & path);
+
+    /// Path of a track representing the current cursor: the selected track
+    /// itself, or the first track under the selected group. Empty if there is
+    /// no selection or no tracks under it. Used to carry focus across modes.
+    std::filesystem::path selectedTrackPath() const;
 
     /// Fired when the user activates a track or group.
     /// `tracks` contains every track under the selection; `replace` is true

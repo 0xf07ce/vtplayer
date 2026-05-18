@@ -33,6 +33,14 @@ struct Config
     /// it normalizes back to "album" on save so a fresh run starts in the
     /// indexed library.
     std::string leftMode = "album";
+    /// Absolute path of the track the library cursor rested on at exit.
+    /// Restored (locate) on the next run so focus survives quitting — even
+    /// when the run ended in FileBrowser (which normalizes to "album").
+    std::filesystem::path libraryFocus;
+    /// Library-root signature recorded after the last completed scan
+    /// (LibraryScanner::rootSignature). Empty until the first scan. When it
+    /// still matches on startup the filesystem walk is skipped entirely.
+    std::string scanSig;
 
     // [theme] — color overrides as "#RRGGBB" hex strings
     std::unordered_map<std::string, std::string> themeColors;

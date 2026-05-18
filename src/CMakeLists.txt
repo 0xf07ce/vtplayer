@@ -71,6 +71,8 @@ add_executable(vtplayer
     util/M3uReader.cpp
     util/UnicodeNormalize.h
     util/UnicodeNormalize.cpp
+    util/TagLibSilencer.h
+    util/TagLibSilencer.cpp
 )
 
 target_include_directories(vtplayer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

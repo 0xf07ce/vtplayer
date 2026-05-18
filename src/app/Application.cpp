@@ -162,6 +162,7 @@ namespace vtplayer
 
     Application::~Application()
     {
+        joinScanThread();
         _audio.shutdown();
     }
 
@@ -174,6 +175,11 @@ namespace vtplayer
         {
             while (_terminal->pollEvent())
                 ;
+
+            // The background ingest reported completion: join it and reload
+            // `_library` from the refreshed repository before draw().
+            if (_ingestFinished.load())
+                finalizeScan();
 
             updateUI();
             draw();
@@ -263,11 +269,25 @@ namespace vtplayer
         _fileBrowser->setShowHidden(_config.showHidden);
         _fileBrowser->setAllowedExtensions(_config.extensions);
         {
-            // FileBrowser always opens at the directory the player was
-            // launched from (no persisted start directory anymore).
+            // FileBrowser opens at the directory implied by the startup
+            // argument (a directory itself, or the parent of a file), and
+            // otherwise at the directory the player was launched from.
             std::error_code ec;
-            auto cwd = std::filesystem::current_path(ec);
-            _fileBrowser->setDirectory(ec ? std::filesystem::path("/") : cwd);
+            std::filesystem::path startDir;
+            if (!_initialDir.empty())
+            {
+                startDir = _initialDir;
+            }
+            else if (!_initialFile.empty())
+            {
+                startDir = _initialFile.parent_path();
+            }
+            else
+            {
+                auto cwd = std::filesystem::current_path(ec);
+                startDir = ec ? std::filesystem::path("/") : cwd;
+            }
+            _fileBrowser->setDirectory(startDir);
         }
         _fileBrowser->setOnActivate([this](std::vector<std::filesystem::path> const &paths)
                                     { activateFromBrowser(paths); });
@@ -345,8 +365,13 @@ namespace vtplayer
         if (_libraryRepo->open())
         {
             _libraryRepo->loadInto(_library);
-            scanLibrary();
         }
+        // Set the root now, not just in scanLibrary(): Directory mode builds
+        // its tree from library-root-relative paths, and setLeftMode() below
+        // may build it before the (possibly skipped) scan would set the root.
+        // Without this the tree falls back to absolute paths from "/".
+        if (!_config.libraryRoot.empty())
+            _library.setRoot(_config.libraryRoot);
         _libraryView->setLibrary(&_library);
         _searchDialog->setLibrary(&_library);
 
@@ -359,12 +384,34 @@ namespace vtplayer
             {
                 initMode = LeftMode::FileBrowser;
             }
+            // A startup path argument always lands in the FileBrowser so the
+            // requested directory is the one shown.
+            if (!_initialDir.empty() || !_initialFile.empty())
+            {
+                initMode = LeftMode::FileBrowser;
+            }
             setLeftMode(initMode);
+
+            // Restore the cursor saved at last exit. Seed the in-session
+            // anchor too so it carries through subsequent mode switches.
+            // If the index isn't ready yet (scan pending), finalizeScan()
+            // re-applies it after the tree is rebuilt.
+            _libraryAnchor = _config.libraryFocus;
+            if (!_libraryAnchor.empty() && _libraryView && initMode != LeftMode::FileBrowser)
+                _libraryView->locate(_libraryAnchor);
         }
 
-        // Restore the previous session's play queue (path list, resolved
-        // against the library index for full metadata).
+        if (!_initialFile.empty())
         {
+            // A file argument means "play exactly this": the queue holds only
+            // that one track and playback starts immediately. The persisted
+            // queue is intentionally ignored in this case.
+            activateFromBrowser({_initialFile});
+        }
+        else
+        {
+            // Restore the previous session's play queue (path list, resolved
+            // against the library index for full metadata).
             auto restored = PlayQueueCache::restore(_library);
             if (!restored.empty())
             {
@@ -372,20 +419,33 @@ namespace vtplayer
             }
         }
 
-        // If an initial file was provided, add it to the play queue and play
-        if (!_initialFile.empty())
-        {
-            addToPlayQueue(_initialFile);
-            playTrack(0);
-        }
+        // Kick off the filesystem reconcile last: every step above reads the
+        // DB-loaded `_library` snapshot (mode resolution, queue restore).
+        // scanLibrary() runs pass 1 inline (the run loop has not started yet,
+        // but the terminal is up so the tick can repaint) then backgrounds
+        // pass 2; the run loop starts right after.
+        scanLibrary();
     }
 
     void Application::cleanup()
     {
+        // Stop any in-flight scan before tearing down: the worker references
+        // `_library`/`_libraryRepo`, which outlive it only if joined here.
+        joinScanThread();
+
         // Sync runtime-mutable settings back before persisting.
         _config.gainNorm = _audio.gainNormEnabled();
         _config.visualizerIndex = _visualizerIndex;
         _config.leftMode = leftModeToConfig(_leftMode);
+        // Capture the live cursor (the session may have stayed in one library
+        // mode without ever switching) so focus survives the next launch.
+        if (_leftMode != LeftMode::FileBrowser && _libraryView)
+        {
+            auto cur = _libraryView->selectedTrackPath();
+            if (!cur.empty())
+                _libraryAnchor = cur;
+        }
+        _config.libraryFocus = _libraryAnchor;
         _config.save();
 
         // Snapshot the play queue (path list only) so the next run can
@@ -529,6 +589,9 @@ namespace vtplayer
         {
             _contextMenu->draw(*_rootWindow);
         }
+
+        // Unobtrusive scan status, bottom-right, above everything.
+        drawScanStatus();
     }
 
     void Application::drawBrowserScreen()
@@ -596,7 +659,7 @@ namespace vtplayer
             {"  G",                     "Toggle gain normalization (ReplayGain / auto-gain)", false},
             {"", "", false},
             {"Browser - Library", "", true},
-            {"  F1 / F2 / F3 / F4",     "Left panel: Artist / Album / Directory / Files", false},
+            {"  1 / 2 / 3 / 4",         "Left panel: Artist / Album / Directory / Files", false},
             {"  L",                     "Toggle left panel (play queue full-width when hidden)", false},
             {"  Tab",                   "Switch focus (browser <-> play queue)", false},
             {"  Left / Right",          "Collapse / expand selected group", false},
@@ -826,6 +889,16 @@ namespace vtplayer
         if (event.key == Key::None)
             return;
 
+        // Pass 1 (collect) runs inline on this thread and blocks the run
+        // loop; we only get here because the collect tick pumps events. The
+        // sole honored input is ESC, which cancels the walk.
+        if (_collectActive.load())
+        {
+            if (event.key == Key::Escape)
+                _collectCancel.store(true);
+            return;
+        }
+
         // Modal search dialog consumes all input while open.
         if (_searchDialog && _searchDialog->isOpen())
         {
@@ -932,6 +1005,11 @@ namespace vtplayer
 
     void Application::handleMouse(ventty::MouseEvent const &event)
     {
+        // Mouse input is inert while pass 1 blocks the run loop. (Pass 2
+        // runs in the background and the UI stays interactive.)
+        if (_collectActive.load())
+            return;
+
         using Button = ventty::MouseEvent::Button;
         using Action = ventty::MouseEvent::Action;
 
@@ -1025,29 +1103,39 @@ namespace vtplayer
             return;
         }
 
-        // F1-F4: pick the Browser-screen left panel directly.
-        //   F1 Artist · F2 Album · F3 Directory (all from the library index)
-        //   F4 FileBrowser (live filesystem from the launch CWD)
-        if (_screen == Screen::Browser && (event.key == Key::F1 || event.key == Key::F2 || event.key == Key::F3 || event.key == Key::F4))
+        // 1-4: pick the Browser-screen left panel directly.
+        //   1 Artist · 2 Album · 3 Directory (all from the library index)
+        //   4 FileBrowser (live filesystem from the launch CWD)
+        if (_screen == Screen::Browser && event.key == Key::Char && !event.alt && !event.ctrl
+            && (ch == '1' || ch == '2' || ch == '3' || ch == '4'))
         {
+            LeftMode const target = (ch == '1')   ? LeftMode::Artist
+                                    : (ch == '2') ? LeftMode::Album
+                                    : (ch == '3') ? LeftMode::Directory
+                                                  : LeftMode::FileBrowser;
+            LeftMode const prev = _leftMode;
+
+            // Leaving a library projection (1/2/3): remember the focused
+            // track so it can be restored on the next entry — including after
+            // a FileBrowser (4) round-trip.
+            if (_leftMode != LeftMode::FileBrowser && _libraryView)
+            {
+                auto cur = _libraryView->selectedTrackPath();
+                if (!cur.empty())
+                    _libraryAnchor = cur;
+            }
+
             // Picking a left mode implies the panel should be visible.
             setLibraryPanelVisible(true);
-            switch (event.key)
+            setLeftMode(target);
+
+            // Entering a different library projection: re-locate the saved
+            // anchor (expands ancestors + scrolls to it). Re-pressing the
+            // same mode key is left alone so it still resets the fold state.
+            if (target != LeftMode::FileBrowser && target != prev
+                && !_libraryAnchor.empty() && _libraryView)
             {
-            case Key::F1:
-                setLeftMode(LeftMode::Artist);
-                break;
-            case Key::F2:
-                setLeftMode(LeftMode::Album);
-                break;
-            case Key::F3:
-                setLeftMode(LeftMode::Directory);
-                break;
-            case Key::F4:
-                setLeftMode(LeftMode::FileBrowser);
-                break;
-            default:
-                break;
+                _libraryView->locate(_libraryAnchor);
             }
             return;
         }
@@ -1402,7 +1490,7 @@ namespace vtplayer
             }
             break;
         case MenuAction::RescanLibrary:
-            scanLibrary();
+            scanLibrary(/*force=*/true);
             break;
         case MenuAction::LocatePlaying:
             locatePlayingInLibrary();
@@ -1507,7 +1595,7 @@ namespace vtplayer
         }
     }
 
-    void Application::scanLibrary()
+    void Application::scanLibrary(bool force)
     {
         if (!_libraryRepo || !_libraryRepo->isOpen())
             return;
@@ -1535,16 +1623,173 @@ namespace vtplayer
         if (!token.empty())
             exts.push_back(std::move(token));
 
-        LibraryScanner scanner(_library, *_libraryRepo);
-        scanner.scan(_config.libraryRoot, exts);
+        // Skip the whole scan when the root is unchanged since the last
+        // completed scan and we already have a persisted index. `force`
+        // (menu rescan / root change) bypasses this.
+        std::string const sig = LibraryScanner::rootSignature(_config.libraryRoot);
+        if (!force && !sig.empty() && sig == _config.scanSig && !_library.empty())
+            return;
 
+        // Serialize scans: an ingest still running (or not-yet-finalized)
+        // owns the repository, and a collect already blocks the run loop.
+        if (_ingestActive.load() || _ingestThread.joinable() || _collectActive.load())
+            return;
+
+        std::filesystem::path root = _config.libraryRoot;
+        LibraryScanner scanner(*_libraryRepo);
+
+        // Drop the LibraryView tree up front: its `Node::track` pointers
+        // index into `_library`'s vector, which setLibraryRoot() may already
+        // have cleared (and finalizeScan() will reload). leftIsLibrary()
+        // reports FileBrowser for the whole scan, so the view is neither
+        // drawn nor keyed until finalizeScan() rebuilds it.
         if (_libraryView)
+            _libraryView->clear();
+
+        // ---- Pass 1: filesystem walk, inline on this (UI) thread ----
+        // Blocks the run loop; the tick pumps input and repaints so the
+        // "Collecting N" status updates and ESC can cancel.
+        _collectCount.store(0);
+        _collectCancel.store(false);
+        _collectActive.store(true);
+
+        bool canceled = false;
+        auto entries = scanner.collect(
+            root, exts,
+            [this](int collected) -> bool
+            {
+                _collectCount.store(collected);
+                if (_terminal)
+                {
+                    while (_terminal->pollEvent())
+                        ;
+                    draw();
+                    _terminal->render();
+                }
+                return !_collectCancel.load();
+            },
+            canceled);
+
+        _collectActive.store(false);
+
+        if (canceled || entries.empty())
+        {
+            if (_terminal)
+                _terminal->forceRedraw();
+            return;
+        }
+
+        // ---- Pass 2: tag reading + repository writes, background ----
+        // Remember the tree state we just walked; finalizeScan() persists it
+        // once the ingest completes so the next startup can skip the walk.
+        _pendingScanSig = sig;
+
+        _ingestPercent.store(0);
+        _ingestFinished.store(false);
+        _ingestStop.store(false);
+        _ingestActive.store(true);
+
+        _ingestThread = std::thread(
+            [this, entries = std::move(entries)]() mutable
+            {
+                // Worker thread: writes only `_libraryRepo` (never `_library`
+                // or any view), so the UI keeps using the pre-scan snapshot.
+                LibraryScanner scanner(*_libraryRepo);
+                scanner.ingest(entries,
+                               [this](int pct) { _ingestPercent.store(pct); },
+                               [this] { return _ingestStop.load(); });
+
+                // Publish "done" last; the run loop observes this, then joins
+                // (the join is the happens-before barrier for the repo).
+                _ingestFinished.store(true);
+            });
+    }
+
+    void Application::finalizeScan()
+    {
+        if (_ingestThread.joinable())
+            _ingestThread.join();
+
+        _ingestFinished.store(false);
+        _ingestActive.store(false); // leftIsLibrary() true again after rebuild
+
+        // The repository now holds the reconciled index. Rebuild the
+        // in-memory library from it (the join synchronized the worker's
+        // writes) and refresh the view.
+        _library.clear();
+        if (_libraryRepo && _libraryRepo->isOpen())
+            _libraryRepo->loadInto(_library);
+        if (_libraryView)
+        {
             _libraryView->rebuild();
+            // rebuild() resets the cursor; re-apply the saved/last anchor so
+            // focus survives a startup scan or an explicit rescan.
+            if (_leftMode != LeftMode::FileBrowser && !_libraryAnchor.empty())
+                _libraryView->locate(_libraryAnchor);
+        }
+
+        // Persist the scanned tree's signature so the next startup can skip
+        // the walk. Only on a full completion (not a shutdown bail-out).
+        if (!_ingestStop.load() && !_pendingScanSig.empty())
+        {
+            _config.scanSig = _pendingScanSig;
+            _config.save();
+        }
+        _pendingScanSig.clear();
+        if (_terminal)
+            _terminal->forceRedraw();
+    }
+
+    void Application::joinScanThread()
+    {
+        if (!_ingestThread.joinable())
+            return;
+        // Shutdown: signal the worker to bail at the next file boundary so
+        // exit doesn't block on the whole remaining tag scan.
+        _ingestStop.store(true);
+        _ingestThread.join();
+        _ingestActive.store(false);
+        _ingestFinished.store(false);
+    }
+
+    void Application::drawScanStatus()
+    {
+        if (!_rootWindow)
+            return;
+
+        std::string text;
+        if (_collectActive.load())
+            text = "Collecting " + std::to_string(_collectCount.load()) + "\xE2\x80\xA6";
+        else if (_ingestActive.load())
+            text = std::to_string(_ingestPercent.load()) + "%";
+        else
+            return; // idle (or 100% reached → status silently gone)
+
+        ventty::Window &win = *_rootWindow;
+        int const w = win.width();
+        int const h = win.height();
+        if (w < 4 || h < 1)
+            return;
+
+        // Yellow, bottom-right, one cell of right padding.
+        ventty::Style const style{ventty::Color{0xE6, 0xC8, 0x4A},
+                                   _theme.background, ventty::Attr::Bold};
+        int const x = w - 1 - static_cast<int>(text.size());
+        if (x < 0)
+            return;
+        win.drawText(x, h - 1, text, style);
     }
 
     void Application::setLibraryRoot(std::filesystem::path root)
     {
+        // A scan in flight owns the repository (ingest) or blocks the loop
+        // (collect); clearing `_library`/`_libraryRepo` here would race it.
+        // Ignore the request until it finishes.
+        if (_ingestActive.load() || _ingestThread.joinable() || _collectActive.load())
+            return;
+
         _config.libraryRoot = std::move(root);
+        _config.scanSig.clear(); // new root → old signature is meaningless
         _config.save();
 
         // Wipe the previous root's entries before scanning the new one;
@@ -1556,7 +1801,7 @@ namespace vtplayer
             _libraryRepo->clear();
         }
 
-        scanLibrary();
+        scanLibrary(/*force=*/true);
     }
 
     void Application::locatePlayingInLibrary()

@@ -173,6 +173,14 @@ namespace vtplayer
                 leftMode = *v;
             }
         }
+        if (auto *v = get("library.focus_path"))
+        {
+            libraryFocus = *v;
+        }
+        if (auto *v = get("library.scan_sig"))
+        {
+            scanSig = *v;
+        }
         // Collect all theme.* keys
         for (auto const &[key, value] : values)
         {
@@ -230,6 +238,8 @@ namespace vtplayer
         out << "[library]\n";
         out << "root = " << libraryRoot.string() << "\n";
         out << "left_mode = " << leftMode << "\n";
+        out << "focus_path = " << libraryFocus.string() << "\n";
+        out << "scan_sig = " << scanSig << "\n";
 
         if (!themeColors.empty())
         {

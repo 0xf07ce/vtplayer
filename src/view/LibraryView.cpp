@@ -45,10 +45,20 @@ namespace vtplayer
     {
         // Always rebuild, even when the mode is unchanged: re-pressing the
         // current mode's key resets the tree to that mode's default fold
-        // state (F1 → collapse back to the artist list, F2 → expand to
-        // albums, F3 → all directories collapsed).
+        // state (1 → collapse back to the artist list, 2 → expand to
+        // albums, 3 → all directories collapsed).
         _mode = mode;
         rebuild();
+    }
+
+    void LibraryView::clear()
+    {
+        _nodes.clear();
+        _roots.clear();
+        _visible.clear();
+        _selectedIndex = 0;
+        _scrollOffset = 0;
+        _headerCount = 0;
     }
 
     void LibraryView::rebuild()
@@ -355,6 +365,26 @@ namespace vtplayer
         }
     }
 
+    std::filesystem::path LibraryView::selectedTrackPath() const
+    {
+        if (_selectedIndex < 0 || _selectedIndex >= static_cast<int>(_visible.size()))
+            return {};
+
+        // Descend through the first child of each group until a Track is hit,
+        // so a collapsed artist/album/folder still yields a usable anchor.
+        std::size_t idx = _visible[static_cast<std::size_t>(_selectedIndex)];
+        while (idx < _nodes.size())
+        {
+            auto const &n = _nodes[idx];
+            if (n.kind == Node::Kind::Track)
+                return n.track ? n.track->path : std::filesystem::path{};
+            if (n.children.empty())
+                return {};
+            idx = n.children.front();
+        }
+        return {};
+    }
+
     void LibraryView::onFocusChanged()
     {
         // Nothing yet — kept for parity with PlayQueueView.
@@ -405,7 +435,7 @@ namespace vtplayer
             char const *lines[] = {
                 "Library is empty.",
                 "",
-                "Press F4 to browse files, navigate to your",
+                "Press 4 to browse files, navigate to your",
                 "music folder, then ESC -> menu:",
                 "  Set current directory as library root",
             };

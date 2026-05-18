@@ -3,6 +3,7 @@
 
 #include "app/Application.h"
 #include "audio/ReplayGain.h"
+#include "util/TagLibSilencer.h"
 
 #include <cxxopts.hpp>
 
@@ -15,14 +16,18 @@
 
 int main(int argc, char *argv[])
 {
+    // Mute TagLib's stderr warnings (broken UTF-16 BOM in legacy tags)
+    // before any FileRef is opened — otherwise they corrupt the TUI.
+    vtplayer::silenceTagLib();
+
     cxxopts::Options options("vtplayer", "Terminal-based music player for MP3, OGG, and FLAC");
     options.add_options()
         ("h,help",      "Show this help message")
         ("v,version",   "Show version and exit")
         ("dump-tags",   "Print every TagLib property of FILE and exit (diagnostic)")
-        ("file",        "Audio file to play", cxxopts::value<std::string>());
-    options.parse_positional({"file"});
-    options.positional_help("[FILE]");
+        ("path",        "Audio file or directory to open", cxxopts::value<std::string>());
+    options.parse_positional({"path"});
+    options.positional_help("[FILE|DIR]");
 
     auto result = options.parse(argc, argv);
 
@@ -40,26 +45,36 @@ int main(int argc, char *argv[])
 
     if (result.count("dump-tags"))
     {
-        if (!result.count("file"))
+        if (!result.count("path"))
         {
             std::cerr << "vtplayer: --dump-tags requires a FILE argument" << std::endl;
             return 1;
         }
-        auto path = std::filesystem::absolute(result["file"].as<std::string>());
+        auto path = std::filesystem::absolute(result["path"].as<std::string>());
         return vtplayer::dumpTags(path) ? 0 : 1;
     }
 
     vtplayer::Application app;
 
-    if (result.count("file"))
+    if (result.count("path"))
     {
-        auto path = std::filesystem::absolute(result["file"].as<std::string>());
-        if (!std::filesystem::exists(path))
+        auto path = std::filesystem::absolute(result["path"].as<std::string>());
+        std::error_code ec;
+        if (std::filesystem::is_directory(path, ec))
         {
-            std::cerr << "vtplayer: file not found: " << path.string() << std::endl;
+            // Directory argument: open the FileBrowser there (4).
+            app.setInitialDirectory(std::move(path));
+        }
+        else if (std::filesystem::exists(path))
+        {
+            // File argument: open its directory and play just this file.
+            app.setInitialFile(std::move(path));
+        }
+        else
+        {
+            std::cerr << "vtplayer: path not found: " << path.string() << std::endl;
             return 1;
         }
-        app.setInitialFile(std::move(path));
     }
 
     return app.run();
