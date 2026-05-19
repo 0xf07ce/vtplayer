@@ -8,12 +8,18 @@
 
 #include <atomic>
 #include <filesystem>
+#include <memory>
 #include <mutex>
 #include <string>
 
 // Forward declarations
 struct ma_device;
 struct ma_decoder;
+
+namespace vtplayer
+{
+class StreamSource;
+}
 
 namespace vtplayer
 {
@@ -43,6 +49,16 @@ public:
     void shutdown();
 
     bool load(std::filesystem::path const & path);
+
+    /// Load a network stream (internet radio). Decoded by an external ffmpeg
+    /// process; `name` is shown as the track title. Live = unknown duration
+    /// (duration() stays 0, so the transport bar shows LIVE). Returns false
+    /// with lastError() set if ffmpeg is unavailable or the spawn failed.
+    bool loadStream(std::string const & url, std::string const & name);
+
+    /// True while the current source is a network stream.
+    bool isStream() const { return _isStream.load(std::memory_order_acquire); }
+
     void play();
     void pause();
     void stop();
@@ -85,6 +101,9 @@ private:
 
     ma_device * _device = nullptr;
     ma_decoder * _decoder = nullptr;
+
+    std::unique_ptr<StreamSource> _stream;          ///< set when streaming
+    std::atomic<bool> _isStream{false};
 
     std::atomic<PlayState> _state{PlayState::Stopped};
     std::atomic<bool> _trackEnded{false}; ///< set by callback, polled by UI

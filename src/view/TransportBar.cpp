@@ -8,6 +8,7 @@
 #include <ventty/art/AsciiArt.h>
 #include <ventty/core/Utf8.h>
 
+#include <algorithm>
 #include <cstdio>
 
 namespace vtplayer
@@ -75,17 +76,31 @@ void TransportBar::draw(ventty::Window & window)
     if (progressW > 4)
     {
         _progressX = cx;
-        _progressW = progressW;
+        _progressW = _live ? 0 : progressW; // no seeking on a live stream
 
-        float ratio = (_duration > 0.0f) ? (_position / _duration) : 0.0f;
-        std::string bar = ventty::progressBar(progressW, ratio, ventty::PROGRESS_SMOOTH);
-        window.drawText(cx, y1, bar,
-                        ventty::Style{_theme.transportProgressFg, _theme.transportBg});
+        if (_live)
+        {
+            std::string lbl = "\xE2\x97\x89 LIVE"; // ◉ LIVE
+            int pad = (progressW - ventty::stringWidth(lbl)) / 2;
+            std::string bar = std::string(std::max(0, pad), ' ') + lbl;
+            window.drawText(cx, y1, bar,
+                            ventty::Style{_theme.transportStateFg,
+                                          _theme.transportBg, ventty::Attr::Bold});
+        }
+        else
+        {
+            float ratio = (_duration > 0.0f) ? (_position / _duration) : 0.0f;
+            std::string bar = ventty::progressBar(progressW, ratio, ventty::PROGRESS_SMOOTH);
+            window.drawText(cx, y1, bar,
+                            ventty::Style{_theme.transportProgressFg, _theme.transportBg});
+        }
         cx += progressW;
     }
 
-    // Time display
-    std::string timeStr = " " + formatTime(_position) + "/" + formatTime(_duration) + " ";
+    // Time display: elapsed only for a live stream (total is unknown).
+    std::string timeStr = _live
+        ? (" " + formatTime(_position) + " ")
+        : (" " + formatTime(_position) + "/" + formatTime(_duration) + " ");
     window.drawText(cx, y1, timeStr,
                     ventty::Style{_theme.transportTimeFg, _theme.transportBg});
     cx += static_cast<int>(timeStr.size());

@@ -17,7 +17,7 @@ std::filesystem::path defaultPath()
 {
     char const * home = std::getenv("HOME");
     if (!home) return {};
-    return std::filesystem::path(home) / ".config" / "ventty-player" / "playqueue.cache";
+    return std::filesystem::path(home) / ".config" / "vtplayer" / "playqueue.cache";
 }
 
 bool save(std::vector<TrackInfo> const & tracks)

@@ -77,7 +77,7 @@ std::filesystem::path LibraryRepository::defaultPath()
 {
     char const * home = std::getenv("HOME");
     if (!home) return {};
-    return std::filesystem::path(home) / ".config" / "ventty-player" / "library.db";
+    return std::filesystem::path(home) / ".config" / "vtplayer" / "library.db";
 }
 
 LibraryRepository::LibraryRepository(std::filesystem::path dbPath)

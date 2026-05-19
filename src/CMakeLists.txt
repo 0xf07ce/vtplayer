@@ -10,6 +10,8 @@ add_executable(vtplayer
     audio/AudioEngine.cpp
     audio/ReplayGain.h
     audio/ReplayGain.cpp
+    audio/StreamSource.h
+    audio/StreamSource.cpp
     audio/TrackInfo.h
     audio/RingBuffer.h
     audio/Fft.h
@@ -28,6 +30,8 @@ add_executable(vtplayer
     view/PlayQueueView.cpp
     view/TransportBar.h
     view/TransportBar.cpp
+    view/RadioView.h
+    view/RadioView.cpp
     view/VisualizerView.h
     view/VisualizerView.cpp
     view/ContextMenu.h
@@ -69,6 +73,8 @@ add_executable(vtplayer
     # util
     util/M3uReader.h
     util/M3uReader.cpp
+    util/StreamList.h
+    util/StreamList.cpp
     util/UnicodeNormalize.h
     util/UnicodeNormalize.cpp
     util/TagLibSilencer.h

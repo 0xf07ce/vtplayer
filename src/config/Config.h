@@ -45,7 +45,7 @@ struct Config
     // [theme] — color overrides as "#RRGGBB" hex strings
     std::unordered_map<std::string, std::string> themeColors;
 
-    /// Load from default config path (~/.config/ventty-player/config.ini).
+    /// Load from default config path (~/.config/vtplayer/config.ini).
     /// If the file does not exist, writes out the current values as defaults.
     void load();
 

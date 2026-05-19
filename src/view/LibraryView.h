@@ -48,9 +48,17 @@ public:
     /// be released before the worker runs. rebuild() restores it afterwards.
     void clear();
 
-    /// Expand parents and move the cursor to the node holding `path`. No-op
-    /// if the path is not in the index.
+    /// Expand parents and move the cursor to the track node holding `path`.
+    /// Drills all the way down to the track. No-op if `path` is not indexed.
     void locate(std::filesystem::path const & path);
+
+    /// Like locate(), but in Artist/Album mode stops at the artist or album
+    /// group that represents `path` (ancestors expanded, the chosen group
+    /// left folded) so switching axes lands on the artist / album instead
+    /// of always jumping to a track. Directory mode still drills to the
+    /// track itself (folders expanded to reveal the file). Used when
+    /// switching axes (F1-F4).
+    void locateForMode(std::filesystem::path const & path);
 
     /// Path of a track representing the current cursor: the selected track
     /// itself, or the first track under the selected group. Empty if there is

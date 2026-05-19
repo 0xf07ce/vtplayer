@@ -8,6 +8,7 @@
 #include "AudioEngine.h"
 
 #include "ReplayGain.h"
+#include "StreamSource.h"
 #include "../util/UnicodeNormalize.h"
 
 #include <algorithm>
@@ -133,6 +134,41 @@ bool AudioEngine::load(std::filesystem::path const & path)
     return true;
 }
 
+bool AudioEngine::loadStream(std::string const & url, std::string const & name)
+{
+    stop();
+    _lastError.clear();
+
+    _currentFormat = AudioFormat::Unknown;
+    _currentTrack.path = url;
+    _currentTrack.format = AudioFormat::Unknown;
+    _currentTrack.title = name.empty() ? std::string("Stream") : vtplayer::toNfc(name);
+    _currentTrack.artist.clear();
+    _currentTrack.duration = 0.0f; // live → unknown
+
+    auto src = std::make_unique<StreamSource>();
+    if (!src->start(url))
+    {
+        _lastError = src->error();
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(_audioMutex);
+        _stream = std::move(src);
+    }
+    _isStream.store(true, std::memory_order_release);
+
+    _framesPlayed = 0;
+    _position.store(0.0f, std::memory_order_relaxed);
+    _duration.store(0.0f, std::memory_order_relaxed);
+    // Streams have no ReplayGain tags; use the runtime auto-gain path.
+    _replayGainLinear.store(1.0f, std::memory_order_relaxed);
+    _gainSource.store(GainSource::Auto, std::memory_order_relaxed);
+    _currentGain.store(1.0f, std::memory_order_relaxed);
+    return true;
+}
+
 void AudioEngine::play()
 {
     if (_state.load(std::memory_order_acquire) == PlayState::Playing)
@@ -148,7 +184,7 @@ void AudioEngine::play()
     }
 
     // Start fresh playback
-    if (!_decoder)
+    if (!_decoder && !_isStream.load(std::memory_order_acquire))
     {
         return;
     }
@@ -205,6 +241,13 @@ void AudioEngine::stop()
         delete _decoder;
         _decoder = nullptr;
     }
+
+    if (_stream)
+    {
+        _stream->stop();
+        _stream.reset();
+    }
+    _isStream.store(false, std::memory_order_release);
 
     _trackEnded.store(false, std::memory_order_relaxed);
     _framesPlayed = 0;
@@ -284,21 +327,41 @@ void AudioEngine::fillBuffer(float * output, unsigned int frameCount)
 
     std::lock_guard<std::mutex> lock(_audioMutex);
 
-    if (!_decoder)
-    {
-        std::memset(output, 0, totalSamples * sizeof(float));
-        return;
-    }
-
     ma_uint64 framesRead = 0;
-    ma_decoder_read_pcm_frames(_decoder, output, frameCount, &framesRead);
 
-    if (framesRead < frameCount)
+    if (_isStream.load(std::memory_order_acquire))
     {
-        // End of file — zero remaining
-        std::memset(output + framesRead * CHANNELS, 0,
-                    (frameCount - framesRead) * CHANNELS * sizeof(float));
-        _trackEnded.store(true, std::memory_order_release);
+        unsigned int const got =
+            _stream ? _stream->read(output, frameCount) : 0u;
+        framesRead = got;
+        if (got < frameCount)
+        {
+            // Underrun: emit silence for the gap. Only flag end-of-track
+            // when ffmpeg has actually exited and the buffer is drained —
+            // a transient buffer dip must not look like the stream ending.
+            std::memset(output + got * CHANNELS, 0,
+                        (frameCount - got) * CHANNELS * sizeof(float));
+            if (_stream && _stream->ended())
+                _trackEnded.store(true, std::memory_order_release);
+        }
+    }
+    else
+    {
+        if (!_decoder)
+        {
+            std::memset(output, 0, totalSamples * sizeof(float));
+            return;
+        }
+
+        ma_decoder_read_pcm_frames(_decoder, output, frameCount, &framesRead);
+
+        if (framesRead < frameCount)
+        {
+            // End of file — zero remaining
+            std::memset(output + framesRead * CHANNELS, 0,
+                        (frameCount - framesRead) * CHANNELS * sizeof(float));
+            _trackEnded.store(true, std::memory_order_release);
+        }
     }
 
     // --- Resolve target gain and smooth toward it ---

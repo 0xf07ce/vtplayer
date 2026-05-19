@@ -365,6 +365,57 @@ namespace vtplayer
         }
     }
 
+    void LibraryView::locateForMode(std::filesystem::path const &path)
+    {
+        if (path.empty())
+            return;
+        auto const target = path.string();
+        for (std::size_t i = 0; i < _nodes.size(); ++i)
+        {
+            auto const &n = _nodes[i];
+            if (n.kind != Node::Kind::Track || !n.track)
+                continue;
+            if (n.track->path.string() != target)
+                continue;
+
+            // Choose the node that represents this track at the current
+            // mode's grouping level. Artist/Album trees are always
+            // Artist(0) > Album(1) > Track(2). Directory keeps drilling to
+            // the track itself (folders expanded so the file is revealed).
+            std::size_t sel = i;
+            if (_mode == Mode::Artist || _mode == Mode::Album)
+            {
+                int const wantDepth = (_mode == Mode::Artist) ? 0 : 1;
+                for (std::size_t cur = i; cur != kNoIdx; cur = _nodes[cur].parent)
+                {
+                    if (_nodes[cur].kind == Node::Kind::Group
+                        && _nodes[cur].depth == wantDepth)
+                    {
+                        sel = cur;
+                        break;
+                    }
+                }
+            }
+
+            // Expand only the ancestors of the chosen node — never the node
+            // itself — so its fold level (collapsed artist / album / folder)
+            // survives the jump.
+            bool changed = expandPath(sel);
+            if (changed)
+                recomputeVisible();
+            for (std::size_t v = 0; v < _visible.size(); ++v)
+            {
+                if (_visible[v] == sel)
+                {
+                    _selectedIndex = static_cast<int>(v);
+                    scrollToSelected();
+                    break;
+                }
+            }
+            return;
+        }
+    }
+
     std::filesystem::path LibraryView::selectedTrackPath() const
     {
         if (_selectedIndex < 0 || _selectedIndex >= static_cast<int>(_visible.size()))

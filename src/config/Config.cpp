@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
+#include <system_error>
 
 namespace vtplayer
 {
@@ -16,12 +17,20 @@ namespace vtplayer
         if (!home)
             return {};
 
-        std::filesystem::path configDir = std::filesystem::path(home) / ".config" / "ventty-player";
+        std::filesystem::path configDir = std::filesystem::path(home) / ".config" / "vtplayer";
         return configDir / "config.ini";
     }
 
     void Config::load()
     {
+        // One-time migration: drop the legacy `ventty-player` config directory.
+        if (char const *home = std::getenv("HOME"))
+        {
+            std::error_code ec;
+            std::filesystem::remove_all(
+                std::filesystem::path(home) / ".config" / "ventty-player", ec);
+        }
+
         auto path = defaultPath();
         bool const existed = !path.empty() && std::filesystem::exists(path);
         if (existed)

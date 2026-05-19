@@ -29,6 +29,9 @@ public:
     void setTrackName(std::string const & name) { _trackName = name; }
     void setPosition(float pos) { _position = pos; }
     void setDuration(float dur) { _duration = dur; }
+    /// Live stream: show a LIVE indicator + elapsed time instead of a
+    /// progress bar and total duration.
+    void setLive(bool live) { _live = live; }
     void setVolume(float vol) { _volume = vol; }
     void setGainNorm(bool enabled, float gainDb, GainSource source)
     {
@@ -51,6 +54,7 @@ private:
     std::string _trackName;
     float _position = 0.0f;
     float _duration = 0.0f;
+    bool _live = false;
     float _volume = 1.0f;
     bool _gainNormEnabled = false;
     float _gainDb = 0.0f;

@@ -24,7 +24,7 @@ class MediaLibrary;
 class LibraryRepository
 {
 public:
-    /// Canonical path: `~/.config/ventty-player/library.db`.
+    /// Canonical path: `~/.config/vtplayer/library.db`.
     static std::filesystem::path defaultPath();
 
     explicit LibraryRepository(std::filesystem::path dbPath);

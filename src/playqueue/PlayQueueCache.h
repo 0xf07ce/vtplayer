@@ -22,7 +22,7 @@ class MediaLibrary;
 namespace PlayQueueCache
 {
 
-/// Canonical path: `~/.config/ventty-player/playqueue.cache`.
+/// Canonical path: `~/.config/vtplayer/playqueue.cache`.
 std::filesystem::path defaultPath();
 
 /// Write the path list. Truncates any existing cache. Returns false on I/O

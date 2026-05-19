@@ -7,6 +7,7 @@
 #include "../library/LibraryScanner.h"
 #include "../playqueue/PlayQueueCache.h"
 #include "../util/M3uReader.h"
+#include "../util/StreamList.h"
 #include "../util/UnicodeNormalize.h"
 #include "../visualizer/DebugBars.h"
 #include "../visualizer/MatrixRain.h"
@@ -77,6 +78,8 @@ namespace vtplayer
                 return LeftMode::Artist;
             if (s == "directory")
                 return LeftMode::Directory;
+            if (s == "radio")
+                return LeftMode::Radio;
             return LeftMode::Album; // default; "filebrowser" is never persisted
         }
 
@@ -90,6 +93,8 @@ namespace vtplayer
                 return "directory";
             case LeftMode::Album:
                 return "album";
+            case LeftMode::Radio:
+                return "radio";
             // FileBrowser is transient — normalize so a fresh run starts
             // back in the indexed library.
             case LeftMode::FileBrowser:
@@ -338,6 +343,11 @@ namespace vtplayer
                                        if (_terminal)
                                            _terminal->forceRedraw(); });
 
+        _radioView = std::make_unique<RadioView>();
+        _radioView->setTheme(_theme);
+        _radioView->setStreams(StreamList::load());
+        _radioView->setOnPlay([this](Stream const &s) { playStream(s); });
+
         _transportBar = std::make_unique<TransportBar>();
         _transportBar->setTheme(_theme);
 
@@ -380,7 +390,10 @@ namespace vtplayer
         // so the user can navigate to a folder and register a library root.
         {
             LeftMode initMode = leftModeFromConfig(_config.leftMode);
-            if (initMode != LeftMode::FileBrowser && _library.empty())
+            // Radio is independent of the media index; only the library
+            // projections fall back to FileBrowser when the index is empty.
+            if (initMode != LeftMode::FileBrowser && initMode != LeftMode::Radio
+                && _library.empty())
             {
                 initMode = LeftMode::FileBrowser;
             }
@@ -397,8 +410,11 @@ namespace vtplayer
             // If the index isn't ready yet (scan pending), finalizeScan()
             // re-applies it after the tree is rebuilt.
             _libraryAnchor = _config.libraryFocus;
-            if (!_libraryAnchor.empty() && _libraryView && initMode != LeftMode::FileBrowser)
-                _libraryView->locate(_libraryAnchor);
+            bool const initIsLibrary = (initMode == LeftMode::Artist
+                                        || initMode == LeftMode::Album
+                                        || initMode == LeftMode::Directory);
+            if (!_libraryAnchor.empty() && _libraryView && initIsLibrary)
+                _libraryView->locateForMode(_libraryAnchor);
         }
 
         if (!_initialFile.empty())
@@ -494,12 +510,16 @@ namespace vtplayer
             int playQueueW = w - browserW;
             _fileBrowser->setRect(0, contentY, browserW, contentH);
             _libraryView->setRect(0, contentY, browserW, contentH);
+            if (_radioView)
+                _radioView->setRect(0, contentY, browserW, contentH);
             _playQueueView->setRect(browserW, contentY, playQueueW, contentH);
         }
         else
         {
             _fileBrowser->setRect(0, contentY, 0, contentH);
             _libraryView->setRect(0, contentY, 0, contentH);
+            if (_radioView)
+                _radioView->setRect(0, contentY, 0, contentH);
             _playQueueView->setRect(0, contentY, w, contentH);
         }
 
@@ -545,6 +565,7 @@ namespace vtplayer
         _transportBar->setTrackName(_audio.currentTrack().title);
         _transportBar->setPosition(_audio.position());
         _transportBar->setDuration(_audio.duration());
+        _transportBar->setLive(_audio.isStream());
         _transportBar->setGainNorm(_audio.gainNormEnabled(), _audio.gainNormDb(), _audio.gainSource());
 
         // Update visualizer
@@ -598,7 +619,11 @@ namespace vtplayer
     {
         if (_libraryPanelVisible)
         {
-            if (leftIsLibrary())
+            if (leftIsRadio())
+            {
+                _radioView->draw(*_rootWindow);
+            }
+            else if (leftIsLibrary())
             {
                 _libraryView->draw(*_rootWindow);
             }
@@ -987,7 +1012,11 @@ namespace vtplayer
         {
             if (_focus == FocusPanel::FileBrowser)
             {
-                if (leftIsLibrary())
+                if (leftIsRadio())
+                {
+                    _radioView->handleKey(event);
+                }
+                else if (leftIsLibrary())
                 {
                     _libraryView->handleKey(event);
                 }
@@ -1036,7 +1065,8 @@ namespace vtplayer
                     if (_focus != FocusPanel::FileBrowser)
                     {
                         _focus = FocusPanel::FileBrowser;
-                        _fileBrowser->setFocused(!leftIsLibrary());
+                        _radioView->setFocused(leftIsRadio());
+                        _fileBrowser->setFocused(!leftIsLibrary() && !leftIsRadio());
                         _libraryView->setFocused(leftIsLibrary());
                         _playQueueView->setFocused(false);
                     }
@@ -1046,6 +1076,7 @@ namespace vtplayer
                     if (_focus != FocusPanel::PlayQueue)
                     {
                         _focus = FocusPanel::PlayQueue;
+                        _radioView->setFocused(false);
                         _fileBrowser->setFocused(false);
                         _libraryView->setFocused(false);
                         _playQueueView->setFocused(true);
@@ -1054,11 +1085,16 @@ namespace vtplayer
             }
 
             // Delegate to focused panel
-            if (leftIsLibrary() && _libraryView->rect().contains(event.x, event.y))
+            if (leftIsRadio() && _radioView->rect().contains(event.x, event.y))
+            {
+                _radioView->handleMouse(event);
+            }
+            else if (leftIsLibrary() && _libraryView->rect().contains(event.x, event.y))
             {
                 _libraryView->handleMouse(event);
             }
-            else if (!leftIsLibrary() && _fileBrowser->rect().contains(event.x, event.y))
+            else if (!leftIsLibrary() && !leftIsRadio()
+                     && _fileBrowser->rect().contains(event.x, event.y))
             {
                 _fileBrowser->handleMouse(event);
             }
@@ -1103,18 +1139,18 @@ namespace vtplayer
             return;
         }
 
-        // 1-4: pick the Browser-screen left panel directly.
+        // 1-5: pick the Browser-screen left panel directly.
         //   1 Artist · 2 Album · 3 Directory (all from the library index)
         //   4 FileBrowser (live filesystem from the launch CWD)
+        //   5 Radio (internet streams from streams.m3u)
         if (_screen == Screen::Browser && event.key == Key::Char && !event.alt && !event.ctrl
-            && (ch == '1' || ch == '2' || ch == '3' || ch == '4'))
+            && (ch == '1' || ch == '2' || ch == '3' || ch == '4' || ch == '5'))
         {
             LeftMode const target = (ch == '1')   ? LeftMode::Artist
                                     : (ch == '2') ? LeftMode::Album
                                     : (ch == '3') ? LeftMode::Directory
-                                                  : LeftMode::FileBrowser;
-            LeftMode const prev = _leftMode;
-
+                                    : (ch == '4') ? LeftMode::FileBrowser
+                                                  : LeftMode::Radio;
             // Leaving a library projection (1/2/3): remember the focused
             // track so it can be restored on the next entry — including after
             // a FileBrowser (4) round-trip.
@@ -1129,13 +1165,18 @@ namespace vtplayer
             setLibraryPanelVisible(true);
             setLeftMode(target);
 
-            // Entering a different library projection: re-locate the saved
-            // anchor (expands ancestors + scrolls to it). Re-pressing the
-            // same mode key is left alone so it still resets the fold state.
-            if (target != LeftMode::FileBrowser && target != prev
-                && !_libraryAnchor.empty() && _libraryView)
+            // Re-locate the anchor to its node at the new mode's grouping
+            // level. This also runs when re-pressing the current mode's key:
+            // setLeftMode() reset the fold to the mode default, and the user
+            // expects the cursor to land on the focused item's group (e.g.
+            // pressing 2 on a track jumps to that track's album), not reset
+            // to the top.
+            bool const targetIsLibrary = (target == LeftMode::Artist
+                                          || target == LeftMode::Album
+                                          || target == LeftMode::Directory);
+            if (targetIsLibrary && !_libraryAnchor.empty() && _libraryView)
             {
-                _libraryView->locate(_libraryAnchor);
+                _libraryView->locateForMode(_libraryAnchor);
             }
             return;
         }
@@ -1192,6 +1233,7 @@ namespace vtplayer
                 if (!_playQueueView->empty())
                 {
                     _focus = FocusPanel::PlayQueue;
+                    _radioView->setFocused(false);
                     _fileBrowser->setFocused(false);
                     _libraryView->setFocused(false);
                     _playQueueView->setFocused(true);
@@ -1200,7 +1242,8 @@ namespace vtplayer
             else
             {
                 _focus = FocusPanel::FileBrowser;
-                _fileBrowser->setFocused(!leftIsLibrary());
+                _radioView->setFocused(leftIsRadio());
+                _fileBrowser->setFocused(!leftIsLibrary() && !leftIsRadio());
                 _libraryView->setFocused(leftIsLibrary());
                 _playQueueView->setFocused(false);
             }
@@ -1292,6 +1335,9 @@ namespace vtplayer
         // keeping the existing queue intact.
         if (event.key == Key::Char && (ch == 'a' || ch == 'A') && !event.alt && !event.ctrl && _screen == Screen::Browser)
         {
+            // Radio streams aren't queueable — 'a' is a no-op there.
+            if (leftIsRadio())
+                return;
             // Library panel: append the selected artist / album / track.
             if (leftIsLibrary())
             {
@@ -1347,15 +1393,19 @@ namespace vtplayer
         std::vector<std::string> items;
         _contextMenuActions.clear();
 
-        if (!leftIsLibrary())
+        // Library-root actions are meaningless on the Radio panel.
+        if (!leftIsRadio())
         {
-            items.emplace_back("Set current directory as library root");
-            _contextMenuActions.push_back(MenuAction::SetLibraryRoot);
-        }
-        else
-        {
-            items.emplace_back("Rescan library");
-            _contextMenuActions.push_back(MenuAction::RescanLibrary);
+            if (!leftIsLibrary())
+            {
+                items.emplace_back("Set current directory as library root");
+                _contextMenuActions.push_back(MenuAction::SetLibraryRoot);
+            }
+            else
+            {
+                items.emplace_back("Rescan library");
+                _contextMenuActions.push_back(MenuAction::RescanLibrary);
+            }
         }
 
         items.emplace_back("Locate playing track in library");
@@ -1425,17 +1475,21 @@ namespace vtplayer
                 _libraryView->setMode(LibraryView::Mode::Directory);
                 break;
             case LeftMode::FileBrowser:
+            case LeftMode::Radio:
                 break;
             }
         }
         // Keep keyboard focus on whichever widget now occupies the left slot.
         if (_focus == FocusPanel::FileBrowser)
         {
-            bool const fb = (mode == LeftMode::FileBrowser);
+            bool const radio = (mode == LeftMode::Radio);
+            bool const fb    = (mode == LeftMode::FileBrowser);
+            if (_radioView)
+                _radioView->setFocused(radio);
             if (_fileBrowser)
                 _fileBrowser->setFocused(fb);
             if (_libraryView)
-                _libraryView->setFocused(!fb);
+                _libraryView->setFocused(!fb && !radio);
         }
         if (_terminal)
             _terminal->forceRedraw();
@@ -1462,9 +1516,12 @@ namespace vtplayer
         {
             // Hand focus back to whichever widget occupies the left slot.
             _focus = FocusPanel::FileBrowser;
-            bool const lib = leftIsLibrary();
+            bool const lib   = leftIsLibrary();
+            bool const radio = leftIsRadio();
+            if (_radioView)
+                _radioView->setFocused(radio);
             if (_fileBrowser)
-                _fileBrowser->setFocused(!lib);
+                _fileBrowser->setFocused(!lib && !radio);
             if (_libraryView)
                 _libraryView->setFocused(lib);
             if (_playQueueView)
@@ -1519,6 +1576,28 @@ namespace vtplayer
         {
             _playQueueView->setPlayingIndex(-1);
         }
+    }
+
+    void Application::playStream(Stream const &stream)
+    {
+        if (stream.url.empty())
+            return;
+
+        _audio.stop();
+        // A stream is not part of the play queue; detach the queue's
+        // now-playing marker so end-of-stream doesn't auto-advance it.
+        _playQueueView->setPlayingIndex(-1);
+
+        if (_audio.loadStream(stream.url, stream.name))
+        {
+            _audio.play();
+        }
+        else if (_radioView)
+        {
+            _radioView->setPlayingIndex(-1); // failed (e.g. ffmpeg missing)
+        }
+        if (_terminal)
+            _terminal->forceRedraw();
     }
 
     void Application::playNext()
@@ -1725,7 +1804,7 @@ namespace vtplayer
             // rebuild() resets the cursor; re-apply the saved/last anchor so
             // focus survives a startup scan or an explicit rescan.
             if (_leftMode != LeftMode::FileBrowser && !_libraryAnchor.empty())
-                _libraryView->locate(_libraryAnchor);
+                _libraryView->locateForMode(_libraryAnchor);
         }
 
         // Persist the scanned tree's signature so the next startup can skip

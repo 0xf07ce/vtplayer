@@ -1,7 +1,29 @@
 # CHANGELOG
 
-## 0.6.0 (Unreleased)
+## 0.6.0 (2026-05-19)
 
+- Internet radio. A new left-panel mode (key `5`, `LeftMode::Radio`) lists
+  streams from `~/.config/vtplayer/streams.m3u` (Extended-M3U, seeded with a
+  commented example on first run; URLs are kept verbatim, never
+  path-normalized). Enter or double-click starts a stream. Playback is
+  decoded by an external `ffmpeg` subprocess (`StreamSource`) that handles
+  HTTP/HLS, playlist polling, token rotation, AAC/MP3/Opus and reconnection,
+  emitting float32 PCM into a bounded ring buffer that drops the oldest
+  samples on overflow to stay near the live edge. `AudioEngine::loadStream`
+  drives it; if `ffmpeg` is not on PATH the load fails with an error instead
+  of crashing. The transport bar shows a centered `◉ LIVE` indicator and
+  elapsed-only time (no progress bar, no seeking) while a stream plays.
+  Radio is independent of the media index — it works with an empty library,
+  and the queue/library-root actions are suppressed on that panel.
+- Config directory renamed from `~/.config/ventty-player` to
+  `~/.config/vtplayer` (config.ini, library.db, playqueue.cache, streams.m3u
+  all move). A one-time migration deletes the legacy `ventty-player`
+  directory on first launch.
+- Switching the left-panel axis (keys `1`-`4`) now lands on the matching
+  artist/album group instead of always drilling to a track: Artist/Album
+  mode stops at the group with ancestors expanded and the group left
+  folded, while Directory mode still expands folders down to the file
+  (`LibraryView::locateForMode`).
 - Library scan is now two phases. Pass 1 walks the filesystem and collects
   the file list inline (no pre-count pass); it pumps input every 512 entries
   so ESC cancels, and shows a running "Collecting N" count. Pass 2 reads
