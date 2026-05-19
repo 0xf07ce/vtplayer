@@ -147,6 +147,7 @@ bool AudioEngine::loadStream(std::string const & url, std::string const & name)
     _currentTrack.duration = 0.0f; // live → unknown
 
     auto src = std::make_unique<StreamSource>();
+    src->setBuffer(_streamBufferSec, _streamPrebufferSec);
     if (!src->start(url))
     {
         _lastError = src->error();
@@ -167,6 +168,14 @@ bool AudioEngine::loadStream(std::string const & url, std::string const & name)
     _gainSource.store(GainSource::Auto, std::memory_order_relaxed);
     _currentGain.store(1.0f, std::memory_order_relaxed);
     return true;
+}
+
+bool AudioEngine::isStreamBuffering() const
+{
+    if (!_isStream.load(std::memory_order_acquire))
+        return false;
+    std::lock_guard<std::mutex> lock(_audioMutex);
+    return _stream && _stream->buffering();
 }
 
 void AudioEngine::play()

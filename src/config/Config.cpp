@@ -133,6 +133,26 @@ namespace vtplayer
         {
             gainNorm = (*v == "true" || *v == "1" || *v == "yes" || *v == "on");
         }
+        if (auto *v = get("audio.stream_buffer_seconds"))
+        {
+            try
+            {
+                streamBufferSeconds = std::stof(*v);
+            }
+            catch (...)
+            {
+            }
+        }
+        if (auto *v = get("audio.stream_prebuffer_seconds"))
+        {
+            try
+            {
+                streamPrebufferSeconds = std::stof(*v);
+            }
+            catch (...)
+            {
+            }
+        }
         if (auto *v = get("ui.show_hidden"))
         {
             showHidden = (*v == "true" || *v == "1" || *v == "yes");
@@ -177,7 +197,8 @@ namespace vtplayer
         }
         if (auto *v = get("library.left_mode"))
         {
-            if (*v == "artist" || *v == "album" || *v == "directory")
+            if (*v == "artist" || *v == "album" || *v == "directory"
+                || *v == "radio")
             {
                 leftMode = *v;
             }
@@ -232,7 +253,9 @@ namespace vtplayer
 
         out << "[audio]\n";
         out << "volume = " << static_cast<int>(volume * 100.0f + 0.5f) << "\n";
-        out << "gain_norm = " << (gainNorm ? "true" : "false") << "\n\n";
+        out << "gain_norm = " << (gainNorm ? "true" : "false") << "\n";
+        out << "stream_buffer_seconds = " << streamBufferSeconds << "\n";
+        out << "stream_prebuffer_seconds = " << streamPrebufferSeconds << "\n\n";
 
         out << "[ui]\n";
         out << "show_hidden = " << (showHidden ? "true" : "false") << "\n\n";

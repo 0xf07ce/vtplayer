@@ -3,6 +3,8 @@
 
 #include "Oscilloscope.h"
 
+#include <ventty/art/BrailleCanvas.h>
+
 #include <algorithm>
 
 namespace vtplayer
@@ -19,23 +21,37 @@ namespace vtplayer
             return;
 
         int const N = static_cast<int>(_samples.size());
-        ventty::Style traceStyle{_theme.visBarMid, _theme.background};
-        ventty::Style axisStyle{_theme.visBarLow, _theme.background};
+        // Braille sub-pixels are small, so a bright warm tone keeps the
+        // trace readable. Amber, borrowed from the DebugBars earth-tone
+        // palette.
+        ventty::Color const kTrace{0xC9, 0xA0, 0x62};
+        ventty::Style traceStyle{kTrace, _theme.background};
 
-        int midRow = h / 2;
-        for (int col = 0; col < w; ++col)
-            window.putChar(x + col, y + midRow, U'─', axisStyle);
-
-        int const denom = std::max(1, w - 1);
-        for (int col = 0; col < w; ++col)
-        {
-            int idx = (col * (N - 1)) / denom;
+        // Plot the trace into a Braille sub-pixel canvas (2x4 dots per cell):
+        // one sample per sub-column, consecutive points joined so the wave
+        // is continuous (a point plot leaves vertical gaps — and a sparse
+        // centre — wherever adjacent samples jump between extremes).
+        ventty::BrailleCanvas canvas(w, h);
+        int const subW = canvas.subWidth();
+        int const subH = canvas.subHeight();
+        int const denom = std::max(1, subW - 1);
+        auto subY = [&](int sx) {
+            int idx = (sx * (N - 1)) / denom;
             float s = std::clamp(_samples[idx], -1.0f, 1.0f);
-            // s = +1 → top row, s = -1 → bottom row
-            int row = static_cast<int>((1.0f - (s + 1.0f) * 0.5f) * (h - 1) + 0.5f);
-            row = std::clamp(row, 0, h - 1);
-            window.putChar(x + col, y + row, U'•', traceStyle);
+            // s = +1 → top sub-row, s = -1 → bottom sub-row.
+            return static_cast<int>((1.0f - (s + 1.0f) * 0.5f) * (subH - 1)
+                                    + 0.5f);
+        };
+        int prevY = subY(0);
+        canvas.set(0, prevY);
+        for (int sx = 1; sx < subW; ++sx)
+        {
+            int const y0 = subY(sx);
+            canvas.line(sx - 1, prevY, sx, y0);
+            prevY = y0;
         }
+
+        canvas.blit(window, x, y, traceStyle);
     }
 
 } // namespace vtplayer

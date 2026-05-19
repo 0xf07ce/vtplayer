@@ -10,8 +10,9 @@
 namespace vtplayer
 {
 
-    /// Single-trace waveform plot — one point per column, vertically centered.
-    /// Intentionally minimal; serves as the slot-0 reference visualizer.
+    /// Single-trace waveform plot, vertically centered. Rendered with Braille
+    /// sub-pixels (2x4 per cell) so the trace is finer than a glyph grid.
+    /// Serves as the slot-0 reference visualizer.
     class Oscilloscope : public Visualizer
     {
     public:

@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## 0.7.0 (2026-05-19)
+
+- Oscilloscope visualizer now draws a continuous waveform with Braille
+  sub-pixels (2x4 dots per cell) instead of one `•` per column: consecutive
+  samples are joined, so fast/loud passages no longer leave vertical gaps
+  (and a hollow centre). The per-cell braille packing was generalized into
+  a reusable `ventty::BrailleCanvas` (ventty `art` module) with point and
+  Bresenham-line plotting; the visualizer plots into it and blits. The
+  trace is drawn in a brighter amber (the smaller dots dimmed the old theme
+  color) and the centered axis line was removed.
+
+- Fixed the Radio left-panel mode (key `5`) not persisting across restarts.
+  `leftModeToConfig` already wrote `radio` to `[library] left_mode`, but the
+  config parser only accepted `artist`/`album`/`directory`, so the value was
+  rejected on load and silently fell back to `album`. The parser now also
+  accepts `radio`.
+
+- Internet-radio buffering reworked to eliminate frequent ~0.1 s dropouts.
+  `StreamSource` now prebuffers before the first sample plays and re-arms
+  that gate on an underrun (rebuffering cleanly instead of feeding a torn
+  partial chunk); `buffering()` drives a `○ BUFFERING` transport indicator
+  shown in place of `◉ LIVE` while the gate is held. The ring-buffer
+  overflow policy changed from "drop the oldest samples to stay at the live
+  edge" to reader backpressure: when the ring is full the reader parks until
+  the consumer frees space, propagating flow control to `ffmpeg`. This keeps
+  a deep, stable cushion (the previous policy discarded the whole cushion on
+  any fast delivery, leaving playback one jitter spike away from an
+  underrun) at the cost of added latency behind the live edge. Buffer depth
+  and the prebuffer/rebuffer threshold are configurable via `[audio]`
+  `stream_buffer_seconds` (default 20) and `stream_prebuffer_seconds`
+  (default 5); the prebuffer is clamped below the buffer depth at runtime.
+
 ## 0.6.0 (2026-05-19)
 
 - Internet radio. A new left-panel mode (key `5`, `LeftMode::Radio`) lists

@@ -15,6 +15,11 @@ struct Config
     // [audio]
     float volume = 1.0f;
     bool gainNorm = false;  ///< master switch: prefer ReplayGain tag, fall back to runtime RMS
+    /// Internet-radio ring-buffer depth and prebuffer/rebuffer threshold
+    /// (seconds). Larger = more latency but more resilient to network
+    /// jitter. prebuffer is clamped below the buffer depth at runtime.
+    float streamBufferSeconds = 20.0f;
+    float streamPrebufferSeconds = 5.0f;
 
     // [ui]
     bool showHidden = false;
@@ -29,9 +34,9 @@ struct Config
     // [library]
     std::filesystem::path libraryRoot;
     /// Left-panel mode persisted across sessions: "artist" | "album" |
-    /// "directory". The transient "filebrowser" mode is never persisted —
-    /// it normalizes back to "album" on save so a fresh run starts in the
-    /// indexed library.
+    /// "directory" | "radio". The transient "filebrowser" mode is never
+    /// persisted — it normalizes back to "album" on save so a fresh run
+    /// starts in the indexed library.
     std::string leftMode = "album";
     /// Absolute path of the track the library cursor rested on at exit.
     /// Restored (locate) on the next run so focus survives quitting — even

@@ -21,11 +21,10 @@ namespace vtplayer
 namespace
 {
 
-// ~6 s of stereo float audio. Large enough to ride out network jitter,
-// small enough that resuming from pause stays near the live edge.
-constexpr std::size_t kRingSamples =
+// Samples per second of interleaved stereo float audio.
+constexpr std::size_t kSamplesPerSec =
     static_cast<std::size_t>(StreamSource::kSampleRate)
-    * StreamSource::kChannels * 6;
+    * StreamSource::kChannels;
 
 // Locate an executable named `name` on PATH. Empty if not found.
 std::string findOnPath(char const * name)
@@ -61,14 +60,30 @@ StreamSource::~StreamSource()
     stop();
 }
 
+void StreamSource::setBuffer(double bufferSeconds, double prebufferSeconds)
+{
+    // Floors keep the math sane; prebuffer must stay below the ring depth
+    // (with a margin) so the gate is actually reachable before the reader
+    // applies backpressure.
+    _bufferSeconds    = std::max(2.0, bufferSeconds);
+    _prebufferSeconds = std::max(0.5, prebufferSeconds);
+    _prebufferSeconds = std::min(_prebufferSeconds, _bufferSeconds * 0.8);
+}
+
 bool StreamSource::start(std::string const & url)
 {
     stop();
     _error.clear();
     _stopFlag.store(false);
     _eofFlag.store(false);
+    _buffering.store(true); // prebuffer before the first sample plays
     _head = _size = 0;
-    _ring.assign(kRingSamples, 0.0f);
+
+    std::size_t const ringSamples = static_cast<std::size_t>(
+        _bufferSeconds * static_cast<double>(kSamplesPerSec));
+    _prebufferSamples = static_cast<std::size_t>(
+        _prebufferSeconds * static_cast<double>(kSamplesPerSec));
+    _ring.assign(ringSamples, 0.0f);
 
     std::string const ffmpeg = findOnPath("ffmpeg");
     if (ffmpeg.empty())
@@ -124,6 +139,7 @@ bool StreamSource::start(std::string const & url)
 void StreamSource::stop()
 {
     _stopFlag.store(true);
+    _cv.notify_all(); // wake a reader parked on backpressure
 
     if (_pid > 0)
     {
@@ -143,6 +159,7 @@ void StreamSource::stop()
         _pid = -1;
     }
 
+    _buffering.store(true);
     std::lock_guard<std::mutex> lk(_mtx);
     _ring.clear();
     _head = _size = 0;
@@ -163,23 +180,26 @@ void StreamSource::readerLoop()
         }
         std::size_t const got = static_cast<std::size_t>(n) / sizeof(float);
 
-        std::lock_guard<std::mutex> lk(_mtx);
+        std::unique_lock<std::mutex> lk(_mtx);
         std::size_t const cap = _ring.size();
         if (cap == 0)
             continue;
         for (std::size_t i = 0; i < got; ++i)
         {
+            if (_size == cap)
+            {
+                // Ring full: apply backpressure rather than discarding the
+                // cushion. Park until the consumer frees space (or we stop).
+                // The stalled pipe read propagates flow control to ffmpeg.
+                _cv.wait(lk, [&] {
+                    return _stopFlag.load() || _size < cap;
+                });
+                if (_stopFlag.load())
+                    return;
+            }
             std::size_t const tail = (_head + _size) % cap;
             _ring[tail] = chunk[i];
-            if (_size < cap)
-            {
-                ++_size;
-            }
-            else
-            {
-                // Full: overwrite oldest, advance read cursor (stay live).
-                _head = (_head + 1) % cap;
-            }
+            ++_size;
         }
     }
 }
@@ -187,14 +207,38 @@ void StreamSource::readerLoop()
 unsigned int StreamSource::read(float * out, unsigned int frames)
 {
     std::size_t const want = static_cast<std::size_t>(frames) * kChannels;
-    std::lock_guard<std::mutex> lk(_mtx);
+    std::unique_lock<std::mutex> lk(_mtx);
     std::size_t const cap = _ring.size();
+    bool const eof = _eofFlag.load(std::memory_order_acquire);
+
+    if (_buffering.load(std::memory_order_relaxed))
+    {
+        // Gate playback (caller emits silence) until the prebuffer fills, so
+        // a fresh start or post-underrun resume does not immediately stutter.
+        // EOF lifts the gate so the final tail still drains.
+        if (_size < _prebufferSamples && !eof)
+            return 0;
+        _buffering.store(false, std::memory_order_release);
+    }
+    else if (_size < want && !eof)
+    {
+        // Underrun: not enough for a full callback and more is still coming.
+        // Re-arm the prebuffer gate instead of feeding a torn partial chunk.
+        _buffering.store(true, std::memory_order_release);
+        return 0;
+    }
+
     std::size_t const give = std::min(want, _size);
     for (std::size_t i = 0; i < give; ++i)
         out[i] = _ring[(_head + i) % cap];
     if (cap > 0)
         _head = (_head + give) % cap;
     _size -= give;
+    if (give > 0)
+    {
+        lk.unlock();
+        _cv.notify_one(); // space freed → release a backpressured reader
+    }
     return static_cast<unsigned int>(give / kChannels);
 }
 

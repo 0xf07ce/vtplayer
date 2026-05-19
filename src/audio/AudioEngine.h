@@ -59,6 +59,18 @@ public:
     /// True while the current source is a network stream.
     bool isStream() const { return _isStream.load(std::memory_order_acquire); }
 
+    /// True while a live stream is (re)buffering and emitting silence
+    /// (initial prebuffer or recovering from an underrun).
+    bool isStreamBuffering() const;
+
+    /// Ring-buffer depth / prebuffer threshold (seconds) for the next
+    /// loadStream(). Sourced from config; takes effect on the next stream.
+    void setStreamBuffer(float bufferSeconds, float prebufferSeconds)
+    {
+        _streamBufferSec    = bufferSeconds;
+        _streamPrebufferSec = prebufferSeconds;
+    }
+
     void play();
     void pause();
     void stop();
@@ -104,6 +116,8 @@ private:
 
     std::unique_ptr<StreamSource> _stream;          ///< set when streaming
     std::atomic<bool> _isStream{false};
+    float _streamBufferSec    = 20.0f;              ///< config: ring depth
+    float _streamPrebufferSec = 5.0f;               ///< config: prebuffer
 
     std::atomic<PlayState> _state{PlayState::Stopped};
     std::atomic<bool> _trackEnded{false}; ///< set by callback, polled by UI

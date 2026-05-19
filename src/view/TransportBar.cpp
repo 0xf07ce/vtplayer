@@ -80,7 +80,8 @@ void TransportBar::draw(ventty::Window & window)
 
         if (_live)
         {
-            std::string lbl = "\xE2\x97\x89 LIVE"; // ◉ LIVE
+            std::string lbl = _buffering ? "\xE2\x97\x8B BUFFERING" // ○ BUFFERING
+                                         : "\xE2\x97\x89 LIVE";    // ◉ LIVE
             int pad = (progressW - ventty::stringWidth(lbl)) / 2;
             std::string bar = std::string(std::max(0, pad), ' ') + lbl;
             window.drawText(cx, y1, bar,

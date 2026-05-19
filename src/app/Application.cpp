@@ -239,6 +239,8 @@ namespace vtplayer
         _audio.init();
         _audio.setVolume(1.0f);
         _audio.setGainNorm(_config.gainNorm);
+        _audio.setStreamBuffer(_config.streamBufferSeconds,
+                               _config.streamPrebufferSeconds);
 
         // Init terminal
         initTerminal();
@@ -566,6 +568,7 @@ namespace vtplayer
         _transportBar->setPosition(_audio.position());
         _transportBar->setDuration(_audio.duration());
         _transportBar->setLive(_audio.isStream());
+        _transportBar->setBuffering(_audio.isStreamBuffering());
         _transportBar->setGainNorm(_audio.gainNormEnabled(), _audio.gainNormDb(), _audio.gainSource());
 
         // Update visualizer

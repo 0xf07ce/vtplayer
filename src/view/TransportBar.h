@@ -32,6 +32,9 @@ public:
     /// Live stream: show a LIVE indicator + elapsed time instead of a
     /// progress bar and total duration.
     void setLive(bool live) { _live = live; }
+    /// Live stream is (re)buffering: show a BUFFERING indicator in place of
+    /// the LIVE label until enough audio has accumulated to resume.
+    void setBuffering(bool buffering) { _buffering = buffering; }
     void setVolume(float vol) { _volume = vol; }
     void setGainNorm(bool enabled, float gainDb, GainSource source)
     {
@@ -55,6 +58,7 @@ private:
     float _position = 0.0f;
     float _duration = 0.0f;
     bool _live = false;
+    bool _buffering = false;
     float _volume = 1.0f;
     bool _gainNormEnabled = false;
     float _gainDb = 0.0f;
