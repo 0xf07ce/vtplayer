@@ -71,6 +71,10 @@ public:
         _streamPrebufferSec = prebufferSeconds;
     }
 
+    /// Forwarded to StreamSource: keep ffmpeg's stderr on the terminal
+    /// (debug) vs. redirect it to /dev/null (default). Next stream only.
+    void setStreamDebug(bool debug) { _streamDebug = debug; }
+
     void play();
     void pause();
     void stop();
@@ -118,6 +122,7 @@ private:
     std::atomic<bool> _isStream{false};
     float _streamBufferSec    = 20.0f;              ///< config: ring depth
     float _streamPrebufferSec = 5.0f;               ///< config: prebuffer
+    bool  _streamDebug        = false;              ///< keep ffmpeg stderr
 
     std::atomic<PlayState> _state{PlayState::Stopped};
     std::atomic<bool> _trackEnded{false}; ///< set by callback, polled by UI

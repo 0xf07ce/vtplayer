@@ -78,6 +78,7 @@ namespace vtplayer
 
         void setInitialFile(std::filesystem::path path) { _initialFile = std::move(path); }
         void setInitialDirectory(std::filesystem::path path) { _initialDir = std::move(path); }
+        void setDebug(bool debug) { _debug = debug; }
 
         int run();
         void quit();
@@ -282,6 +283,9 @@ namespace vtplayer
         // FileBrowser. Either forces FileBrowser (4) mode at launch.
         std::filesystem::path _initialFile;
         std::filesystem::path _initialDir;
+
+        // --debug: keep ffmpeg's stderr on the terminal instead of /dev/null.
+        bool _debug = false;
     };
 
 } // namespace vtplayer

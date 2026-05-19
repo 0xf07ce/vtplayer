@@ -25,6 +25,7 @@ int main(int argc, char *argv[])
         ("h,help",      "Show this help message")
         ("v,version",   "Show version and exit")
         ("dump-tags",   "Print every TagLib property of FILE and exit (diagnostic)")
+        ("debug",       "Keep ffmpeg's stderr on the terminal (stream diagnostics)")
         ("path",        "Audio file or directory to open", cxxopts::value<std::string>());
     options.parse_positional({"path"});
     options.positional_help("[FILE|DIR]");
@@ -55,6 +56,9 @@ int main(int argc, char *argv[])
     }
 
     vtplayer::Application app;
+
+    if (result.count("debug"))
+        app.setDebug(true);
 
     if (result.count("path"))
     {

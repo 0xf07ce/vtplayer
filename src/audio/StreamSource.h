@@ -49,6 +49,12 @@ public:
     /// additionally clamped below the ring depth so the gate can be reached.
     void setBuffer(double bufferSeconds, double prebufferSeconds);
 
+    /// Debug mode: leave ffmpeg's stderr inherited so its diagnostics print
+    /// to the terminal (default). When false, ffmpeg's stderr is redirected
+    /// to /dev/null so transient HTTP/reconnect noise never reaches the TUI.
+    /// Must be called before start().
+    void setDebug(bool debug) { _debug = debug; }
+
     /// Spawn ffmpeg for `url`. Returns false (with error()) if ffmpeg is not
     /// on PATH or the process/pipe could not be created.
     bool start(std::string const & url);
@@ -81,6 +87,7 @@ private:
     std::atomic<bool> _stopFlag{false};
     std::atomic<bool> _eofFlag{false};   ///< pipe closed / ffmpeg gone
     std::atomic<bool> _buffering{true};  ///< prebuffer gate (start / underrun)
+    bool _debug = false;                 ///< keep ffmpeg stderr on terminal
 
     // Buffer sizing (seconds). Defaults favour stability over latency.
     double _bufferSeconds    = 20.0;

@@ -105,6 +105,12 @@ bool StreamSource::start(std::string const & url)
     posix_spawn_file_actions_adddup2(&fa, fds[1], STDOUT_FILENO);
     posix_spawn_file_actions_addclose(&fa, fds[0]);
     posix_spawn_file_actions_addclose(&fa, fds[1]);
+    // Normal mode: silence ffmpeg's stderr so transient HTTP/reconnect
+    // diagnostics ("Error reading HTTP response: End of file") never bleed
+    // onto the TUI. Debug mode leaves stderr inherited (prints to terminal).
+    if (!_debug)
+        posix_spawn_file_actions_addopen(&fa, STDERR_FILENO, "/dev/null",
+                                         O_WRONLY, 0);
 
     std::string sr = std::to_string(kSampleRate);
     std::string ac = std::to_string(kChannels);

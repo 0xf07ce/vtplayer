@@ -148,6 +148,7 @@ bool AudioEngine::loadStream(std::string const & url, std::string const & name)
 
     auto src = std::make_unique<StreamSource>();
     src->setBuffer(_streamBufferSec, _streamPrebufferSec);
+    src->setDebug(_streamDebug);
     if (!src->start(url))
     {
         _lastError = src->error();

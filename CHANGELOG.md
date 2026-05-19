@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 0.7.2 (2026-05-19)
+
+- Internet-radio streams no longer corrupt the TUI with ffmpeg's transient
+  HTTP diagnostics. The `ffmpeg` subprocess spawned by `StreamSource` only
+  redirected its stdout to the sample pipe; its stderr stayed inherited from
+  the parent, so libavformat messages such as `Error reading HTTP response:
+  End of file` — which are expected for live radio (the server recycles the
+  connection and `-reconnect` immediately re-establishes it) — printed
+  straight onto the terminal UI. By default the child's stderr is now
+  redirected to `/dev/null`. A new `--debug` flag keeps stderr inherited so
+  the ffmpeg diagnostics remain visible for troubleshooting; the flag is
+  plumbed `main` → `Application` → `AudioEngine` → `StreamSource`.
+
 ## 0.7.1 (2026-05-19)
 
 - Bumped the pinned `ventty` dependency from `v0.2.0` to `v0.2.1`

@@ -241,6 +241,7 @@ namespace vtplayer
         _audio.setGainNorm(_config.gainNorm);
         _audio.setStreamBuffer(_config.streamBufferSeconds,
                                _config.streamPrebufferSeconds);
+        _audio.setStreamDebug(_debug);
 
         // Init terminal
         initTerminal();
