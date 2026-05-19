@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 0.7.1 (2026-05-19)
+
+- Bumped the pinned `ventty` dependency from `v0.2.0` to `v0.2.1`
+  (`deps/CMakeLists.txt` `GIT_TAG`). The v0.7.0 bottle build failed
+  because the new `ventty::BrailleCanvas` API used by the oscilloscope
+  did not exist in the `v0.2.0` tarball that FetchContent / the Homebrew
+  formula pulled; ventty was tagged `v0.2.1` with that API and the pin
+  updated to match.
+
 ## 0.7.0 (2026-05-19)
 
 - Oscilloscope visualizer now draws a continuous waveform with Braille

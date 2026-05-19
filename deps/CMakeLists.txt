@@ -12,14 +12,14 @@ option(VTPLAYER_USE_SYSTEM_DEPS
 
 # ventty: terminal UI framework.
 #
-# ventty is always consumed via FetchContent because upstream (v0.2.0) ships
+# ventty is always consumed via FetchContent because upstream (v0.2.1) ships
 # no install()/export() rules, so there is no find_package(ventty) package to
 # depend on. Offline / Homebrew builds stage the source and point CMake at it
 # with -DFETCHCONTENT_SOURCE_DIR_VENTTY=<path>, which FetchContent honors
 # transparently (no network during the build).
 FetchContent_Declare(ventty
     GIT_REPOSITORY https://github.com/0xf07ce/ventty.git
-    GIT_TAG        v0.2.0   # 970e9d1e6ff7da225f2ea4ac9ef0aa999c8b0efa
+    GIT_TAG        v0.2.1   # 30277c48164b5369ca145ea8ea68f1441c67548b
     GIT_SHALLOW    TRUE
 )
 set(VENTTY_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
