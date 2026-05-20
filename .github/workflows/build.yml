@@ -12,6 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install dependencies
+        run: brew install ffmpeg pkg-config
+
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
