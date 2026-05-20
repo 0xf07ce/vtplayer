@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 0.8.1 (2026-05-20)
+
+- `.mp4` files (MPEG-4 containers carrying an audio track) now appear in the
+  file browser and are picked up by the library scanner. The decoder backend
+  (libav) already handled them, but `mp4` was missing from the
+  `[formats] extensions` default list and from `TrackInfo::formatFromPath`,
+  so the FileBrowser filter and `LibraryScanner::collect` silently skipped
+  every `*.mp4`. Added `AudioFormat::Mp4`, included `mp4` in the default
+  extensions string, and updated the `--help` banner.
+- Config: extensions saved by an older release are now merged with the
+  built-in default list on load rather than replacing it verbatim. v0.8.0
+  preserved the user's existing `extensions =` value to avoid clobbering
+  custom edits, but the trade-off was that anyone who had ever saved a
+  config before a new format was added would never see that format until
+  they hand-edited the file. The loader now unions the two lists (user
+  order first, then any built-in defaults the user didn't have), and
+  re-serialises the merged value on next save. Custom user-added
+  extensions remain intact.
+
 ## 0.8.0 (2026-05-20)
 
 - Unified the audio-decoding backend on ffmpeg / libav. The previous split —

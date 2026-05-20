@@ -29,7 +29,7 @@ struct Config
     int visualizerIndex = 1;  ///< 0=Oscilloscope, 1=Spectrum, 2=MatrixRain, 3=DebugBars, 4=TagInfo, 5=Vinyl
 
     // [formats]
-    std::string extensions = "mp3,wav,ogg,flac,m4a,aac,opus,wma,webm";
+    std::string extensions = "mp3,wav,ogg,flac,m4a,mp4,aac,opus,wma,webm";
 
     // [library]
     std::filesystem::path libraryRoot;

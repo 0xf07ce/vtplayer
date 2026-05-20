@@ -25,7 +25,7 @@ int main(int argc, char *argv[])
     // before any FileRef is opened — otherwise they corrupt the TUI.
     vtplayer::silenceTagLib();
 
-    cxxopts::Options options("vtplayer", "Terminal-based music player (mp3/ogg/flac/m4a/aac/opus/wav/wma/webm + internet radio)");
+    cxxopts::Options options("vtplayer", "Terminal-based music player (mp3/ogg/flac/m4a/mp4/aac/opus/wav/wma/webm + internet radio)");
     options.add_options()
         ("h,help",      "Show this help message")
         ("v,version",   "Show version and exit")

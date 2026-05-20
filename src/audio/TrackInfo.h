@@ -18,6 +18,7 @@ enum class AudioFormat
     Ogg,
     Flac,
     M4a,
+    Mp4,
     Aac,
     Opus,
     Wma,
@@ -56,6 +57,7 @@ struct TrackInfo
         if (ext == ".ogg") return AudioFormat::Ogg;
         if (ext == ".flac") return AudioFormat::Flac;
         if (ext == ".m4a") return AudioFormat::M4a;
+        if (ext == ".mp4") return AudioFormat::Mp4;
         if (ext == ".aac") return AudioFormat::Aac;
         if (ext == ".opus") return AudioFormat::Opus;
         if (ext == ".wma") return AudioFormat::Wma;
