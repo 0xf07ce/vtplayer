@@ -14,10 +14,10 @@
 
 // Forward declarations
 struct ma_device;
-struct ma_decoder;
 
 namespace vtplayer
 {
+class Decoder;
 class StreamSource;
 }
 
@@ -116,7 +116,7 @@ private:
     void fillBuffer(float * output, unsigned int frameCount);
 
     ma_device * _device = nullptr;
-    ma_decoder * _decoder = nullptr;
+    std::unique_ptr<Decoder> _decoder;              ///< libav decoder for files
 
     std::unique_ptr<StreamSource> _stream;          ///< set when streaming
     std::atomic<bool> _isStream{false};

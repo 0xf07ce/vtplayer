@@ -6,6 +6,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -14,14 +15,15 @@
 namespace vtplayer
 {
 
-/// Network audio stream decoded by an external `ffmpeg` subprocess.
+class Decoder;
+
+/// Network audio stream backed by libav (libavformat + libavcodec).
 ///
-/// ffmpeg handles all of the hard parts (HTTP, HLS playlist polling, token
-/// rotation, AAC/MP3/Opus, reconnection) and emits raw interleaved stereo
-/// `float32` PCM at `kSampleRate` on stdout. A reader thread drains that pipe
-/// into a bounded ring buffer; the audio callback pulls from it via read().
-/// The buffer drops the oldest samples on overflow so playback stays close to
-/// the live edge instead of drifting behind after an underrun/pause.
+/// libav handles all of the hard parts (HTTP, HLS playlist polling, AAC/MP3/
+/// Opus, reconnection) and `Decoder` normalises every codec to interleaved
+/// stereo float32 at `kSampleRate`. A reader thread pulls PCM from the
+/// decoder into a bounded ring buffer; the audio callback pulls from it via
+/// read().
 ///
 /// To mask network jitter, read() holds playback (returns 0 → caller emits
 /// silence) until a prebuffer threshold of audio has accumulated. The same
@@ -38,7 +40,7 @@ public:
     static constexpr int kSampleRate = 44100;
     static constexpr int kChannels   = 2;
 
-    StreamSource() = default;
+    StreamSource();
     ~StreamSource();
 
     StreamSource(StreamSource const &)            = delete;
@@ -49,17 +51,16 @@ public:
     /// additionally clamped below the ring depth so the gate can be reached.
     void setBuffer(double bufferSeconds, double prebufferSeconds);
 
-    /// Debug mode: leave ffmpeg's stderr inherited so its diagnostics print
-    /// to the terminal (default). When false, ffmpeg's stderr is redirected
-    /// to /dev/null so transient HTTP/reconnect noise never reaches the TUI.
-    /// Must be called before start().
+    /// Debug mode: raise libav's log level so its diagnostics print to the
+    /// terminal (default off keeps the TUI clean). Must be called before
+    /// start(); the level is process-global within libav.
     void setDebug(bool debug) { _debug = debug; }
 
-    /// Spawn ffmpeg for `url`. Returns false (with error()) if ffmpeg is not
-    /// on PATH or the process/pipe could not be created.
+    /// Open `url` and start the reader thread. Returns false (with error())
+    /// if libav could not open the source.
     bool start(std::string const & url);
 
-    /// Kill ffmpeg and join the reader thread. Safe to call repeatedly.
+    /// Stop the decoder and join the reader thread. Safe to call repeatedly.
     void stop();
 
     /// Pull up to `frames` stereo frames into `out` (out holds
@@ -67,7 +68,7 @@ public:
     /// written; the caller zero-fills the remainder on underrun.
     unsigned int read(float * out, unsigned int frames);
 
-    /// ffmpeg has exited (or the pipe closed) and the buffer is drained.
+    /// libav has reached EOF (or the source closed) and the buffer is drained.
     bool ended() const;
 
     /// Playback is gated while the prebuffer fills (initial start or after
@@ -81,13 +82,12 @@ private:
 
     std::string _error;
 
-    int       _readFd = -1;
-    int       _pid    = -1;
-    std::thread _reader;
+    std::unique_ptr<Decoder> _decoder;
+    std::thread       _reader;
     std::atomic<bool> _stopFlag{false};
-    std::atomic<bool> _eofFlag{false};   ///< pipe closed / ffmpeg gone
+    std::atomic<bool> _eofFlag{false};   ///< libav done / source closed
     std::atomic<bool> _buffering{true};  ///< prebuffer gate (start / underrun)
-    bool _debug = false;                 ///< keep ffmpeg stderr on terminal
+    bool _debug = false;                 ///< raise libav log verbosity
 
     // Buffer sizing (seconds). Defaults favour stability over latency.
     double _bufferSeconds    = 20.0;

@@ -3,17 +3,13 @@
 
 #include "StreamSource.h"
 
+#include "Decoder.h"
+
+extern "C" {
+#include <libavutil/log.h>
+}
+
 #include <algorithm>
-#include <cstdlib>
-#include <cstring>
-
-#include <fcntl.h>
-#include <signal.h>
-#include <spawn.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
-extern char ** environ;
 
 namespace vtplayer
 {
@@ -21,39 +17,13 @@ namespace vtplayer
 namespace
 {
 
-// Samples per second of interleaved stereo float audio.
 constexpr std::size_t kSamplesPerSec =
     static_cast<std::size_t>(StreamSource::kSampleRate)
     * StreamSource::kChannels;
 
-// Locate an executable named `name` on PATH. Empty if not found.
-std::string findOnPath(char const * name)
-{
-    char const * path = std::getenv("PATH");
-    if (!path)
-        return {};
-    std::string const dirs = path;
-    std::size_t start = 0;
-    while (start <= dirs.size())
-    {
-        std::size_t const colon = dirs.find(':', start);
-        std::string const dir =
-            dirs.substr(start, colon == std::string::npos ? std::string::npos
-                                                          : colon - start);
-        if (!dir.empty())
-        {
-            std::string cand = dir + "/" + name;
-            if (::access(cand.c_str(), X_OK) == 0)
-                return cand;
-        }
-        if (colon == std::string::npos)
-            break;
-        start = colon + 1;
-    }
-    return {};
-}
-
 } // namespace
+
+StreamSource::StreamSource() = default;
 
 StreamSource::~StreamSource()
 {
@@ -85,60 +55,22 @@ bool StreamSource::start(std::string const & url)
         _prebufferSeconds * static_cast<double>(kSamplesPerSec));
     _ring.assign(ringSamples, 0.0f);
 
-    std::string const ffmpeg = findOnPath("ffmpeg");
-    if (ffmpeg.empty())
+    // libav's log level is process-global; --debug raises it so live-radio
+    // diagnostics (reconnect attempts, codec quirks) print to the terminal.
+    av_log_set_level(_debug ? AV_LOG_VERBOSE : AV_LOG_ERROR);
+
+    auto dec = std::make_unique<Decoder>();
+    // Arm libav's interrupt callback against our stop flag so a stuck
+    // network read in the reader thread can be aborted promptly by stop().
+    dec->setInterrupt(&_stopFlag);
+    if (!dec->open(url, true))
     {
-        _error = "ffmpeg not found on PATH (install it: brew install ffmpeg)";
+        _error = dec->error();
         return false;
     }
 
-    int fds[2];
-    if (::pipe(fds) != 0)
-    {
-        _error = "pipe() failed";
-        return false;
-    }
-
-    posix_spawn_file_actions_t fa;
-    posix_spawn_file_actions_init(&fa);
-    // Child stdout → pipe write end; close the read end in the child.
-    posix_spawn_file_actions_adddup2(&fa, fds[1], STDOUT_FILENO);
-    posix_spawn_file_actions_addclose(&fa, fds[0]);
-    posix_spawn_file_actions_addclose(&fa, fds[1]);
-    // Normal mode: silence ffmpeg's stderr so transient HTTP/reconnect
-    // diagnostics ("Error reading HTTP response: End of file") never bleed
-    // onto the TUI. Debug mode leaves stderr inherited (prints to terminal).
-    if (!_debug)
-        posix_spawn_file_actions_addopen(&fa, STDERR_FILENO, "/dev/null",
-                                         O_WRONLY, 0);
-
-    std::string sr = std::to_string(kSampleRate);
-    std::string ac = std::to_string(kChannels);
-    // -nostdin: never read our stdin. -reconnect*: survive transient network
-    // drops. -vn: audio only. Output raw f32le so no decoder is needed here.
-    char const * argv[] = {
-        "ffmpeg",      "-nostdin",   "-hide_banner", "-loglevel", "error",
-        "-reconnect",  "1",          "-reconnect_streamed", "1",
-        "-reconnect_delay_max", "5", "-i",           url.c_str(),
-        "-vn",         "-f",         "f32le",        "-ar", sr.c_str(),
-        "-ac",         ac.c_str(),   "-",            nullptr};
-
-    pid_t pid = -1;
-    int const rc = posix_spawn(&pid, ffmpeg.c_str(), &fa, nullptr,
-                               const_cast<char * const *>(argv), environ);
-    posix_spawn_file_actions_destroy(&fa);
-    ::close(fds[1]); // parent only reads
-
-    if (rc != 0)
-    {
-        ::close(fds[0]);
-        _error = "failed to spawn ffmpeg";
-        return false;
-    }
-
-    _pid    = pid;
-    _readFd = fds[0];
-    _reader = std::thread(&StreamSource::readerLoop, this);
+    _decoder = std::move(dec);
+    _reader  = std::thread(&StreamSource::readerLoop, this);
     return true;
 }
 
@@ -147,23 +79,17 @@ void StreamSource::stop()
     _stopFlag.store(true);
     _cv.notify_all(); // wake a reader parked on backpressure
 
-    if (_pid > 0)
-    {
-        ::kill(_pid, SIGKILL);
-    }
-    if (_readFd >= 0)
-    {
-        ::close(_readFd); // unblocks a reader thread parked in read()
-        _readFd = -1;
-    }
+    // Critical ordering: we MUST join the reader thread BEFORE tearing down
+    // the decoder. The reader may be deep inside libav (av_read_frame,
+    // socket read, codec receive) holding pointers into the format/codec
+    // contexts; freeing them now would be a use-after-free. The interrupt
+    // callback armed in start() makes libav return from its blocking call
+    // promptly once _stopFlag is set, so the join completes in tens of ms.
     if (_reader.joinable())
         _reader.join();
-    if (_pid > 0)
-    {
-        int status = 0;
-        ::waitpid(_pid, &status, 0);
-        _pid = -1;
-    }
+
+    // Reader is gone — no other thread touches _decoder. Safe to tear down.
+    _decoder.reset();
 
     _buffering.store(true);
     std::lock_guard<std::mutex> lk(_mtx);
@@ -173,18 +99,25 @@ void StreamSource::stop()
 
 void StreamSource::readerLoop()
 {
-    std::vector<float> chunk(4096);
+    constexpr unsigned int kChunkFrames = 1024;
+    std::vector<float> chunk(static_cast<std::size_t>(kChunkFrames) * kChannels);
     while (!_stopFlag.load())
     {
-        ssize_t const n = ::read(_readFd, chunk.data(),
-                                 chunk.size() * sizeof(float));
-        if (n <= 0)
+        if (!_decoder)
         {
-            // 0 = ffmpeg closed stdout (EOF); <0 = error / fd closed.
             _eofFlag.store(true);
             return;
         }
-        std::size_t const got = static_cast<std::size_t>(n) / sizeof(float);
+        unsigned int const gotFrames = _decoder->read(chunk.data(), kChunkFrames);
+        if (gotFrames == 0)
+        {
+            // EOF or hard error on the decoder side — either way, no more
+            // samples will arrive.
+            _eofFlag.store(true);
+            return;
+        }
+        std::size_t const got =
+            static_cast<std::size_t>(gotFrames) * kChannels;
 
         std::unique_lock<std::mutex> lk(_mtx);
         std::size_t const cap = _ring.size();
@@ -196,7 +129,6 @@ void StreamSource::readerLoop()
             {
                 // Ring full: apply backpressure rather than discarding the
                 // cushion. Park until the consumer frees space (or we stop).
-                // The stalled pipe read propagates flow control to ffmpeg.
                 _cv.wait(lk, [&] {
                     return _stopFlag.load() || _size < cap;
                 });

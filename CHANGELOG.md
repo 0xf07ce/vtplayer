@@ -1,5 +1,45 @@
 # CHANGELOG
 
+## 0.8.0 (2026-05-20)
+
+- Unified the audio-decoding backend on ffmpeg / libav. The previous split —
+  miniaudio's `ma_decoder` for local files and an external `ffmpeg`
+  subprocess for internet-radio streams — has been replaced by a single
+  `vtplayer::Decoder` class built on `libavformat` + `libavcodec` +
+  `libswresample`. miniaudio is now used only for cross-platform audio
+  *output* (`ma_device`), giving a clean responsibility split: libav decodes
+  every codec ffmpeg supports and handles network I/O (HTTP/HLS); miniaudio
+  drives the output device. As a direct consequence, m4a / aac / opus / wma /
+  webm files are now playable alongside the original mp3 / wav / ogg / flac
+  set; the `[formats] extensions` default and the library scanner accept the
+  expanded list out of the box (existing user `config.ini` values are
+  preserved). `--debug` now raises libav's log level instead of just keeping
+  the spawned `ffmpeg` child's stderr inherited.
+- `StreamSource` rewritten to call `vtplayer::Decoder` directly instead of
+  spawning an `ffmpeg` child and piping raw PCM through a UNIX pipe. The
+  prebuffer / backpressure / ring-buffer machinery — and the `LIVE` /
+  `BUFFERING` transport indicators wired from `buffering()` — are kept
+  unchanged; `posix_spawn`, the PATH lookup for `ffmpeg`, the stderr
+  `/dev/null` redirect, and the SIGKILL/`waitpid` cleanup are all gone. HTTP
+  reconnect / `user_agent` / connect-timeout options are now passed as
+  `AVDictionary` entries to `avformat_open_input`.
+- Build: `ffmpeg` is now a required system dependency (in addition to
+  `pkg-config`). CMake finds it via `pkg_check_modules(FFMPEG REQUIRED
+  IMPORTED_TARGET libavformat libavcodec libavutil libswresample)`; the
+  Homebrew formula adds `depends_on "ffmpeg"` and `depends_on "pkg-config"`.
+- Fixed an intermittent segfault when switching from a playing radio stream
+  to a local file. `StreamSource::stop()` previously called
+  `_decoder->close()` *before* joining the reader thread, freeing libav
+  contexts the reader could still be using inside a blocking network read.
+  `Decoder` now exposes `setInterrupt(atomic<bool> const*)` which installs
+  an `AVIOInterruptCB` on the format context, and `StreamSource` arms it
+  against its stop flag so libav returns promptly when stop is requested;
+  the decoder is only torn down after the reader has joined.
+- Oscilloscope visualizer gain re-tuned from `2.0` to `1.0` (unity). The
+  Braille-canvas amplification needed for the miniaudio sample stream
+  clipped too often once decoding moved to libav, which delivers full-scale
+  peaks more faithfully.
+
 ## 0.7.2 (2026-05-19)
 
 - Internet-radio streams no longer corrupt the TUI with ffmpeg's transient

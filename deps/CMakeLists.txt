@@ -79,10 +79,27 @@ else()
 endif()
 
 # miniaudio: header-only (public domain), placed in deps/include/miniaudio/miniaudio.h
+# Used exclusively for cross-platform audio *output* (ma_device). All decoding
+# is delegated to ffmpeg / libav (see below).
 
 # SQLite: system library. macOS provides libsqlite3 in the base SDK; Linux
 # distros ship libsqlite3-dev. Avoids vendoring a multi-MB amalgamation.
 find_package(SQLite3 REQUIRED)
+
+# ffmpeg / libav: required system dependency. libavformat handles demuxing and
+# network I/O (HTTP/HLS), libavcodec decodes every audio codec we care about
+# (mp3/wav/ogg/flac/m4a/aac/opus/wma/…), libswresample converts arbitrary
+# decoder output to our fixed f32/stereo/44.1 kHz pipeline. Install with
+# `brew install ffmpeg` on macOS or
+# `apt install libavformat-dev libavcodec-dev libavutil-dev libswresample-dev`
+# on Debian/Ubuntu.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
+    libavformat
+    libavcodec
+    libavutil
+    libswresample
+)
 
 add_library(vtplayerDep INTERFACE)
 target_include_directories(vtplayerDep INTERFACE
@@ -92,4 +109,5 @@ target_link_libraries(vtplayerDep INTERFACE
     ${VTPLAYER_CXXOPTS_TARGET}
     ${VTPLAYER_TAGLIB_TARGET}
     SQLite3::SQLite3
+    PkgConfig::FFMPEG
 )

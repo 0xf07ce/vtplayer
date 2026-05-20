@@ -35,9 +35,12 @@ namespace vtplayer
         int const subW = canvas.subWidth();
         int const subH = canvas.subHeight();
         int const denom = std::max(1, subW - 1);
+        // Unity gain matches the post-libav sample stream: above 1.0 the
+        // louder rails clip into the clamp too often.
+        constexpr float kGain = 1.0f;
         auto subY = [&](int sx) {
             int idx = (sx * (N - 1)) / denom;
-            float s = std::clamp(_samples[idx], -1.0f, 1.0f);
+            float s = std::clamp(_samples[idx] * kGain, -1.0f, 1.0f);
             // s = +1 → top sub-row, s = -1 → bottom sub-row.
             return static_cast<int>((1.0f - (s + 1.0f) * 0.5f) * (subH - 1)
                                     + 0.5f);

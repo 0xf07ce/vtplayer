@@ -8,6 +8,8 @@ add_executable(vtplayer
     # audio
     audio/AudioEngine.h
     audio/AudioEngine.cpp
+    audio/Decoder.h
+    audio/Decoder.cpp
     audio/ReplayGain.h
     audio/ReplayGain.cpp
     audio/StreamSource.h

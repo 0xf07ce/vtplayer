@@ -1,12 +1,17 @@
 // Copyright (c) 2026 Leon J. Lee
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
+// miniaudio is used exclusively for cross-platform audio *output*
+// (ma_device). All decoding is handled by libav via vtplayer::Decoder.
 #define MA_LOG_LEVEL MA_LOG_LEVEL_ERROR
+#define MA_NO_DECODING
+#define MA_NO_ENCODING
 #define MINIAUDIO_IMPLEMENTATION
 #include <miniaudio/miniaudio.h>
 
 #include "AudioEngine.h"
 
+#include "Decoder.h"
 #include "ReplayGain.h"
 #include "StreamSource.h"
 #include "../util/UnicodeNormalize.h"
@@ -88,23 +93,20 @@ bool AudioEngine::load(std::filesystem::path const & path)
     _currentTrack.artist.clear();
     _currentTrack.duration = 0.0f;
 
-    _decoder = new ma_decoder;
-
-    ma_decoder_config decoderConfig = ma_decoder_config_init(
-        ma_format_f32, CHANNELS, SAMPLE_RATE);
-
-    if (ma_decoder_init_file(path.string().c_str(), &decoderConfig, _decoder) != MA_SUCCESS)
+    auto dec = std::make_unique<Decoder>();
+    if (!dec->open(path.string(), false))
     {
-        _lastError = "Failed to open audio file";
-        delete _decoder;
-        _decoder = nullptr;
+        _lastError = dec->error();
         return false;
     }
 
-    ma_uint64 totalFrames = 0;
-    ma_decoder_get_length_in_pcm_frames(_decoder, &totalFrames);
-    _currentTrack.duration = static_cast<float>(totalFrames) / static_cast<float>(SAMPLE_RATE);
+    _currentTrack.duration = static_cast<float>(dec->duration());
     _duration.store(_currentTrack.duration, std::memory_order_relaxed);
+
+    {
+        std::lock_guard<std::mutex> lock(_audioMutex);
+        _decoder = std::move(dec);
+    }
 
     _framesPlayed = 0;
     _position.store(0.0f, std::memory_order_relaxed);
@@ -247,9 +249,7 @@ void AudioEngine::stop()
 
     if (_decoder)
     {
-        ma_decoder_uninit(_decoder);
-        delete _decoder;
-        _decoder = nullptr;
+        _decoder.reset();
     }
 
     if (_stream)
@@ -281,10 +281,11 @@ void AudioEngine::seek(float seconds)
 
     if (_decoder)
     {
-        ma_uint64 frame = static_cast<ma_uint64>(seconds * SAMPLE_RATE);
-        ma_decoder_seek_to_pcm_frame(_decoder, frame);
-        _framesPlayed = frame;
-        _position.store(seconds, std::memory_order_relaxed);
+        if (_decoder->seek(static_cast<double>(seconds)))
+        {
+            _framesPlayed = static_cast<uint64_t>(seconds * SAMPLE_RATE);
+            _position.store(seconds, std::memory_order_relaxed);
+        }
     }
 }
 
@@ -337,7 +338,7 @@ void AudioEngine::fillBuffer(float * output, unsigned int frameCount)
 
     std::lock_guard<std::mutex> lock(_audioMutex);
 
-    ma_uint64 framesRead = 0;
+    unsigned int framesRead = 0;
 
     if (_isStream.load(std::memory_order_acquire))
     {
@@ -363,7 +364,7 @@ void AudioEngine::fillBuffer(float * output, unsigned int frameCount)
             return;
         }
 
-        ma_decoder_read_pcm_frames(_decoder, output, frameCount, &framesRead);
+        framesRead = _decoder->read(output, frameCount);
 
         if (framesRead < frameCount)
         {

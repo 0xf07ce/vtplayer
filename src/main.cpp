@@ -7,6 +7,11 @@
 
 #include <cxxopts.hpp>
 
+extern "C" {
+#include <libavformat/avformat.h>
+#include <libavutil/log.h>
+}
+
 #include <filesystem>
 #include <iostream>
 
@@ -20,12 +25,12 @@ int main(int argc, char *argv[])
     // before any FileRef is opened — otherwise they corrupt the TUI.
     vtplayer::silenceTagLib();
 
-    cxxopts::Options options("vtplayer", "Terminal-based music player for MP3, OGG, and FLAC");
+    cxxopts::Options options("vtplayer", "Terminal-based music player (mp3/ogg/flac/m4a/aac/opus/wav/wma/webm + internet radio)");
     options.add_options()
         ("h,help",      "Show this help message")
         ("v,version",   "Show version and exit")
         ("dump-tags",   "Print every TagLib property of FILE and exit (diagnostic)")
-        ("debug",       "Keep ffmpeg's stderr on the terminal (stream diagnostics)")
+        ("debug",       "Raise libav (ffmpeg) log verbosity (stream diagnostics)")
         ("path",        "Audio file or directory to open", cxxopts::value<std::string>());
     options.parse_positional({"path"});
     options.positional_help("[FILE|DIR]");
@@ -55,10 +60,20 @@ int main(int argc, char *argv[])
         return vtplayer::dumpTags(path) ? 0 : 1;
     }
 
+    // libav needs network init for HTTP/HTTPS sources. Default to ERROR-only
+    // logging so transient diagnostics never leak into the TUI; --debug below
+    // raises it. (StreamSource also raises it on start() — this is the safe
+    // default for the rest of the process.)
+    avformat_network_init();
+    av_log_set_level(AV_LOG_ERROR);
+
     vtplayer::Application app;
 
     if (result.count("debug"))
+    {
         app.setDebug(true);
+        av_log_set_level(AV_LOG_VERBOSE);
+    }
 
     if (result.count("path"))
     {
