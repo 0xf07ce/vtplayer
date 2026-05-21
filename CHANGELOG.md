@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 0.9.0 (2026-05-21)
+
+- Radio streams again leaked libav diagnostics onto the TUI
+  (`http @0x… Error reading HTTP response: End of file` and friends).
+  v0.7.2's fix — redirecting the spawned `ffmpeg` child's stderr to
+  `/dev/null` — became a no-op in v0.8.0 once decoding moved in-process,
+  and lowering libav's log level was insufficient because the offending
+  messages are emitted at `AV_LOG_ERROR` and survive that threshold.
+  Without `--debug`, vtplayer now redirects its own `stderr` to
+  `/dev/null` before entering the TUI, which silences libav as well as
+  any other component that might write to `stderr`. `--debug` keeps
+  `stderr` inherited and continues to raise libav's verbosity.
+
 ## 0.8.1 (2026-05-20)
 
 - `.mp4` files (MPEG-4 containers carrying an audio track) now appear in the

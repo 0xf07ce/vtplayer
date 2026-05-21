@@ -12,6 +12,7 @@ extern "C" {
 #include <libavutil/log.h>
 }
 
+#include <cstdio>
 #include <filesystem>
 #include <iostream>
 
@@ -73,6 +74,17 @@ int main(int argc, char *argv[])
     {
         app.setDebug(true);
         av_log_set_level(AV_LOG_VERBOSE);
+    }
+    else
+    {
+        // Without --debug, redirect stderr to /dev/null for the lifetime of
+        // the TUI. libav writes AV_LOG_ERROR-level diagnostics (e.g. "http
+        // @0x… Error reading HTTP response: End of file" for radio streams)
+        // straight to stderr, which corrupts the rendered screen. Lowering
+        // the log level isn't enough — those messages are emitted at ERROR
+        // level and we want them gone regardless of origin (libav, system
+        // libraries, anything else). --debug keeps stderr inherited.
+        std::freopen("/dev/null", "w", stderr);
     }
 
     if (result.count("path"))
