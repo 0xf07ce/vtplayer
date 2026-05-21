@@ -7,7 +7,7 @@
 #include "../library/LibraryScanner.h"
 #include "../playqueue/PlayQueueCache.h"
 #include "../util/M3uReader.h"
-#include "../util/StreamList.h"
+#include "../util/StreamFile.h"
 #include "../util/UnicodeNormalize.h"
 #include "../visualizer/DebugBars.h"
 #include "../visualizer/MatrixRain.h"
@@ -78,8 +78,9 @@ namespace vtplayer
                 return LeftMode::Artist;
             if (s == "directory")
                 return LeftMode::Directory;
-            if (s == "radio")
-                return LeftMode::Radio;
+            // Legacy "radio" mode (v0.9.x and earlier) falls back to album —
+            // RadioView was removed in v0.10.0 when streaming moved into the
+            // unified library.
             return LeftMode::Album; // default; "filebrowser" is never persisted
         }
 
@@ -93,8 +94,6 @@ namespace vtplayer
                 return "directory";
             case LeftMode::Album:
                 return "album";
-            case LeftMode::Radio:
-                return "radio";
             // FileBrowser is transient — normalize so a fresh run starts
             // back in the indexed library.
             case LeftMode::FileBrowser:
@@ -346,11 +345,6 @@ namespace vtplayer
                                        if (_terminal)
                                            _terminal->forceRedraw(); });
 
-        _radioView = std::make_unique<RadioView>();
-        _radioView->setTheme(_theme);
-        _radioView->setStreams(StreamList::load());
-        _radioView->setOnPlay([this](Stream const &s) { playStream(s); });
-
         _transportBar = std::make_unique<TransportBar>();
         _transportBar->setTheme(_theme);
 
@@ -393,10 +387,7 @@ namespace vtplayer
         // so the user can navigate to a folder and register a library root.
         {
             LeftMode initMode = leftModeFromConfig(_config.leftMode);
-            // Radio is independent of the media index; only the library
-            // projections fall back to FileBrowser when the index is empty.
-            if (initMode != LeftMode::FileBrowser && initMode != LeftMode::Radio
-                && _library.empty())
+            if (initMode != LeftMode::FileBrowser && _library.empty())
             {
                 initMode = LeftMode::FileBrowser;
             }
@@ -513,16 +504,12 @@ namespace vtplayer
             int playQueueW = w - browserW;
             _fileBrowser->setRect(0, contentY, browserW, contentH);
             _libraryView->setRect(0, contentY, browserW, contentH);
-            if (_radioView)
-                _radioView->setRect(0, contentY, browserW, contentH);
             _playQueueView->setRect(browserW, contentY, playQueueW, contentH);
         }
         else
         {
             _fileBrowser->setRect(0, contentY, 0, contentH);
             _libraryView->setRect(0, contentY, 0, contentH);
-            if (_radioView)
-                _radioView->setRect(0, contentY, 0, contentH);
             _playQueueView->setRect(0, contentY, w, contentH);
         }
 
@@ -623,11 +610,7 @@ namespace vtplayer
     {
         if (_libraryPanelVisible)
         {
-            if (leftIsRadio())
-            {
-                _radioView->draw(*_rootWindow);
-            }
-            else if (leftIsLibrary())
+            if (leftIsLibrary())
             {
                 _libraryView->draw(*_rootWindow);
             }
@@ -700,7 +683,6 @@ namespace vtplayer
             {"  Enter",                 "Replace play queue with selection and play", false},
             {"  A",                     "Add selected file (or every audio file in selected dir) to play queue", false},
             {"  Backspace",             "Go up to parent directory", false},
-            {"  F5",                    "Refresh listing", false},
             {"", "", false},
             {"Play Queue", "", true},
             {"  Enter",                 "Play selected track", false},
@@ -1016,11 +998,7 @@ namespace vtplayer
         {
             if (_focus == FocusPanel::FileBrowser)
             {
-                if (leftIsRadio())
-                {
-                    _radioView->handleKey(event);
-                }
-                else if (leftIsLibrary())
+                if (leftIsLibrary())
                 {
                     _libraryView->handleKey(event);
                 }
@@ -1069,8 +1047,7 @@ namespace vtplayer
                     if (_focus != FocusPanel::FileBrowser)
                     {
                         _focus = FocusPanel::FileBrowser;
-                        _radioView->setFocused(leftIsRadio());
-                        _fileBrowser->setFocused(!leftIsLibrary() && !leftIsRadio());
+                        _fileBrowser->setFocused(!leftIsLibrary());
                         _libraryView->setFocused(leftIsLibrary());
                         _playQueueView->setFocused(false);
                     }
@@ -1080,7 +1057,6 @@ namespace vtplayer
                     if (_focus != FocusPanel::PlayQueue)
                     {
                         _focus = FocusPanel::PlayQueue;
-                        _radioView->setFocused(false);
                         _fileBrowser->setFocused(false);
                         _libraryView->setFocused(false);
                         _playQueueView->setFocused(true);
@@ -1089,15 +1065,11 @@ namespace vtplayer
             }
 
             // Delegate to focused panel
-            if (leftIsRadio() && _radioView->rect().contains(event.x, event.y))
-            {
-                _radioView->handleMouse(event);
-            }
-            else if (leftIsLibrary() && _libraryView->rect().contains(event.x, event.y))
+            if (leftIsLibrary() && _libraryView->rect().contains(event.x, event.y))
             {
                 _libraryView->handleMouse(event);
             }
-            else if (!leftIsLibrary() && !leftIsRadio()
+            else if (!leftIsLibrary()
                      && _fileBrowser->rect().contains(event.x, event.y))
             {
                 _fileBrowser->handleMouse(event);
@@ -1143,18 +1115,18 @@ namespace vtplayer
             return;
         }
 
-        // 1-5: pick the Browser-screen left panel directly.
+        // 1-4: pick the Browser-screen left panel directly.
         //   1 Artist · 2 Album · 3 Directory (all from the library index)
         //   4 FileBrowser (live filesystem from the launch CWD)
-        //   5 Radio (internet streams from streams.m3u)
+        // Internet radio is no longer a separate mode — `.stream` files live
+        // inside the library and surface in modes 1/2/3 like any other track.
         if (_screen == Screen::Browser && event.key == Key::Char && !event.alt && !event.ctrl
-            && (ch == '1' || ch == '2' || ch == '3' || ch == '4' || ch == '5'))
+            && (ch == '1' || ch == '2' || ch == '3' || ch == '4'))
         {
             LeftMode const target = (ch == '1')   ? LeftMode::Artist
                                     : (ch == '2') ? LeftMode::Album
                                     : (ch == '3') ? LeftMode::Directory
-                                    : (ch == '4') ? LeftMode::FileBrowser
-                                                  : LeftMode::Radio;
+                                                  : LeftMode::FileBrowser;
             // Leaving a library projection (1/2/3): remember the focused
             // track so it can be restored on the next entry — including after
             // a FileBrowser (4) round-trip.
@@ -1237,7 +1209,6 @@ namespace vtplayer
                 if (!_playQueueView->empty())
                 {
                     _focus = FocusPanel::PlayQueue;
-                    _radioView->setFocused(false);
                     _fileBrowser->setFocused(false);
                     _libraryView->setFocused(false);
                     _playQueueView->setFocused(true);
@@ -1246,8 +1217,7 @@ namespace vtplayer
             else
             {
                 _focus = FocusPanel::FileBrowser;
-                _radioView->setFocused(leftIsRadio());
-                _fileBrowser->setFocused(!leftIsLibrary() && !leftIsRadio());
+                _fileBrowser->setFocused(!leftIsLibrary());
                 _libraryView->setFocused(leftIsLibrary());
                 _playQueueView->setFocused(false);
             }
@@ -1339,9 +1309,6 @@ namespace vtplayer
         // keeping the existing queue intact.
         if (event.key == Key::Char && (ch == 'a' || ch == 'A') && !event.alt && !event.ctrl && _screen == Screen::Browser)
         {
-            // Radio streams aren't queueable — 'a' is a no-op there.
-            if (leftIsRadio())
-                return;
             // Library panel: append the selected artist / album / track.
             if (leftIsLibrary())
             {
@@ -1377,13 +1344,6 @@ namespace vtplayer
             return;
         }
 
-        // F5: refresh
-        if (event.key == Key::F5)
-        {
-            _fileBrowser->refresh();
-            _terminal->forceRedraw();
-            return;
-        }
     }
 
     void Application::openContextMenu()
@@ -1397,19 +1357,15 @@ namespace vtplayer
         std::vector<std::string> items;
         _contextMenuActions.clear();
 
-        // Library-root actions are meaningless on the Radio panel.
-        if (!leftIsRadio())
+        if (!leftIsLibrary())
         {
-            if (!leftIsLibrary())
-            {
-                items.emplace_back("Set current directory as library root");
-                _contextMenuActions.push_back(MenuAction::SetLibraryRoot);
-            }
-            else
-            {
-                items.emplace_back("Rescan library");
-                _contextMenuActions.push_back(MenuAction::RescanLibrary);
-            }
+            items.emplace_back("Set current directory as library root");
+            _contextMenuActions.push_back(MenuAction::SetLibraryRoot);
+        }
+        else
+        {
+            items.emplace_back("Rescan library");
+            _contextMenuActions.push_back(MenuAction::RescanLibrary);
         }
 
         items.emplace_back("Locate playing track in library");
@@ -1479,21 +1435,17 @@ namespace vtplayer
                 _libraryView->setMode(LibraryView::Mode::Directory);
                 break;
             case LeftMode::FileBrowser:
-            case LeftMode::Radio:
                 break;
             }
         }
         // Keep keyboard focus on whichever widget now occupies the left slot.
         if (_focus == FocusPanel::FileBrowser)
         {
-            bool const radio = (mode == LeftMode::Radio);
-            bool const fb    = (mode == LeftMode::FileBrowser);
-            if (_radioView)
-                _radioView->setFocused(radio);
+            bool const fb = (mode == LeftMode::FileBrowser);
             if (_fileBrowser)
                 _fileBrowser->setFocused(fb);
             if (_libraryView)
-                _libraryView->setFocused(!fb && !radio);
+                _libraryView->setFocused(!fb);
         }
         if (_terminal)
             _terminal->forceRedraw();
@@ -1520,12 +1472,9 @@ namespace vtplayer
         {
             // Hand focus back to whichever widget occupies the left slot.
             _focus = FocusPanel::FileBrowser;
-            bool const lib   = leftIsLibrary();
-            bool const radio = leftIsRadio();
-            if (_radioView)
-                _radioView->setFocused(radio);
+            bool const lib = leftIsLibrary();
             if (_fileBrowser)
-                _fileBrowser->setFocused(!lib && !radio);
+                _fileBrowser->setFocused(!lib);
             if (_libraryView)
                 _libraryView->setFocused(lib);
             if (_playQueueView)
@@ -1571,7 +1520,7 @@ namespace vtplayer
             return;
 
         _audio.stop();
-        if (_audio.load(track->path))
+        if (_audio.load(*track))
         {
             _audio.play();
             _playQueueView->setPlayingIndex(index);
@@ -1580,28 +1529,6 @@ namespace vtplayer
         {
             _playQueueView->setPlayingIndex(-1);
         }
-    }
-
-    void Application::playStream(Stream const &stream)
-    {
-        if (stream.url.empty())
-            return;
-
-        _audio.stop();
-        // A stream is not part of the play queue; detach the queue's
-        // now-playing marker so end-of-stream doesn't auto-advance it.
-        _playQueueView->setPlayingIndex(-1);
-
-        if (_audio.loadStream(stream.url, stream.name))
-        {
-            _audio.play();
-        }
-        else if (_radioView)
-        {
-            _radioView->setPlayingIndex(-1); // failed (e.g. ffmpeg missing)
-        }
-        if (_terminal)
-            _terminal->forceRedraw();
     }
 
     void Application::playNext()
@@ -1626,15 +1553,42 @@ namespace vtplayer
         playTrack(prev);
     }
 
+    namespace
+    {
+        /// Build a minimal TrackInfo for FileBrowser activation. `.stream`
+        /// descriptors are resolved on the spot via StreamFile::load so the
+        /// queue carries the URL even when the file lives outside the
+        /// library root and never went through LibraryScanner.
+        TrackInfo trackInfoFromBrowserPath(std::filesystem::path const &p)
+        {
+            TrackInfo info;
+            info.path = p;
+            info.title = toNfc(p.stem().string());
+            info.format = TrackInfo::formatFromPath(p);
+
+            if (info.format == AudioFormat::Stream)
+            {
+                if (auto meta = StreamFile::load(p))
+                {
+                    info.streamUrl = meta->url;
+                    if (!meta->title.empty())
+                        info.title = toNfc(meta->title);
+                    info.album = toNfc(meta->album);
+                    info.genre = toNfc(meta->genre);
+                    info.year  = meta->year;
+                }
+            }
+            return info;
+        }
+    } // namespace
+
     void Application::addToPlayQueue(std::filesystem::path const &path)
     {
-        TrackInfo info;
-        info.path = path;
-        info.title = toNfc(path.stem().string());
-        info.format = TrackInfo::formatFromPath(path);
-
-        // Try to get duration by briefly loading
-        // For now just add with unknown duration
+        TrackInfo info = trackInfoFromBrowserPath(path);
+        // Invalid .stream descriptors (no url) are silently dropped — the
+        // queue would otherwise carry an unplayable entry.
+        if (info.format == AudioFormat::Stream && info.streamUrl.empty())
+            return;
         _playQueueView->addTrack(info);
     }
 
@@ -1643,22 +1597,20 @@ namespace vtplayer
         if (paths.empty())
             return;
 
-        auto buildInfo = [](std::filesystem::path const &p)
-        {
-            TrackInfo info;
-            info.path = p;
-            info.title = toNfc(p.stem().string());
-            info.format = TrackInfo::formatFromPath(p);
-            return info;
-        };
-
         // Enter: replace the current play queue with the selected files and play
         // the first newly-added track. setTracks fires onPlayingRemoved which
         // stops audio if a track was playing.
         std::vector<TrackInfo> newTracks;
         newTracks.reserve(paths.size());
         for (auto const &p : paths)
-            newTracks.push_back(buildInfo(p));
+        {
+            TrackInfo info = trackInfoFromBrowserPath(p);
+            if (info.format == AudioFormat::Stream && info.streamUrl.empty())
+                continue;
+            newTracks.push_back(std::move(info));
+        }
+        if (newTracks.empty())
+            return;
         _playQueueView->setTracks(std::move(newTracks));
         playTrack(0);
     }

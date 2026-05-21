@@ -32,8 +32,6 @@ add_executable(vtplayer
     view/PlayQueueView.cpp
     view/TransportBar.h
     view/TransportBar.cpp
-    view/RadioView.h
-    view/RadioView.cpp
     view/VisualizerView.h
     view/VisualizerView.cpp
     view/ContextMenu.h
@@ -75,8 +73,8 @@ add_executable(vtplayer
     # util
     util/M3uReader.h
     util/M3uReader.cpp
-    util/StreamList.h
-    util/StreamList.cpp
+    util/StreamFile.h
+    util/StreamFile.cpp
     util/UnicodeNormalize.h
     util/UnicodeNormalize.cpp
     util/TagLibSilencer.h

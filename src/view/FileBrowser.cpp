@@ -125,6 +125,11 @@ void FileBrowser::refresh()
                 fe.isPlaylist = true;
                 files.push_back(std::move(fe));
             }
+            else if (ext == ".stream")
+            {
+                fe.isStream = true;
+                files.push_back(std::move(fe));
+            }
             else if (std::find(_allowedExts.begin(), _allowedExts.end(), ext) != _allowedExts.end())
             {
                 fe.isAudio = true;
@@ -169,7 +174,10 @@ FileBrowser::collectAudioFiles(std::filesystem::path const & dir) const
         {
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         }
-        if (std::find(_allowedExts.begin(), _allowedExts.end(), ext) != _allowedExts.end())
+        bool const allowed =
+            std::find(_allowedExts.begin(), _allowedExts.end(), ext) != _allowedExts.end()
+            || ext == ".stream";
+        if (allowed)
         {
             paths.push_back(entry.path());
         }
@@ -300,7 +308,7 @@ void FileBrowser::draw(ventty::Window & window)
         {
             fg = _theme.browserDirFg;
         }
-        else if (entry.isAudio)
+        else if (entry.isAudio || entry.isStream)
         {
             fg = _theme.browserAudioFg;
         }
@@ -456,16 +464,18 @@ bool FileBrowser::handleKey(ventty::KeyEvent const & event)
             _onOpenPlaylist(entry->path);
             return true;
         }
-        if (entry->isAudio && _onActivate)
+        if ((entry->isAudio || entry->isStream) && _onActivate)
         {
-            // Multi-selected audio files take priority over the cursor entry.
+            // Multi-selected files take priority over the cursor entry.
             // _multiSelected (std::set<int>) iterates in ascending index
-            // order, so paths come out in display order.
+            // order, so paths come out in display order. Stream descriptors
+            // (.stream) ride the same path — Application::activateFromBrowser
+            // recognises the extension and resolves the URL.
             std::vector<std::filesystem::path> paths;
             for (int sel : _multiSelected)
             {
                 if (sel >= 0 && sel < static_cast<int>(_entries.size())
-                    && _entries[sel].isAudio)
+                    && (_entries[sel].isAudio || _entries[sel].isStream))
                 {
                     paths.push_back(_entries[sel].path);
                 }
@@ -545,7 +555,7 @@ bool FileBrowser::handleMouse(ventty::MouseEvent const & event)
                     {
                         _onOpenPlaylist(entry->path);
                     }
-                    else if (entry && entry->isAudio && _onActivate)
+                    else if (entry && (entry->isAudio || entry->isStream) && _onActivate)
                     {
                         _onActivate({entry->path});
                     }

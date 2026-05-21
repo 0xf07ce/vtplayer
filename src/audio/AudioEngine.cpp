@@ -75,11 +75,53 @@ void AudioEngine::shutdown()
     }
 }
 
-bool AudioEngine::load(std::filesystem::path const & path)
+bool AudioEngine::load(TrackInfo const & track)
 {
     stop();
     _lastError.clear();
 
+    if (track.isStream())
+    {
+        // `path` is the `.stream` descriptor file (kept for library lookups);
+        // the actual URL libav opens lives in `streamUrl`.
+        if (track.streamUrl.empty())
+        {
+            _lastError = "Empty stream URL";
+            return false;
+        }
+
+        _currentFormat = AudioFormat::Stream;
+        _currentTrack  = track;
+        if (_currentTrack.title.empty())
+            _currentTrack.title = std::string("Stream");
+        _currentTrack.duration = 0.0f; // live → unknown
+
+        auto src = std::make_unique<StreamSource>();
+        src->setBuffer(_streamBufferSec, _streamPrebufferSec);
+        src->setDebug(_streamDebug);
+        if (!src->start(track.streamUrl))
+        {
+            _lastError = src->error();
+            return false;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(_audioMutex);
+            _stream = std::move(src);
+        }
+        _isStream.store(true, std::memory_order_release);
+
+        _framesPlayed = 0;
+        _position.store(0.0f, std::memory_order_relaxed);
+        _duration.store(0.0f, std::memory_order_relaxed);
+        // Streams have no ReplayGain tags; use the runtime auto-gain path.
+        _replayGainLinear.store(1.0f, std::memory_order_relaxed);
+        _gainSource.store(GainSource::Auto, std::memory_order_relaxed);
+        _currentGain.store(1.0f, std::memory_order_relaxed);
+        return true;
+    }
+
+    auto const & path = track.path;
     _currentFormat = TrackInfo::formatFromPath(path);
     if (_currentFormat == AudioFormat::Unknown)
     {
@@ -87,10 +129,10 @@ bool AudioEngine::load(std::filesystem::path const & path)
         return false;
     }
 
-    _currentTrack.path = path;
+    _currentTrack = track;
     _currentTrack.format = _currentFormat;
-    _currentTrack.title = vtplayer::toNfc(path.stem().string());
-    _currentTrack.artist.clear();
+    if (_currentTrack.title.empty())
+        _currentTrack.title = vtplayer::toNfc(path.stem().string());
     _currentTrack.duration = 0.0f;
 
     auto dec = std::make_unique<Decoder>();
@@ -136,41 +178,12 @@ bool AudioEngine::load(std::filesystem::path const & path)
     return true;
 }
 
-bool AudioEngine::loadStream(std::string const & url, std::string const & name)
+bool AudioEngine::load(std::filesystem::path const & path)
 {
-    stop();
-    _lastError.clear();
-
-    _currentFormat = AudioFormat::Unknown;
-    _currentTrack.path = url;
-    _currentTrack.format = AudioFormat::Unknown;
-    _currentTrack.title = name.empty() ? std::string("Stream") : vtplayer::toNfc(name);
-    _currentTrack.artist.clear();
-    _currentTrack.duration = 0.0f; // live → unknown
-
-    auto src = std::make_unique<StreamSource>();
-    src->setBuffer(_streamBufferSec, _streamPrebufferSec);
-    src->setDebug(_streamDebug);
-    if (!src->start(url))
-    {
-        _lastError = src->error();
-        return false;
-    }
-
-    {
-        std::lock_guard<std::mutex> lock(_audioMutex);
-        _stream = std::move(src);
-    }
-    _isStream.store(true, std::memory_order_release);
-
-    _framesPlayed = 0;
-    _position.store(0.0f, std::memory_order_relaxed);
-    _duration.store(0.0f, std::memory_order_relaxed);
-    // Streams have no ReplayGain tags; use the runtime auto-gain path.
-    _replayGainLinear.store(1.0f, std::memory_order_relaxed);
-    _gainSource.store(GainSource::Auto, std::memory_order_relaxed);
-    _currentGain.store(1.0f, std::memory_order_relaxed);
-    return true;
+    TrackInfo t;
+    t.path = path;
+    t.format = TrackInfo::formatFromPath(path);
+    return load(t);
 }
 
 bool AudioEngine::isStreamBuffering() const

@@ -48,13 +48,16 @@ public:
     bool init();
     void shutdown();
 
-    bool load(std::filesystem::path const & path);
+    /// Unified track-load entry point. When `track.isStream()` opens the URL
+    /// via StreamSource (live, unknown duration → transport shows LIVE);
+    /// otherwise opens the local file at `track.path` via Decoder. Returns
+    /// false with lastError() set on failure.
+    bool load(TrackInfo const & track);
 
-    /// Load a network stream (internet radio). Decoded by an external ffmpeg
-    /// process; `name` is shown as the track title. Live = unknown duration
-    /// (duration() stays 0, so the transport bar shows LIVE). Returns false
-    /// with lastError() set if ffmpeg is unavailable or the spawn failed.
-    bool loadStream(std::string const & url, std::string const & name);
+    /// Convenience wrapper: build a minimal TrackInfo from a path and forward
+    /// to load(TrackInfo). Used when the caller does not have a TrackInfo
+    /// at hand (e.g. drag-and-drop, startup --path argument).
+    bool load(std::filesystem::path const & path);
 
     /// True while the current source is a network stream.
     bool isStream() const { return _isStream.load(std::memory_order_acquire); }

@@ -23,10 +23,12 @@ struct FileEntry
     bool isDirectory = false;
     bool isAudio = false;
     bool isPlaylist = false;  ///< .m3u / .m3u8 file
+    bool isStream = false;    ///< .stream descriptor (single internet-radio URL)
     bool isParent = false;
 
-    /// True for entries that participate in multi-selection (audio + playlist files).
-    bool isSelectable() const { return isAudio || isPlaylist; }
+    /// True for entries that participate in multi-selection
+    /// (audio + playlist + stream files).
+    bool isSelectable() const { return isAudio || isPlaylist || isStream; }
 };
 
 class FileBrowser : public ventty::Widget

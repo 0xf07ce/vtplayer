@@ -1,5 +1,47 @@
 # CHANGELOG
 
+## 0.10.0 (2026-05-21)
+
+**Breaking:** Internet radio has been folded into the media library. The
+separate left-panel mode `5` (RadioView) and `~/.config/vtplayer/streams.m3u`
+are gone, and the F5 shortcut ("Refresh listing") is removed. Left-panel
+shortcuts are now `1`–`4` only (Artist / Album / Directory / FileBrowser).
+
+Radio stations are now described by `.stream` descriptor files. Drop one
+into the library root and `LibraryScanner` picks it up like any other
+track:
+
+```ini
+[stream]
+url = http://stream.example.com:8000/live
+title = MBC FM4U
+album = MBC
+genre = Radio
+year = 2026
+```
+
+Stream tracks always live under a virtual `(stream)` artist node in the
+library tree — `artist` / `album_artist` keys in the descriptor are
+ignored. The recommended mapping is `album` = broadcaster, `title` =
+channel name.
+
+- Added `AudioFormat::Stream` and `TrackInfo::streamUrl`. The SQLite
+  `tracks` table gains a `stream_url` column; existing databases migrate
+  automatically via `ALTER TABLE ... ADD COLUMN`.
+- `AudioEngine` now exposes a unified `load(TrackInfo)` entry point; the
+  old `loadStream(url, name)` is gone.
+- FileBrowser can open `.stream` files directly — even outside the
+  library root, in which case they play but are not indexed.
+- `[library] left_mode = "radio"` is gracefully remapped to `"album"`
+  on load. Existing `streams.m3u` entries are not migrated automatically;
+  rewrite them as `.stream` files.
+- Removed `src/view/RadioView.{h,cpp}` and `src/util/StreamList.{h,cpp}`;
+  added `src/util/StreamFile.{h,cpp}`.
+- TransportBar: the `LIVE` / `BUFFERING` label is now centred on the
+  box's bottom border for live streams. Previously only the left side
+  was padded, leaving the border showing past the label on the right
+  and looking asymmetric.
+
 ## 0.9.0 (2026-05-21)
 
 - Radio streams again leaked libav diagnostics onto the TUI

@@ -12,7 +12,6 @@
 #include "../view/LibraryView.h"
 #include "../view/LibrarySearchDialog.h"
 #include "../view/PlayQueueView.h"
-#include "../view/RadioView.h"
 #include "../view/Theme.h"
 #include "../view/TransportBar.h"
 #include "../view/VisualizerView.h"
@@ -56,7 +55,6 @@ namespace vtplayer
         Album,
         Directory,
         FileBrowser,
-        Radio,
     };
 
     /// Actions in the ESC context menu. The visible item set is built
@@ -127,9 +125,6 @@ namespace vtplayer
                    && !_collectActive.load() && !_ingestActive.load();
         }
 
-        /// True when the left panel is the internet-radio stream list.
-        bool leftIsRadio() const { return _leftMode == LeftMode::Radio; }
-
         /// Show/hide the Browser-screen left panel (Library / FileBrowser).
         /// When hidden, PlayQueueView takes the full content width and focus
         /// is pinned to it. Bound to the `l` key.
@@ -137,8 +132,6 @@ namespace vtplayer
         void setVisualizerByIndex(int index);
 
         void playTrack(int index);
-        /// Start an internet-radio stream (from the Radio panel).
-        void playStream(Stream const &stream);
         void playNext();
         void playPrev();
         void addToPlayQueue(std::filesystem::path const &path);
@@ -268,7 +261,6 @@ namespace vtplayer
         std::unique_ptr<HeaderBar> _headerBar;
         std::unique_ptr<FileBrowser> _fileBrowser;
         std::unique_ptr<LibraryView> _libraryView;
-        std::unique_ptr<RadioView> _radioView;
         std::unique_ptr<PlayQueueView> _playQueueView;
         std::unique_ptr<TransportBar> _transportBar;
         std::unique_ptr<VisualizerView> _visualizerView;

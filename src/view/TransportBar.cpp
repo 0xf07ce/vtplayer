@@ -80,11 +80,14 @@ void TransportBar::draw(ventty::Window & window)
 
         if (_live)
         {
+            // Centre the LIVE / BUFFERING label on the box's bottom border
+            // (═) — no progress rail drawn, so the border shows through on
+            // both sides of the label. Seeking stays disabled (_progressW = 0).
             std::string lbl = _buffering ? "\xE2\x97\x8B BUFFERING" // ○ BUFFERING
                                          : "\xE2\x97\x89 LIVE";    // ◉ LIVE
-            int pad = (progressW - ventty::stringWidth(lbl)) / 2;
-            std::string bar = std::string(std::max(0, pad), ' ') + lbl;
-            window.drawText(cx, y1, bar,
+            int const lblW = ventty::stringWidth(lbl);
+            int const lblX = cx + std::max(0, (progressW - lblW) / 2);
+            window.drawText(lblX, y1, lbl,
                             ventty::Style{_theme.transportStateFg,
                                           _theme.transportBg, ventty::Attr::Bold});
         }

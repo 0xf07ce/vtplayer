@@ -200,12 +200,26 @@ namespace vtplayer
 
         // Group tracks by AlbumArtist (fall back to Artist) → Album.
         // std::map keeps both axes alphabetically ordered for stable display.
+        //
+        // Stream tracks (.stream descriptors) are collapsed under a single
+        // virtual `(stream)` artist node regardless of their tags. The
+        // parenthesized label can never collide with a real artist string,
+        // so a local file tagged `artist=MBC` and a `(stream)` group can
+        // coexist as separate top-level nodes.
         std::map<std::string, std::map<std::string, std::vector<TrackInfo const *>>> tree;
         for (auto const &t : _library->tracks())
         {
-            std::string artist = !t.albumArtist.empty() ? t.albumArtist : t.artist;
-            if (artist.empty())
-                artist = "(Unknown Artist)";
+            std::string artist;
+            if (t.isStream())
+            {
+                artist = "(stream)";
+            }
+            else
+            {
+                artist = !t.albumArtist.empty() ? t.albumArtist : t.artist;
+                if (artist.empty())
+                    artist = "(Unknown Artist)";
+            }
             std::string album = t.album.empty() ? "(Unknown Album)" : t.album;
             tree[artist][album].push_back(&t);
         }

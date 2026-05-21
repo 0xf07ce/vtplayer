@@ -247,8 +247,10 @@ namespace vtplayer
         }
         if (auto *v = get("library.left_mode"))
         {
-            if (*v == "artist" || *v == "album" || *v == "directory"
-                || *v == "radio")
+            // "radio" (v0.9.x and earlier) is intentionally rejected here so
+            // the default "album" takes over after the upgrade. Application
+            // also maps it to Album defensively in leftModeFromConfig.
+            if (*v == "artist" || *v == "album" || *v == "directory")
             {
                 leftMode = *v;
             }

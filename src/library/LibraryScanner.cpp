@@ -4,6 +4,7 @@
 #include "LibraryScanner.h"
 
 #include "LibraryRepository.h"
+#include "../util/StreamFile.h"
 #include "../util/UnicodeNormalize.h"
 
 // Bare header names — see audio/ReplayGain.cpp for rationale.
@@ -17,6 +18,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstdint>
+#include <optional>
 #include <system_error>
 #include <unordered_set>
 
@@ -106,6 +108,28 @@ TrackInfo extractMetadata(fs::path const & path)
     return info;
 }
 
+/// Build a TrackInfo from a `.stream` descriptor file. artist / albumArtist
+/// are intentionally left empty: streaming tracks live under the virtual
+/// `(stream)` artist node in LibraryView. Returns nullopt for unreadable or
+/// invalid descriptors (no `url`), which the caller treats as "skip but keep
+/// the path in `seen` so the deletion sweep doesn't prune it".
+std::optional<TrackInfo> extractStreamMetadata(fs::path const & path)
+{
+    auto meta = StreamFile::load(path);
+    if (!meta) return std::nullopt;
+
+    TrackInfo info;
+    info.path      = path;
+    info.format    = AudioFormat::Stream;
+    info.streamUrl = meta->url;
+    info.title     = toNfc(meta->title.empty() ? path.stem().string() : meta->title);
+    info.album     = toNfc(meta->album);
+    info.genre     = toNfc(meta->genre);
+    info.year      = meta->year;
+    // artist / albumArtist / trackNumber / discNumber / duration stay zero/empty.
+    return info;
+}
+
 } // namespace
 
 LibraryScanner::LibraryScanner(LibraryRepository & repo)
@@ -144,6 +168,10 @@ LibraryScanner::collect(fs::path const & root,
         if (!e.empty() && e[0] == '.') e.erase(0, 1);
         if (!e.empty()) extSet.insert(std::move(e));
     }
+    // `.stream` descriptors are always collected, regardless of the user's
+    // `[formats] extensions` setting — they aren't audio containers and
+    // shouldn't have to be listed there.
+    extSet.insert("stream");
 
     // Tick cadence in *iterated* directory entries (not just matching files)
     // so ESC stays responsive even inside subtrees that contain no audio.
@@ -229,7 +257,22 @@ LibraryScanner::ingest(std::vector<ScanEntry> const & entries,
         }
         else
         {
-            TrackInfo info = extractMetadata(e.path);
+            bool const isStream = (lowerExt(e.path) == "stream");
+            std::optional<TrackInfo> maybeInfo;
+            if (isStream)
+                maybeInfo = extractStreamMetadata(e.path);
+            else
+                maybeInfo = extractMetadata(e.path);
+
+            if (!maybeInfo)
+            {
+                // Invalid .stream (e.g. missing url): leave the repo alone so
+                // a previously valid version isn't overwritten with garbage.
+                // The path stays in `seen` so the deletion sweep below
+                // doesn't prune it either.
+                continue;
+            }
+            TrackInfo info = std::move(*maybeInfo);
             info.mtime = e.mtime;
             info.size  = e.size;
             _repo.upsert(info);

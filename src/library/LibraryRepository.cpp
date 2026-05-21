@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS tracks (
     duration     REAL    NOT NULL DEFAULT 0,
     format       INTEGER NOT NULL DEFAULT 0,
     mtime        INTEGER NOT NULL DEFAULT 0,
-    size         INTEGER NOT NULL DEFAULT 0
+    size         INTEGER NOT NULL DEFAULT 0,
+    stream_url   TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_tracks_album_artist
     ON tracks(album_artist, album, disc_no, track_no);
@@ -40,8 +41,8 @@ CREATE INDEX IF NOT EXISTS idx_tracks_album_artist
 constexpr char const * kUpsertSql = R"(
 INSERT INTO tracks
     (path, title, artist, album, album_artist, genre,
-     track_no, disc_no, year, duration, format, mtime, size)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+     track_no, disc_no, year, duration, format, mtime, size, stream_url)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(path) DO UPDATE SET
     title        = excluded.title,
     artist       = excluded.artist,
@@ -54,7 +55,8 @@ ON CONFLICT(path) DO UPDATE SET
     duration     = excluded.duration,
     format       = excluded.format,
     mtime        = excluded.mtime,
-    size         = excluded.size;
+    size         = excluded.size,
+    stream_url   = excluded.stream_url;
 )";
 
 constexpr char const * kEraseSql = "DELETE FROM tracks WHERE path = ?;";
@@ -139,7 +141,16 @@ bool LibraryRepository::ensureSchema()
     char * err = nullptr;
     int const rc = sqlite3_exec(_db, kSchema, nullptr, nullptr, &err);
     if (err) sqlite3_free(err);
-    return rc == SQLITE_OK;
+    if (rc != SQLITE_OK) return false;
+
+    // Idempotent migration for DBs created before stream_url existed. Failure
+    // (duplicate column) is expected on freshly-created or already-migrated
+    // schemas — sqlite has no IF NOT EXISTS for ADD COLUMN, so we just try
+    // and discard the error.
+    sqlite3_exec(_db,
+                 "ALTER TABLE tracks ADD COLUMN stream_url TEXT NOT NULL DEFAULT ''",
+                 nullptr, nullptr, nullptr);
+    return true;
 }
 
 bool LibraryRepository::loadInto(MediaLibrary & library)
@@ -148,7 +159,7 @@ bool LibraryRepository::loadInto(MediaLibrary & library)
 
     constexpr char const * kSelect = R"(
 SELECT path, title, artist, album, album_artist, genre,
-       track_no, disc_no, year, duration, format, mtime, size
+       track_no, disc_no, year, duration, format, mtime, size, stream_url
 FROM tracks;
 )";
 
@@ -174,6 +185,7 @@ FROM tracks;
         info.format      = static_cast<AudioFormat>(sqlite3_column_int(stmt, 10));
         info.mtime       = sqlite3_column_int64(stmt, 11);
         info.size        = sqlite3_column_int64(stmt, 12);
+        info.streamUrl   = columnText(stmt, 13);
         library.upsert(std::move(info));
     }
 
@@ -201,6 +213,7 @@ bool LibraryRepository::upsert(TrackInfo const & track)
     sqlite3_bind_int   (_upsertStmt, 11, static_cast<int>(track.format));
     sqlite3_bind_int64 (_upsertStmt, 12, track.mtime);
     sqlite3_bind_int64 (_upsertStmt, 13, track.size);
+    bindText           (_upsertStmt, 14, track.streamUrl);
 
     return sqlite3_step(_upsertStmt) == SQLITE_DONE;
 }
