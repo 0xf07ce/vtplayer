@@ -103,6 +103,12 @@ public:
 
     TrackInfo const & currentTrack() const { return _currentTrack; }
 
+    /// Refresh the stored TrackInfo (used after a tag edit so the
+    /// transport bar / visualizer see the new metadata without reloading
+    /// the decoder). The path must match the currently-loaded track; the
+    /// engine does not look at format/streamUrl from this call.
+    void updateCurrentTrackMeta(TrackInfo const & info) { _currentTrack = info; }
+
     /// Read latest samples for visualization (called from UI thread)
     int getSamples(float * out, int count) const;
 

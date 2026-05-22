@@ -201,11 +201,11 @@ namespace vtplayer
         // Group tracks by AlbumArtist (fall back to Artist) → Album.
         // std::map keeps both axes alphabetically ordered for stable display.
         //
-        // Stream tracks (.stream descriptors) are collapsed under a single
-        // virtual `(stream)` artist node regardless of their tags. The
-        // parenthesized label can never collide with a real artist string,
-        // so a local file tagged `artist=MBC` and a `(stream)` group can
-        // coexist as separate top-level nodes.
+        // Stream tracks (URL channels from PLS playlists) are collapsed under
+        // a single virtual `(stream)` artist node regardless of their tags.
+        // The parenthesized label can never collide with a real artist
+        // string, so a local file tagged `artist=MBC` and a `(stream)` group
+        // can coexist as separate top-level nodes.
         std::map<std::string, std::map<std::string, std::vector<TrackInfo const *>>> tree;
         for (auto const &t : _library->tracks())
         {
@@ -575,6 +575,39 @@ namespace vtplayer
                 window.drawText(x, y, label, style);
             }
         }
+    }
+
+    LibraryView::Selection LibraryView::currentSelection() const
+    {
+        Selection s;
+        if (_visible.empty())
+            return s;
+        if (_selectedIndex < 0 || _selectedIndex >= static_cast<int>(_visible.size()))
+            return s;
+
+        std::size_t const nodeIdx = _visible[static_cast<std::size_t>(_selectedIndex)];
+        auto const & n = _nodes[nodeIdx];
+
+        if (n.kind == Node::Kind::Track)
+        {
+            s.kind = SelectionKind::Track;
+            s.label = n.track ? (n.track->title.empty() ? n.track->path.stem().string()
+                                                        : n.track->title)
+                              : n.label;
+        }
+        else
+        {
+            if (_mode == Mode::Directory)
+                s.kind = SelectionKind::DirectoryGroup;
+            else if (n.depth == 0)
+                s.kind = SelectionKind::Artist;
+            else
+                s.kind = SelectionKind::Album;
+            s.label = n.label;
+        }
+
+        collectTracks(nodeIdx, s.tracks);
+        return s;
     }
 
     void LibraryView::sendSelectionToQueue(bool replace)

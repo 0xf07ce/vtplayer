@@ -7,7 +7,8 @@
 #include "../library/LibraryScanner.h"
 #include "../playqueue/PlayQueueCache.h"
 #include "../util/M3uReader.h"
-#include "../util/StreamFile.h"
+#include "../util/PlsReader.h"
+#include "../util/TagWriter.h"
 #include "../util/UnicodeNormalize.h"
 #include "../visualizer/DebugBars.h"
 #include "../visualizer/MatrixRain.h"
@@ -23,7 +24,9 @@
 
 #include <ventty/art/AsciiArt.h>
 
+#include <algorithm>
 #include <chrono>
+#include <system_error>
 #include <thread>
 
 namespace vtplayer
@@ -187,6 +190,27 @@ namespace vtplayer
 
             updateUI();
             draw();
+
+            // Drive ventty's hardware cursor for whichever text-input
+            // modal currently owns input. ANSI backend honors these
+            // calls; GFX/Bundle backend ignores them.
+            if (_tagEditDialog && _tagEditDialog->wantsCursor())
+            {
+                _terminal->setCursorPos(_tagEditDialog->cursorScreenX(),
+                                        _tagEditDialog->cursorScreenY());
+                _terminal->setCursorVisible(true);
+            }
+            else if (_searchDialog && _searchDialog->wantsCursor())
+            {
+                _terminal->setCursorPos(_searchDialog->cursorScreenX(),
+                                        _searchDialog->cursorScreenY());
+                _terminal->setCursorVisible(true);
+            }
+            else
+            {
+                _terminal->setCursorVisible(false);
+            }
+
             _terminal->render();
 
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
@@ -344,6 +368,12 @@ namespace vtplayer
                                            _libraryView->locate(path);
                                        if (_terminal)
                                            _terminal->forceRedraw(); });
+
+        _tagEditDialog = std::make_unique<TagEditDialog>();
+        _tagEditDialog->setTheme(_theme);
+        _tagEditDialog->setOnSave([this](std::vector<std::filesystem::path> const &targets,
+                                          TagUpdate const &upd)
+                                  { applyTagEdit(targets, upd); });
 
         _transportBar = std::make_unique<TransportBar>();
         _transportBar->setTheme(_theme);
@@ -596,6 +626,12 @@ namespace vtplayer
             _searchDialog->draw(*_rootWindow);
         }
 
+        // Tag-edit dialog (overlay).
+        if (_tagEditDialog && _tagEditDialog->isOpen())
+        {
+            _tagEditDialog->draw(*_rootWindow);
+        }
+
         // Context menu overlay (drawn last so it sits on top)
         if (_contextMenu)
         {
@@ -678,10 +714,12 @@ namespace vtplayer
             {"  Enter",                 "Replace play queue with artist/album/track and play", false},
             {"  A",                     "Append artist/album/track to play queue", false},
             {"  /",                     "Search library", false},
+            {"  T",                     "Edit tags (artist/album/track or folder)", false},
             {"", "", false},
             {"Browser - Files", "", true},
             {"  Enter",                 "Replace play queue with selection and play", false},
             {"  A",                     "Add selected file (or every audio file in selected dir) to play queue", false},
+            {"  T",                     "Edit tags of selected audio file", false},
             {"  Backspace",             "Go up to parent directory", false},
             {"", "", false},
             {"Play Queue", "", true},
@@ -689,6 +727,7 @@ namespace vtplayer
             {"  Del / D / Backspace",   "Remove selection", false},
             {"  Ctrl+Up / Ctrl+Down",   "Move selected track", false},
             {"  Ctrl+A",                "Select all", false},
+            {"  T",                     "Edit tags (multi-selection if any, else cursor track)", false},
             {"", "", false},
             {"Visualizer", "", true},
             {"  V",                     "Toggle visualizer screen", false},
@@ -917,6 +956,13 @@ namespace vtplayer
             return;
         }
 
+        // Modal tag editor consumes all input while open.
+        if (_tagEditDialog && _tagEditDialog->isOpen())
+        {
+            _tagEditDialog->handleKey(event);
+            return;
+        }
+
         // Modal context menu consumes all input while open.
         if (_contextMenu && _contextMenu->isOpen())
         {
@@ -1118,8 +1164,8 @@ namespace vtplayer
         // 1-4: pick the Browser-screen left panel directly.
         //   1 Artist · 2 Album · 3 Directory (all from the library index)
         //   4 FileBrowser (live filesystem from the launch CWD)
-        // Internet radio is no longer a separate mode — `.stream` files live
-        // inside the library and surface in modes 1/2/3 like any other track.
+        // Internet radio is no longer a separate mode — PLS playlists in the
+        // library surface in modes 1/2/3 like any other track.
         if (_screen == Screen::Browser && event.key == Key::Char && !event.alt && !event.ctrl
             && (ch == '1' || ch == '2' || ch == '3' || ch == '4'))
         {
@@ -1344,6 +1390,13 @@ namespace vtplayer
             return;
         }
 
+        // t: open the tag editor scoped to the current selection.
+        if (event.key == Key::Char && (ch == 't' || ch == 'T') && !event.alt && !event.ctrl
+            && _screen == Screen::Browser)
+        {
+            openTagEditor();
+            return;
+        }
     }
 
     void Application::openContextMenu()
@@ -1486,6 +1539,231 @@ namespace vtplayer
             _terminal->forceRedraw();
     }
 
+    namespace
+    {
+        /// Convert a filesystem time_point to unix seconds. Mirrors the helper
+        /// LibraryScanner uses; lives in an anonymous namespace there, so we
+        /// keep a local copy rather than exposing it project-wide.
+        std::int64_t fileTimeToUnix(std::filesystem::file_time_type t)
+        {
+            auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                t - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
+            return static_cast<std::int64_t>(
+                std::chrono::duration_cast<std::chrono::seconds>(sctp.time_since_epoch()).count());
+        }
+    }
+
+    void Application::openTagEditor()
+    {
+        if (!_tagEditDialog)
+            return;
+
+        std::vector<TrackInfo> tracks;
+        std::string headerText;
+        TagEditDialog::Scope scope = TagEditDialog::Scope::SingleTrack;
+
+        if (_focus == FocusPanel::PlayQueue && _playQueueView)
+        {
+            // Multi-selection wins over the cursor; otherwise edit the
+            // single track under the cursor. Streams (read-only metadata
+            // descriptors) are skipped silently.
+            int const count = _playQueueView->trackCount();
+            for (int i = 0; i < count; ++i)
+            {
+                if (!_playQueueView->isMultiSelected(i)) continue;
+                if (auto const *t = _playQueueView->track(i); t && !t->isStream())
+                    tracks.push_back(*t);
+            }
+            if (tracks.empty())
+            {
+                if (auto const *t = _playQueueView->selectedTrack();
+                    t && !t->isStream())
+                    tracks.push_back(*t);
+            }
+            if (tracks.empty())
+                return;
+            scope = tracks.size() > 1 ? TagEditDialog::Scope::MultiTrack
+                                      : TagEditDialog::Scope::SingleTrack;
+            if (tracks.size() == 1)
+                headerText = "Track: " + (tracks[0].title.empty()
+                                              ? tracks[0].path.filename().string()
+                                              : tracks[0].title);
+            else
+                headerText = "Editing " + std::to_string(tracks.size())
+                             + " tracks (queue)";
+        }
+        else if (_screen == Screen::Browser && _focus == FocusPanel::FileBrowser)
+        {
+            if (leftIsLibrary() && _libraryView)
+            {
+                auto sel = _libraryView->currentSelection();
+                if (sel.kind == LibraryView::SelectionKind::None || sel.tracks.empty())
+                    return;
+                // Streams have no editable file-side tags; drop them.
+                sel.tracks.erase(std::remove_if(sel.tracks.begin(), sel.tracks.end(),
+                                                [](TrackInfo const & t) { return t.isStream(); }),
+                                 sel.tracks.end());
+                if (sel.tracks.empty())
+                    return;
+                tracks = std::move(sel.tracks);
+                switch (sel.kind)
+                {
+                case LibraryView::SelectionKind::Artist:
+                    scope = TagEditDialog::Scope::Artist;
+                    headerText = "Artist: " + sel.label
+                                 + "  (" + std::to_string(tracks.size()) + " tracks)";
+                    break;
+                case LibraryView::SelectionKind::Album:
+                    scope = TagEditDialog::Scope::Album;
+                    headerText = "Album: " + sel.label
+                                 + "  (" + std::to_string(tracks.size()) + " tracks)";
+                    break;
+                case LibraryView::SelectionKind::DirectoryGroup:
+                    scope = tracks.size() > 1 ? TagEditDialog::Scope::MultiTrack
+                                              : TagEditDialog::Scope::SingleTrack;
+                    headerText = "Folder: " + sel.label
+                                 + "  (" + std::to_string(tracks.size()) + " tracks)";
+                    break;
+                case LibraryView::SelectionKind::Track:
+                    scope = TagEditDialog::Scope::SingleTrack;
+                    headerText = "Track: " + sel.label;
+                    break;
+                case LibraryView::SelectionKind::None:
+                    return;
+                }
+            }
+            else if (_fileBrowser)
+            {
+                // FileBrowser handler is single-file only: directories,
+                // playlists, and stream descriptors are ignored. Multi-
+                // selection is intentionally not honored here — bulk edits
+                // are reachable from the indexed library (folder group) or
+                // the play queue (Space-marked rows).
+                auto const *entry = _fileBrowser->selectedEntry();
+                if (!entry) return;
+                if (entry->isDirectory) return;
+                if (entry->isPlaylist) return;
+                if (!entry->isAudio)   return;
+
+                // Prefer the library-indexed TrackInfo (it has parsed tags
+                // already); fall back to a path-only TrackInfo otherwise so
+                // dirty-field semantics still let the user write tags.
+                TrackInfo seed;
+                if (auto const *indexed = _library.find(entry->path))
+                    seed = *indexed;
+                else
+                {
+                    seed.path = entry->path;
+                    seed.format = TrackInfo::formatFromPath(entry->path);
+                }
+                tracks.push_back(std::move(seed));
+                scope = TagEditDialog::Scope::SingleTrack;
+                headerText = "File: " + entry->path.filename().string();
+            }
+        }
+
+        if (tracks.empty())
+            return;
+
+        _tagEditDialog->open(scope, std::move(headerText), std::move(tracks));
+        if (_terminal)
+            _terminal->forceRedraw();
+    }
+
+    void Application::applyTagEdit(std::vector<std::filesystem::path> const &targets,
+                                   TagUpdate const &update)
+    {
+        if (targets.empty() || update.empty())
+            return;
+
+        // Save the anchor *before* we rebuild the library tree so we can
+        // restore the cursor near where the user was working. Prefer the
+        // first edited path so the cursor lands on the freshly-edited row.
+        std::filesystem::path anchor = targets.front();
+
+        bool repoOpen = (_libraryRepo && _libraryRepo->isOpen());
+
+        for (auto const &path : targets)
+        {
+            if (!applyTagUpdate(path, update))
+                continue; // skip failed writes; nothing else changed for this file
+
+            // Refresh mtime/size from disk so the next scan does not see
+            // the row as "stale" and re-read TagLib unnecessarily.
+            std::int64_t newMtime = 0;
+            std::int64_t newSize  = 0;
+            std::error_code ec;
+            if (auto t = std::filesystem::last_write_time(path, ec); !ec)
+                newMtime = fileTimeToUnix(t);
+            ec.clear();
+            if (auto sz = std::filesystem::file_size(path, ec); !ec)
+                newSize = static_cast<std::int64_t>(sz);
+
+            // Patch the in-memory library entry (if indexed). We rebuild
+            // it from the existing row + the sparse update so unchanged
+            // fields stay exactly as they were.
+            TrackInfo merged;
+            if (auto const *existing = _library.find(path))
+            {
+                merged = *existing;
+            }
+            else
+            {
+                merged.path = path;
+                merged.format = TrackInfo::formatFromPath(path);
+            }
+
+            if (update.title)       merged.title       = *update.title;
+            if (update.artist)      merged.artist      = *update.artist;
+            if (update.album)       merged.album       = *update.album;
+            if (update.albumArtist) merged.albumArtist = *update.albumArtist;
+            if (update.genre)       merged.genre       = *update.genre;
+            if (update.trackNumber) merged.trackNumber = *update.trackNumber;
+            if (update.discNumber)  merged.discNumber  = *update.discNumber;
+            if (update.year)        merged.year        = *update.year;
+            merged.mtime = newMtime;
+            if (newSize > 0) merged.size = newSize;
+
+            // Only index files that already live under the library — a
+            // FileBrowser edit outside the library root should not silently
+            // add the file to the index.
+            bool const wasIndexed = (_library.find(path) != nullptr);
+            if (wasIndexed)
+            {
+                _library.upsert(merged);
+                if (repoOpen) _libraryRepo->upsert(merged);
+            }
+
+            // If the just-edited track is the one currently loaded in the
+            // audio engine, push the new metadata so transport / visualizer
+            // pick it up without reloading.
+            if (_audio.currentTrack().path == path)
+            {
+                TrackInfo cur = _audio.currentTrack();
+                if (update.title)       cur.title       = *update.title;
+                if (update.artist)      cur.artist      = *update.artist;
+                if (update.album)       cur.album       = *update.album;
+                if (update.albumArtist) cur.albumArtist = *update.albumArtist;
+                if (update.genre)       cur.genre       = *update.genre;
+                if (update.trackNumber) cur.trackNumber = *update.trackNumber;
+                if (update.discNumber)  cur.discNumber  = *update.discNumber;
+                if (update.year)        cur.year        = *update.year;
+                _audio.updateCurrentTrackMeta(cur);
+            }
+        }
+
+        // Rebuild the library projection (artist/album re-bucketing) and
+        // restore the cursor near the edited row.
+        if (_libraryView)
+        {
+            _libraryView->rebuild();
+            if (!anchor.empty())
+                _libraryView->locate(anchor);
+        }
+        if (_terminal)
+            _terminal->forceRedraw();
+    }
+
     void Application::onContextMenuSelect(int index)
     {
         if (index < 0 || index >= static_cast<int>(_contextMenuActions.size()))
@@ -1555,41 +1833,22 @@ namespace vtplayer
 
     namespace
     {
-        /// Build a minimal TrackInfo for FileBrowser activation. `.stream`
-        /// descriptors are resolved on the spot via StreamFile::load so the
-        /// queue carries the URL even when the file lives outside the
-        /// library root and never went through LibraryScanner.
+        /// Build a minimal TrackInfo for FileBrowser activation on a local
+        /// audio file. Streaming tracks never reach this path — they only
+        /// enter the queue via PlsReader, which already populates streamUrl.
         TrackInfo trackInfoFromBrowserPath(std::filesystem::path const &p)
         {
             TrackInfo info;
             info.path = p;
             info.title = toNfc(p.stem().string());
             info.format = TrackInfo::formatFromPath(p);
-
-            if (info.format == AudioFormat::Stream)
-            {
-                if (auto meta = StreamFile::load(p))
-                {
-                    info.streamUrl = meta->url;
-                    if (!meta->title.empty())
-                        info.title = toNfc(meta->title);
-                    info.album = toNfc(meta->album);
-                    info.genre = toNfc(meta->genre);
-                    info.year  = meta->year;
-                }
-            }
             return info;
         }
     } // namespace
 
     void Application::addToPlayQueue(std::filesystem::path const &path)
     {
-        TrackInfo info = trackInfoFromBrowserPath(path);
-        // Invalid .stream descriptors (no url) are silently dropped — the
-        // queue would otherwise carry an unplayable entry.
-        if (info.format == AudioFormat::Stream && info.streamUrl.empty())
-            return;
-        _playQueueView->addTrack(info);
+        _playQueueView->addTrack(trackInfoFromBrowserPath(path));
     }
 
     void Application::activateFromBrowser(std::vector<std::filesystem::path> const &paths)
@@ -1604,13 +1863,8 @@ namespace vtplayer
         newTracks.reserve(paths.size());
         for (auto const &p : paths)
         {
-            TrackInfo info = trackInfoFromBrowserPath(p);
-            if (info.format == AudioFormat::Stream && info.streamUrl.empty())
-                continue;
-            newTracks.push_back(std::move(info));
+            newTracks.push_back(trackInfoFromBrowserPath(p));
         }
-        if (newTracks.empty())
-            return;
         _playQueueView->setTracks(std::move(newTracks));
         playTrack(0);
     }
@@ -1620,12 +1874,20 @@ namespace vtplayer
         if (!_playQueueView)
             return;
 
-        auto loaded = M3uReader::read(path);
+        auto ext = path.extension().string();
+        for (auto &c : ext)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+        auto loaded = (ext == ".pls") ? PlsReader::read(path)
+                                      : M3uReader::read(path);
         if (!loaded)
             return;
 
         for (auto const &track : *loaded)
         {
+            // Defensive: a stream-typed entry with no URL is unplayable.
+            if (track.format == AudioFormat::Stream && track.streamUrl.empty())
+                continue;
             _playQueueView->addTrack(track);
         }
     }

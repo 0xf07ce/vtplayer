@@ -82,8 +82,8 @@ bool AudioEngine::load(TrackInfo const & track)
 
     if (track.isStream())
     {
-        // `path` is the `.stream` descriptor file (kept for library lookups);
-        // the actual URL libav opens lives in `streamUrl`.
+        // `path` is a synthetic library key (`<pls>#CH<N>`); the actual
+        // URL libav opens lives in `streamUrl`.
         if (track.streamUrl.empty())
         {
             _lastError = "Empty stream URL";

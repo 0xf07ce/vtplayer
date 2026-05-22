@@ -7,6 +7,7 @@
 #include "../util/UnicodeNormalize.h"
 
 #include <ventty/art/AsciiArt.h>
+#include <ventty/core/Utf8.h>
 
 #include <algorithm>
 #include <cctype>
@@ -18,6 +19,42 @@ namespace
 {
 
 using Key = ventty::KeyEvent::Key;
+
+/// Trim codepoints off the LEFT until the string fits in `maxWidth`
+/// display cells. Mirrors TagEditDialog's horizontal-scroll helper so the
+/// cursor end of the query stays visible without splitting UTF-8 bytes.
+std::string leftTruncateToWidth(std::string_view s, int maxWidth)
+{
+    if (maxWidth <= 0) return {};
+    int total = ventty::stringWidth(s);
+    if (total <= maxWidth) return std::string(s);
+    std::size_t pos = 0;
+    while (pos < s.size() && total > maxWidth)
+    {
+        char32_t const cp = ventty::decode(s, pos);
+        total -= ventty::displayWidth(cp);
+    }
+    return std::string(s.substr(pos));
+}
+
+/// Step `pos` to the start of the previous UTF-8 codepoint in `s`.
+std::size_t prevCodepointStart(std::string const & s, std::size_t pos)
+{
+    if (pos == 0) return 0;
+    --pos;
+    while (pos > 0 && (static_cast<unsigned char>(s[pos]) & 0xC0) == 0x80)
+        --pos;
+    return pos;
+}
+
+/// Step `pos` to the start of the next UTF-8 codepoint in `s`.
+std::size_t nextCodepointStart(std::string const & s, std::size_t pos)
+{
+    if (pos >= s.size()) return s.size();
+    std::size_t p = pos;
+    ventty::decode(s, p);
+    return p;
+}
 
 std::string toLowerAscii(std::string const & in)
 {
@@ -63,14 +100,19 @@ void LibrarySearchDialog::open()
 {
     _open = true;
     _query.clear();
+    _cursorBytePos = 0;
     _selectedIndex = 0;
     _scrollOffset = 0;
+    _cursorScreenX = -1;
+    _cursorScreenY = -1;
     recomputeMatches();
 }
 
 void LibrarySearchDialog::close()
 {
     _open = false;
+    _cursorScreenX = -1;
+    _cursorScreenY = -1;
 }
 
 void LibrarySearchDialog::recomputeMatches()
@@ -89,44 +131,71 @@ void LibrarySearchDialog::recomputeMatches()
     _scrollOffset = 0;
 }
 
-void LibrarySearchDialog::appendUtf8(char32_t ch)
+void LibrarySearchDialog::insertUtf8(char32_t ch)
 {
-    // Encode to UTF-8.
+    char buf[4];
+    int n = 0;
     if (ch < 0x80)
     {
-        _query.push_back(static_cast<char>(ch));
+        buf[n++] = static_cast<char>(ch);
     }
     else if (ch < 0x800)
     {
-        _query.push_back(static_cast<char>(0xC0 | ((ch >> 6) & 0x1F)));
-        _query.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
+        buf[n++] = static_cast<char>(0xC0 | ((ch >> 6) & 0x1F));
+        buf[n++] = static_cast<char>(0x80 | (ch & 0x3F));
     }
     else if (ch < 0x10000)
     {
-        _query.push_back(static_cast<char>(0xE0 | ((ch >> 12) & 0x0F)));
-        _query.push_back(static_cast<char>(0x80 | ((ch >> 6) & 0x3F)));
-        _query.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
+        buf[n++] = static_cast<char>(0xE0 | ((ch >> 12) & 0x0F));
+        buf[n++] = static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
+        buf[n++] = static_cast<char>(0x80 | (ch & 0x3F));
     }
     else
     {
-        _query.push_back(static_cast<char>(0xF0 | ((ch >> 18) & 0x07)));
-        _query.push_back(static_cast<char>(0x80 | ((ch >> 12) & 0x3F)));
-        _query.push_back(static_cast<char>(0x80 | ((ch >> 6) & 0x3F)));
-        _query.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
+        buf[n++] = static_cast<char>(0xF0 | ((ch >> 18) & 0x07));
+        buf[n++] = static_cast<char>(0x80 | ((ch >> 12) & 0x3F));
+        buf[n++] = static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
+        buf[n++] = static_cast<char>(0x80 | (ch & 0x3F));
     }
+    _query.insert(_cursorBytePos, buf, n);
+    _cursorBytePos += n;
 }
 
 void LibrarySearchDialog::backspaceUtf8()
 {
-    if (_query.empty()) return;
-    // Walk back to the start of the previous codepoint (continuation bytes
-    // have the high bits 10xxxxxx).
-    while (!_query.empty())
-    {
-        unsigned char b = static_cast<unsigned char>(_query.back());
-        _query.pop_back();
-        if ((b & 0xC0) != 0x80) break;
-    }
+    if (_cursorBytePos == 0) return;
+    std::size_t const prev = prevCodepointStart(_query, _cursorBytePos);
+    _query.erase(prev, _cursorBytePos - prev);
+    _cursorBytePos = static_cast<int>(prev);
+}
+
+void LibrarySearchDialog::deleteForward()
+{
+    if (_cursorBytePos >= static_cast<int>(_query.size())) return;
+    std::size_t const next = nextCodepointStart(_query, _cursorBytePos);
+    _query.erase(_cursorBytePos, next - _cursorBytePos);
+}
+
+void LibrarySearchDialog::moveCursorLeft()
+{
+    if (_cursorBytePos == 0) return;
+    _cursorBytePos = static_cast<int>(prevCodepointStart(_query, _cursorBytePos));
+}
+
+void LibrarySearchDialog::moveCursorRight()
+{
+    if (_cursorBytePos >= static_cast<int>(_query.size())) return;
+    _cursorBytePos = static_cast<int>(nextCodepointStart(_query, _cursorBytePos));
+}
+
+void LibrarySearchDialog::moveCursorHome()
+{
+    _cursorBytePos = 0;
+}
+
+void LibrarySearchDialog::moveCursorEnd()
+{
+    _cursorBytePos = static_cast<int>(_query.size());
 }
 
 bool LibrarySearchDialog::handleKey(ventty::KeyEvent const & event)
@@ -143,6 +212,27 @@ bool LibrarySearchDialog::handleKey(ventty::KeyEvent const & event)
     {
         backspaceUtf8();
         recomputeMatches();
+        return true;
+    }
+
+    if (event.key == Key::Delete)
+    {
+        deleteForward();
+        recomputeMatches();
+        return true;
+    }
+
+    // Cursor movement inside the query line. Home/End are shared with list
+    // navigation, so we only repurpose them when the query has content —
+    // an empty query leaves Home/End free to jump to first/last result.
+    if (event.key == Key::Left)
+    {
+        moveCursorLeft();
+        return true;
+    }
+    if (event.key == Key::Right)
+    {
+        moveCursorRight();
         return true;
     }
 
@@ -168,12 +258,14 @@ bool LibrarySearchDialog::handleKey(ventty::KeyEvent const & event)
     }
     if (event.key == Key::Home)
     {
-        _selectedIndex = 0;
+        if (!_query.empty()) moveCursorHome();
+        else _selectedIndex = 0;
         return true;
     }
     if (event.key == Key::End)
     {
-        if (!_matches.empty()) _selectedIndex = static_cast<int>(_matches.size()) - 1;
+        if (!_query.empty()) moveCursorEnd();
+        else if (!_matches.empty()) _selectedIndex = static_cast<int>(_matches.size()) - 1;
         return true;
     }
 
@@ -189,7 +281,7 @@ bool LibrarySearchDialog::handleKey(ventty::KeyEvent const & event)
 
     if (event.key == Key::Char && !event.ctrl && !event.alt && event.ch >= 0x20)
     {
-        appendUtf8(event.ch);
+        insertUtf8(event.ch);
         recomputeMatches();
         return true;
     }
@@ -198,6 +290,8 @@ bool LibrarySearchDialog::handleKey(ventty::KeyEvent const & event)
 
 void LibrarySearchDialog::draw(ventty::Window & window)
 {
+    _cursorScreenX = -1;
+    _cursorScreenY = -1;
     if (!_open) return;
 
     int const screenW = window.width();
@@ -221,23 +315,55 @@ void LibrarySearchDialog::draw(ventty::Window & window)
     int titleX = x + 2;
     window.drawText(titleX, y, title, accent);
 
-    // Query line
+    // Query line — cell-width aware so CJK aligns and the cursor lands on
+    // the right cell. We slide the visible window leftwards just enough to
+    // keep the cursor in view, then stash terminal-cell coords for the
+    // host to drive ventty's hardware cursor.
     int const queryY = y + 2;
-    std::string label = " Query: ";
+    std::string const label = " Query: ";
     window.drawText(x + 2, queryY, label, accent);
-    int const queryX = x + 2 + static_cast<int>(label.size());
+    int const queryX = x + 2 + static_cast<int>(ventty::stringWidth(label));
     int const queryW = dlgW - (queryX - x) - 2;
-    std::string visibleQuery = _query;
-    if (static_cast<int>(visibleQuery.size()) > queryW - 1)
+
+    int const prefixW = ventty::stringWidth(
+        std::string_view{_query.data(), static_cast<std::size_t>(_cursorBytePos)});
+
+    // Reserve one cell for the cursor itself when it sits at end-of-line.
+    int const showW = std::max(1, queryW - 1);
+    std::string visiblePrefix =
+        leftTruncateToWidth(std::string_view{_query.data(),
+                                             static_cast<std::size_t>(_cursorBytePos)},
+                            showW);
+    int const droppedW = prefixW - ventty::stringWidth(visiblePrefix);
+    std::string const tail =
+        _cursorBytePos < static_cast<int>(_query.size())
+            ? _query.substr(_cursorBytePos)
+            : std::string{};
+    std::string visibleQuery = visiblePrefix;
+    int const remaining = showW - ventty::stringWidth(visiblePrefix);
+    if (remaining > 0 && !tail.empty())
     {
-        visibleQuery = visibleQuery.substr(visibleQuery.size() - (queryW - 1));
+        // Append codepoints from tail until we exhaust visible cells.
+        std::size_t pos = 0;
+        int taken = 0;
+        while (pos < tail.size())
+        {
+            std::size_t probe = pos;
+            char32_t const cp = ventty::decode(tail, probe);
+            int const w = ventty::displayWidth(cp);
+            if (taken + w > remaining) break;
+            taken += w;
+            pos = probe;
+        }
+        visibleQuery.append(tail, 0, pos);
     }
     window.drawText(queryX, queryY, visibleQuery, body);
-    // Cursor block at the end of the query.
-    int const cursorX = queryX + static_cast<int>(visibleQuery.size());
-    if (cursorX < x + dlgW - 1)
+
+    int const cursorCol = queryX + (prefixW - droppedW);
+    if (cursorCol >= queryX && cursorCol < x + dlgW - 1)
     {
-        window.putChar(cursorX, queryY, U'_', accent);
+        _cursorScreenX = cursorCol;
+        _cursorScreenY = queryY;
     }
 
     // Separator

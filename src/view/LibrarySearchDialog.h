@@ -46,10 +46,22 @@ public:
     /// Renders centered in the given root window.
     void draw(ventty::Window & window);
 
+    /// Terminal-cell coordinates the host should park the hardware cursor
+    /// at while this dialog owns input. -1 means "no cursor". Updated by
+    /// draw(); read by the host run loop right after Terminal::render().
+    bool wantsCursor() const { return _open && _cursorScreenX >= 0; }
+    int cursorScreenX() const { return _cursorScreenX; }
+    int cursorScreenY() const { return _cursorScreenY; }
+
 private:
     void recomputeMatches();
-    void appendUtf8(char32_t ch);
+    void insertUtf8(char32_t ch);
     void backspaceUtf8();
+    void deleteForward();
+    void moveCursorLeft();
+    void moveCursorRight();
+    void moveCursorHome();
+    void moveCursorEnd();
 
     Theme _theme;
     MediaLibrary const * _library = nullptr;
@@ -57,9 +69,13 @@ private:
 
     bool _open = false;
     std::string _query;                              ///< UTF-8 query text
+    int  _cursorBytePos = 0;                         ///< insertion point in _query
     std::vector<TrackInfo const *> _matches;
     int _selectedIndex = 0;
     int _scrollOffset  = 0;
+
+    int _cursorScreenX = -1;
+    int _cursorScreenY = -1;
 };
 
 } // namespace vtplayer

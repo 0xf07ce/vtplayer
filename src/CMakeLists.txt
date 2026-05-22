@@ -30,6 +30,8 @@ add_executable(vtplayer
     view/LibrarySearchDialog.cpp
     view/PlayQueueView.h
     view/PlayQueueView.cpp
+    view/TagEditDialog.h
+    view/TagEditDialog.cpp
     view/TransportBar.h
     view/TransportBar.cpp
     view/VisualizerView.h
@@ -73,12 +75,14 @@ add_executable(vtplayer
     # util
     util/M3uReader.h
     util/M3uReader.cpp
-    util/StreamFile.h
-    util/StreamFile.cpp
+    util/PlsReader.h
+    util/PlsReader.cpp
     util/UnicodeNormalize.h
     util/UnicodeNormalize.cpp
     util/TagLibSilencer.h
     util/TagLibSilencer.cpp
+    util/TagWriter.h
+    util/TagWriter.cpp
 )
 
 target_include_directories(vtplayer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

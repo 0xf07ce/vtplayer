@@ -80,6 +80,28 @@ public:
     /// true clears the queue and plays; false appends to the bottom.
     void sendSelectionToQueue(bool replace);
 
+    /// What the cursor is currently pointing at, in terms the tag editor
+    /// needs to scope its UI (which fields to expose) and target (which
+    /// tracks the edit applies to).
+    enum class SelectionKind
+    {
+        None,           ///< no selection
+        Artist,         ///< Artist/Album mode, depth-0 group (top-level)
+        Album,          ///< Artist/Album mode, depth-1 group
+        DirectoryGroup, ///< Directory mode, any group (folder)
+        Track,          ///< a single track leaf (any mode)
+    };
+    struct Selection
+    {
+        SelectionKind kind = SelectionKind::None;
+        /// Display label for the dialog header — group name or track title.
+        std::string label;
+        /// Every track this selection covers. For a group, that's every
+        /// track under the subtree; for a track, just the one.
+        std::vector<TrackInfo> tracks;
+    };
+    Selection currentSelection() const;
+
     void draw(ventty::Window & window) override;
     bool handleKey(ventty::KeyEvent const & event) override;
     bool handleMouse(ventty::MouseEvent const & event);

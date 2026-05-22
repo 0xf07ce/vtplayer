@@ -4,7 +4,7 @@
 #include "LibraryScanner.h"
 
 #include "LibraryRepository.h"
-#include "../util/StreamFile.h"
+#include "../util/PlsReader.h"
 #include "../util/UnicodeNormalize.h"
 
 // Bare header names — see audio/ReplayGain.cpp for rationale.
@@ -108,28 +108,6 @@ TrackInfo extractMetadata(fs::path const & path)
     return info;
 }
 
-/// Build a TrackInfo from a `.stream` descriptor file. artist / albumArtist
-/// are intentionally left empty: streaming tracks live under the virtual
-/// `(stream)` artist node in LibraryView. Returns nullopt for unreadable or
-/// invalid descriptors (no `url`), which the caller treats as "skip but keep
-/// the path in `seen` so the deletion sweep doesn't prune it".
-std::optional<TrackInfo> extractStreamMetadata(fs::path const & path)
-{
-    auto meta = StreamFile::load(path);
-    if (!meta) return std::nullopt;
-
-    TrackInfo info;
-    info.path      = path;
-    info.format    = AudioFormat::Stream;
-    info.streamUrl = meta->url;
-    info.title     = toNfc(meta->title.empty() ? path.stem().string() : meta->title);
-    info.album     = toNfc(meta->album);
-    info.genre     = toNfc(meta->genre);
-    info.year      = meta->year;
-    // artist / albumArtist / trackNumber / discNumber / duration stay zero/empty.
-    return info;
-}
-
 } // namespace
 
 LibraryScanner::LibraryScanner(LibraryRepository & repo)
@@ -168,10 +146,10 @@ LibraryScanner::collect(fs::path const & root,
         if (!e.empty() && e[0] == '.') e.erase(0, 1);
         if (!e.empty()) extSet.insert(std::move(e));
     }
-    // `.stream` descriptors are always collected, regardless of the user's
+    // `.pls` playlists are always collected, regardless of the user's
     // `[formats] extensions` setting — they aren't audio containers and
     // shouldn't have to be listed there.
-    extSet.insert("stream");
+    extSet.insert("pls");
 
     // Tick cadence in *iterated* directory entries (not just matching files)
     // so ESC stays responsive even inside subtrees that contain no audio.
@@ -246,38 +224,77 @@ LibraryScanner::ingest(std::vector<ScanEntry> const & entries,
             return result;
 
         ScanEntry const & e = entries[i];
-        std::string const key = e.path.string();
-        seen.insert(key);
+        std::string const lext = lowerExt(e.path);
 
-        auto known_it = known.find(key);
-        bool const present = (known_it != known.end());
-        if (present && e.mtime != 0 && known_it->second == e.mtime)
+        if (lext == "pls")
         {
-            ++result.skipped;
+            // A `.pls` expands into N rows whose DB keys are synthetic
+            // (`<pls>#CH<N>`) — the source path is never itself a key.
+            // Always re-parse: the fast-path keys on e.path which the repo
+            // never holds, and PLS files are small and rare.
+            auto loaded = PlsReader::read(e.path);
+            std::string const prefix = e.path.string() + "#";
+
+            if (!loaded)
+            {
+                // Parsing failed (file unreadable, not "empty playlist"):
+                // preserve any pre-existing rows rather than wiping them
+                // on a transient I/O hiccup. Mark them seen so the sweep
+                // below leaves them alone.
+                for (auto const & [k, _] : known)
+                    if (k.compare(0, prefix.size(), prefix) == 0)
+                        seen.insert(k);
+                continue;
+            }
+
+            // Per-file wipe: erase every existing channel row for this
+            // PLS before re-emitting the current channel list. Channels
+            // that disappeared or got renumbered are then naturally
+            // counted by the deletion sweep at the bottom (since we do
+            // NOT add the wiped keys to `seen`); only the keys we
+            // actually re-upsert survive the sweep.
+            for (auto const & [k, _] : known)
+                if (k.compare(0, prefix.size(), prefix) == 0)
+                    _repo.erase(k);
+
+            for (auto & info : *loaded)
+            {
+                // Local-file channels inside a library-root .pls would
+                // collide with the regular file scan's row for the same
+                // path. The library only takes URL channels here — local
+                // file playlists are M3U's job (no library indexing).
+                if (!info.isStream()) continue;
+                info.mtime = e.mtime;
+                info.size  = e.size;
+                std::string const childKey = info.path.string();
+                bool const childPresent =
+                    (known.find(childKey) != known.end());
+                _repo.upsert(info);
+                seen.insert(childKey);
+                if (childPresent) ++result.updated;
+                else              ++result.added;
+            }
         }
         else
         {
-            bool const isStream = (lowerExt(e.path) == "stream");
-            std::optional<TrackInfo> maybeInfo;
-            if (isStream)
-                maybeInfo = extractStreamMetadata(e.path);
-            else
-                maybeInfo = extractMetadata(e.path);
+            std::string const key = e.path.string();
+            seen.insert(key);
 
-            if (!maybeInfo)
+            auto known_it = known.find(key);
+            bool const present = (known_it != known.end());
+            if (present && e.mtime != 0 && known_it->second == e.mtime)
             {
-                // Invalid .stream (e.g. missing url): leave the repo alone so
-                // a previously valid version isn't overwritten with garbage.
-                // The path stays in `seen` so the deletion sweep below
-                // doesn't prune it either.
-                continue;
+                ++result.skipped;
             }
-            TrackInfo info = std::move(*maybeInfo);
-            info.mtime = e.mtime;
-            info.size  = e.size;
-            _repo.upsert(info);
-            if (present) ++result.updated;
-            else         ++result.added;
+            else
+            {
+                TrackInfo info = extractMetadata(e.path);
+                info.mtime = e.mtime;
+                info.size  = e.size;
+                _repo.upsert(info);
+                if (present) ++result.updated;
+                else         ++result.added;
+            }
         }
 
         // Report only when the integer percentage actually advances.

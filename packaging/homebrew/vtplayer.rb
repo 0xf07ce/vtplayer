@@ -37,8 +37,8 @@ class Vtplayer < Formula
   # (no network during the build). This resource's sha256 is bumped
   # automatically by the release workflow's `prepare` job.
   resource "ventty" do
-    url "https://github.com/0xf07ce/ventty/archive/refs/tags/v0.2.0.tar.gz"
-    sha256 "960fa4f8305b3b3bed3f7ae4bb74081c48ebe3448df1eb842462fadd6666a782"
+    url "https://github.com/0xf07ce/ventty/archive/refs/tags/v0.3.0.tar.gz"
+    sha256 "acf3d89481761027cc8583fc886538f94029874686dbd85321480b50ba7916c4"
   end
 
   def install

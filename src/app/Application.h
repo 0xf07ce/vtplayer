@@ -12,6 +12,7 @@
 #include "../view/LibraryView.h"
 #include "../view/LibrarySearchDialog.h"
 #include "../view/PlayQueueView.h"
+#include "../view/TagEditDialog.h"
 #include "../view/Theme.h"
 #include "../view/TransportBar.h"
 #include "../view/VisualizerView.h"
@@ -105,6 +106,15 @@ namespace vtplayer
         void handleGlobalKeys(ventty::KeyEvent const &event);
         void openContextMenu();
         void onContextMenuSelect(int index);
+
+        /// 't' handler: figure out what the user is pointing at in the
+        /// focused panel and open the tag editor with the right scope.
+        void openTagEditor();
+
+        /// Save callback: write tags to disk, refresh the in-memory library
+        /// + repository, and rebuild dependent views.
+        void applyTagEdit(std::vector<std::filesystem::path> const & targets,
+                          TagUpdate const & update);
 
         /// Switch the Browser-screen left panel. Applies the corresponding
         /// LibraryView grouping (for the library modes), fixes focus on the
@@ -269,6 +279,7 @@ namespace vtplayer
         /// back to an action (the item set varies with `_leftMode`).
         std::vector<MenuAction> _contextMenuActions;
         std::unique_ptr<LibrarySearchDialog> _searchDialog;
+        std::unique_ptr<TagEditDialog> _tagEditDialog;
 
         // Startup positional argument. At most one is set: _initialFile is a
         // single track to queue+play; _initialDir is a folder to open in the

@@ -22,13 +22,12 @@ struct FileEntry
     std::filesystem::path path;
     bool isDirectory = false;
     bool isAudio = false;
-    bool isPlaylist = false;  ///< .m3u / .m3u8 file
-    bool isStream = false;    ///< .stream descriptor (single internet-radio URL)
+    bool isPlaylist = false;  ///< .m3u / .m3u8 / .pls file
     bool isParent = false;
 
     /// True for entries that participate in multi-selection
-    /// (audio + playlist + stream files).
-    bool isSelectable() const { return isAudio || isPlaylist || isStream; }
+    /// (audio + playlist files).
+    bool isSelectable() const { return isAudio || isPlaylist; }
 };
 
 class FileBrowser : public ventty::Widget

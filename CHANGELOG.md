@@ -1,5 +1,54 @@
 # CHANGELOG
 
+## 0.11.0 (2026-05-22)
+
+**Breaking:** The `.stream` descriptor file format is gone. Internet radio
+is now described by standard PLS (`.pls`) playlist files, which can hold
+multiple stations per file. Existing `.stream` files placed in the library
+root are no longer collected and their library rows are swept on the next
+scan; replace them with one PLS per broadcaster / region.
+
+Mapping: PLS *file* → album, PLS *channel* (a `FileN=` URL entry) → track.
+A library row's `path` for a PLS-sourced channel is synthesized as
+`<absolute_pls_path>#CH<N>`, which keeps each channel addressable as a
+distinct primary key without colliding with the source file's path.
+`streamUrl` carries the URL the AudioEngine opens.
+
+- Added `src/util/PlsReader.{h,cpp}`. The parser accepts the `[playlist]`
+  section case-insensitively, trusts the actual `FileN`/`TitleN`/`LengthN`
+  triples it sees rather than `NumberOfEntries`, and handles both URL
+  channels (any `scheme://…` value) and local-file channels (resolved
+  relative to the `.pls` parent, like `M3uReader`). `album` on every
+  returned `TrackInfo` is set to the `.pls` file's stem so channels of one
+  file group naturally in LibraryView.
+- FileBrowser: `.pls` joins `.m3u`/`.m3u8` as a playlist entry. Activating
+  one appends every channel to the play queue (URL channels and local-file
+  channels alike).
+- LibraryScanner: `.pls` files inside the library root are always
+  collected (mirroring the previous `.stream` behaviour) and expanded into
+  N synthetic-path rows per file. Only URL channels are indexed — local
+  file references in a library-root PLS are skipped to avoid clashing
+  with the regular file scan's own row for the same path. The mtime
+  fast-path naturally falls through for `.pls` (the source path is never
+  itself a DB key), so each scan re-parses; PLS files are small enough
+  that the cost is negligible, and any channel removed from a PLS gets
+  swept on the next scan via the existing deletion-sweep mechanism.
+- Removed: `src/util/StreamFile.{h,cpp}`, `extractStreamMetadata` in
+  LibraryScanner, the `FileEntry::isStream` flag and all its branches in
+  FileBrowser, the `.stream` resolution in
+  `Application::trackInfoFromBrowserPath`, and the `.stream` entry in
+  `TrackInfo::formatFromPath`. `AudioFormat::Stream`, `TrackInfo::streamUrl`,
+  the `(stream)` virtual artist node in LibraryView, and the
+  `stream_url` DB column are all retained — PLS URL channels rely on
+  them.
+- Tag viewing dialog: tag editing is **disabled** in this release. The
+  dialog still opens from the play queue / library / file browser so you
+  can read a track's existing tags, but its commit action no longer
+  writes anything and the `Enter: save` hint has been removed from the
+  footer (only `ESC: close` remains). The dialog code path and the
+  underlying `TagWriter` plumbing are kept intact so editing can be
+  re-enabled cleanly in a future release.
+
 ## 0.10.0 (2026-05-21)
 
 **Breaking:** Internet radio has been folded into the media library. The

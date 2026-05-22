@@ -47,9 +47,9 @@ struct TrackInfo
     std::int64_t mtime = 0;
     std::int64_t size  = 0;
 
-    /// Empty for local files. When non-empty, `path` is the descriptor file
-    /// (`.stream`) on disk and `streamUrl` is the URL the AudioEngine opens
-    /// for playback.
+    /// Empty for local files. When non-empty, `path` is a synthetic key
+    /// (`<pls_path>#CH<N>`) referring to one entry inside a PLS playlist
+    /// file, and `streamUrl` is the URL the AudioEngine opens for playback.
     std::string streamUrl;
 
     bool isStream() const { return !streamUrl.empty(); }
@@ -72,7 +72,6 @@ struct TrackInfo
         if (ext == ".opus") return AudioFormat::Opus;
         if (ext == ".wma") return AudioFormat::Wma;
         if (ext == ".webm") return AudioFormat::Webm;
-        if (ext == ".stream") return AudioFormat::Stream;
         return AudioFormat::Unknown;
     }
 };
