@@ -35,7 +35,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout vtplayer
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Ensure GitHub Release exists
         env:
@@ -63,7 +63,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Checkout tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ${{ env.TAP_REPO }}
           token: ${{ secrets.TAP_PUSH_TOKEN }}
@@ -160,7 +160,7 @@ jobs:
           gh release upload "${TAG}" vtplayer-*.bottle.tar.gz --repo "${REPO}" --clobber
 
       - name: Upload bottle JSON artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: bottle-json-${{ matrix.os }}
           path: vtplayer--*.bottle.json
@@ -173,7 +173,7 @@ jobs:
     runs-on: macos-15
     steps:
       - name: Download bottle JSON artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: bottle-json-*
           merge-multiple: true
