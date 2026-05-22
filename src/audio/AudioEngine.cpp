@@ -194,24 +194,30 @@ bool AudioEngine::isStreamBuffering() const
     return _stream && _stream->buffering();
 }
 
-void AudioEngine::play()
+bool AudioEngine::play()
 {
     if (_state.load(std::memory_order_acquire) == PlayState::Playing)
     {
-        return;
+        return true;
     }
 
     if (_state.load(std::memory_order_acquire) == PlayState::Paused)
     {
         _state.store(PlayState::Playing, std::memory_order_release);
-        ma_device_start(_device);
-        return;
+        if (ma_device_start(_device) != MA_SUCCESS)
+        {
+            _state.store(PlayState::Paused, std::memory_order_release);
+            _lastError = "device resume failed";
+            return false;
+        }
+        return true;
     }
 
     // Start fresh playback
     if (!_decoder && !_isStream.load(std::memory_order_acquire))
     {
-        return;
+        _lastError = "no source loaded";
+        return false;
     }
 
     ma_device_config deviceConfig = ma_device_config_init(ma_device_type_playback);
@@ -223,7 +229,8 @@ void AudioEngine::play()
 
     if (ma_device_init(nullptr, &deviceConfig, _device) != MA_SUCCESS)
     {
-        return;
+        _lastError = "device init failed";
+        return false;
     }
 
     _state.store(PlayState::Playing, std::memory_order_release);
@@ -232,8 +239,10 @@ void AudioEngine::play()
     {
         ma_device_uninit(_device);
         _state.store(PlayState::Stopped, std::memory_order_release);
-        return;
+        _lastError = "device start failed";
+        return false;
     }
+    return true;
 }
 
 void AudioEngine::pause()

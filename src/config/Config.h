@@ -13,7 +13,6 @@ namespace vtplayer
 struct Config
 {
     // [audio]
-    float volume = 1.0f;
     bool gainNorm = false;  ///< master switch: prefer ReplayGain tag, fall back to runtime RMS
     /// Internet-radio ring-buffer depth and prebuffer/rebuffer threshold
     /// (seconds). Larger = more latency but more resilient to network

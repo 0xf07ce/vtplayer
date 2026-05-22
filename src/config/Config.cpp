@@ -119,16 +119,6 @@ namespace vtplayer
             return (it != values.end()) ? &it->second : nullptr;
         };
 
-        if (auto *v = get("audio.volume"))
-        {
-            try
-            {
-                volume = std::stof(*v) / 100.0f;
-            }
-            catch (...)
-            {
-            }
-        }
         if (auto *v = get("audio.gain_norm"))
         {
             gainNorm = (*v == "true" || *v == "1" || *v == "yes" || *v == "on");
@@ -304,7 +294,6 @@ namespace vtplayer
         out << "# Auto-generated on first run; rewritten on exit.\n\n";
 
         out << "[audio]\n";
-        out << "volume = " << static_cast<int>(volume * 100.0f + 0.5f) << "\n";
         out << "gain_norm = " << (gainNorm ? "true" : "false") << "\n";
         out << "stream_buffer_seconds = " << streamBufferSeconds << "\n";
         out << "stream_prebuffer_seconds = " << streamPrebufferSeconds << "\n\n";

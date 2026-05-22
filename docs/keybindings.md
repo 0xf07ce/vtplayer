@@ -13,8 +13,6 @@
 | `n` | Next track |
 | `p` | Previous track |
 | `Left` / `Right` | Seek backward / forward (5s) |
-| `+` / `=` | Volume up (+5%) |
-| `-` | Volume down (-5%) |
 | `a` | Add selected file to play queue (on a directory: add every audio file inside it, non-recursive) |
 | `Ctrl+Up` / `Ctrl+Down` | Move play-queue item up / down |
 | `F5` | Refresh directory listing |

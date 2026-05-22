@@ -1,5 +1,58 @@
 # CHANGELOG
 
+## 0.11.1 (2026-05-22)
+
+- cxxopts is no longer fetched via `FetchContent` (or `find_package` under
+  `VTPLAYER_USE_SYSTEM_DEPS`). It is now vendored as a single header at
+  `deps/include/cxxopts/cxxopts.hpp`. The library is used only by `main.cpp`
+  for argv parsing — pulling a git repo for one header per build added build
+  time without any benefit. Homebrew formula no longer `depends_on "cxxopts"`.
+- Removed the `VTPLAYER_BUILD_BUNDLE` CMake option and the `ventty_gfx`
+  bundle backend code path in `Application`. SDL/graphics support was never
+  shipped and ventty separated its SDL3 backend out, so the `#ifdef
+  VTPLAYER_BUILD_BUNDLE` branches and the `VENTTY_BUILD_GFX OFF` force-set
+  were dead weight. Bundle-mode build instructions removed from `building.md`.
+- CLI argument errors no longer crash the player. Previously a bad flag
+  (e.g. `--unknown`) escaped `cxxopts::Options::parse` as an uncaught
+  exception, aborting before any message reached the user. The parse call
+  is now wrapped: on error vtplayer prints `vtplayer: <reason>` followed by
+  `--help` to stderr and exits with status 1.
+- Validation errors are now visible. The unconditional `stderr → /dev/null`
+  redirect introduced in v0.9.0 swallowed CLI errors and the `--dump-tags`
+  "open failed" message. The redirect is now deferred until just before
+  entering the TUI, so anything printed during argv parsing, version, help,
+  or dump-tags lands on the user's terminal as expected. `--debug` continues
+  to keep stderr inherited for the whole run.
+- Terminal init failures are surfaced. `Application::initTerminal` returns
+  early without assigning `_terminal` when `ventty::Terminal::init()` fails
+  (no PTY, headless CI, etc.); `Application::run` previously dereferenced
+  the null pointer immediately. It now shuts the audio engine down cleanly
+  and returns exit code 1. `Application::quit` is null-safe for the same
+  reason.
+- `AudioEngine::play()` now returns `bool` and records `_lastError` on
+  failure (device init / start / resume, or "no source loaded"). The UI no
+  longer marks a track as "now playing" when the audio device refused to
+  start — `Application::playTrackAt` only updates the play-queue index if
+  `_audio.play()` actually succeeded.
+- LibraryScanner ingest now runs even when the filesystem walk returned
+  zero entries. Previously `collect()` producing an empty list short-
+  circuited `startScan` before ingest, leaving the DB stale if every file
+  under the library root had been moved out. The early-return now triggers
+  only on an actual ESC cancel; an empty walk falls through to ingest,
+  which sweeps the orphaned rows via its existing deletion pass.
+- Dropped the `[audio] volume` config key. The runtime no longer exposes
+  volume up/down keybindings (removed in v0.10) and `Config::volume` was a
+  field with no UI affordance left to mutate it. The key is silently
+  ignored on load and not re-emitted on save; `gain_norm` remains the
+  knob users actually reach for.
+- Docs: `docs/configuration.md` was several versions stale. Corrected the
+  config path from `~/.config/ventty-player` to `~/.config/vtplayer`
+  (renamed in v0.6.0); documented the previously-undocumented `gain_norm`,
+  `stream_buffer_seconds`, `stream_prebuffer_seconds`, `visualizer.index`,
+  `library.focus_path`, and `library.scan_sig` keys; updated the default
+  `[formats] extensions` list to match the codec coverage added in v0.8.0
+  and v0.8.1.
+
 ## 0.11.0 (2026-05-22)
 
 **Breaking:** The `.stream` descriptor file format is gone. Internet radio

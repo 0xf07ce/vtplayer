@@ -5,7 +5,7 @@
 #include "audio/ReplayGain.h"
 #include "util/TagLibSilencer.h"
 
-#include <cxxopts.hpp>
+#include <cxxopts/cxxopts.hpp>
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -13,6 +13,7 @@ extern "C" {
 }
 
 #include <cstdio>
+#include <exception>
 #include <filesystem>
 #include <iostream>
 
@@ -36,7 +37,17 @@ int main(int argc, char *argv[])
     options.parse_positional({"path"});
     options.positional_help("[FILE|DIR]");
 
-    auto result = options.parse(argc, argv);
+    cxxopts::ParseResult result;
+    try
+    {
+        result = options.parse(argc, argv);
+    }
+    catch (std::exception const & e)
+    {
+        std::cerr << "vtplayer: " << e.what() << "\n\n"
+                  << options.help() << std::endl;
+        return 1;
+    }
 
     if (result.count("help"))
     {
@@ -70,21 +81,11 @@ int main(int argc, char *argv[])
 
     vtplayer::Application app;
 
-    if (result.count("debug"))
+    bool const debug = result.count("debug") > 0;
+    if (debug)
     {
         app.setDebug(true);
         av_log_set_level(AV_LOG_VERBOSE);
-    }
-    else
-    {
-        // Without --debug, redirect stderr to /dev/null for the lifetime of
-        // the TUI. libav writes AV_LOG_ERROR-level diagnostics (e.g. "http
-        // @0x… Error reading HTTP response: End of file" for radio streams)
-        // straight to stderr, which corrupts the rendered screen. Lowering
-        // the log level isn't enough — those messages are emitted at ERROR
-        // level and we want them gone regardless of origin (libav, system
-        // libraries, anything else). --debug keeps stderr inherited.
-        std::freopen("/dev/null", "w", stderr);
     }
 
     if (result.count("path"))
@@ -106,6 +107,16 @@ int main(int argc, char *argv[])
             std::cerr << "vtplayer: path not found: " << path.string() << std::endl;
             return 1;
         }
+    }
+
+    if (!debug)
+    {
+        // Without --debug, redirect stderr to /dev/null for the lifetime of
+        // the TUI. Keep CLI validation errors above visible; only silence
+        // stderr once we are about to enter the terminal UI. libav writes
+        // AV_LOG_ERROR-level diagnostics (e.g. radio stream disconnects)
+        // straight to stderr, which corrupts the rendered screen.
+        std::freopen("/dev/null", "w", stderr);
     }
 
     return app.run();

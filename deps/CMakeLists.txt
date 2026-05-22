@@ -1,11 +1,11 @@
 include(FetchContent)
 
-# When ON, taglib / cxxopts / SQLite3 are taken from the
-# system (e.g. Homebrew-provided bottles) via find_package instead of being
-# git-cloned and built from source by FetchContent. This is the mode the
-# Homebrew formula uses so `brew install --build-bottle` does not have to
-# compile TagLib from source on every bottle. Default OFF keeps the plain
-# `cmake -B build` developer workflow unchanged (no regression).
+# When ON, taglib / SQLite3 are taken from the system (e.g. Homebrew-provided
+# bottles) via find_package instead of being git-cloned and built from source
+# by FetchContent. This is the mode the Homebrew formula uses so
+# `brew install --build-bottle` does not have to compile TagLib from source on
+# every bottle. Default OFF keeps the plain `cmake -B build` developer workflow
+# unchanged (no regression).
 option(VTPLAYER_USE_SYSTEM_DEPS
     "Use system/Homebrew-provided deps (find_package) instead of FetchContent"
     OFF)
@@ -24,32 +24,16 @@ FetchContent_Declare(ventty
 )
 set(VENTTY_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
 set(VENTTY_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(VENTTY_BUILD_GFX      OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(ventty)
 
 if(VTPLAYER_USE_SYSTEM_DEPS)
-    # cxxopts: header-only CLI option parser. Homebrew `cxxopts` ships a CMake
-    # package config exposing the cxxopts::cxxopts target.
-    find_package(cxxopts CONFIG REQUIRED)
-
     # TagLib: audio metadata library. TagLib 2.x ships a CMake package config
     # exposing the TagLib::tag target (Homebrew `taglib`). Using the prebuilt
     # bottle avoids the multi-minute TagLib source build per Homebrew bottle.
     find_package(taglib CONFIG REQUIRED)
 
-    set(VTPLAYER_CXXOPTS_TARGET cxxopts::cxxopts)
     set(VTPLAYER_TAGLIB_TARGET  TagLib::tag)
 else()
-    # cxxopts: header-only CLI option parser (MIT)
-    FetchContent_Declare(cxxopts
-        GIT_REPOSITORY https://github.com/jarro2783/cxxopts.git
-        GIT_TAG        v3.2.1
-        GIT_SHALLOW    TRUE
-    )
-    set(CXXOPTS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(CXXOPTS_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(cxxopts)
-
     # TagLib: audio metadata library (dual-licensed LGPL-2.1 / MPL-1.1; used under MPL-1.1)
     FetchContent_Declare(taglib
         GIT_REPOSITORY https://github.com/taglib/taglib.git
@@ -74,13 +58,8 @@ else()
         $<BUILD_INTERFACE:${taglib_SOURCE_DIR}/taglib/toolkit>
     )
 
-    set(VTPLAYER_CXXOPTS_TARGET cxxopts)
     set(VTPLAYER_TAGLIB_TARGET  tag)
 endif()
-
-# miniaudio: header-only (public domain), placed in deps/include/miniaudio/miniaudio.h
-# Used exclusively for cross-platform audio *output* (ma_device). All decoding
-# is delegated to ffmpeg / libav (see below).
 
 # SQLite: system library. macOS provides libsqlite3 in the base SDK; Linux
 # distros ship libsqlite3-dev. Avoids vendoring a multi-MB amalgamation.
@@ -101,12 +80,17 @@ pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
     libswresample
 )
 
+# Vendored single-header libraries under deps/include/, exposed via the include
+# directory below — no link target, no FetchContent, no system package:
+#   - miniaudio  (public domain) — cross-platform audio *output* (ma_device).
+#                Decoding is delegated to ffmpeg / libav above.
+#   - cxxopts    (MIT)           — CLI option parser. One header, used only by
+#                                  main.cpp; not worth a FetchContent download.
 add_library(vtplayerDep INTERFACE)
 target_include_directories(vtplayerDep INTERFACE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 target_link_libraries(vtplayerDep INTERFACE
-    ${VTPLAYER_CXXOPTS_TARGET}
     ${VTPLAYER_TAGLIB_TARGET}
     SQLite3::SQLite3
     PkgConfig::FFMPEG

@@ -78,7 +78,10 @@ public:
     /// (debug) vs. redirect it to /dev/null (default). Next stream only.
     void setStreamDebug(bool debug) { _streamDebug = debug; }
 
-    void play();
+    /// Start (or resume from pause) playback. Returns false on failure with
+    /// lastError() set — caller should clear any "now playing" UI state it
+    /// optimistically set, since no sound will be produced.
+    bool play();
     void pause();
     void stop();
     void seek(float seconds);

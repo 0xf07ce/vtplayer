@@ -19,8 +19,8 @@ class Vtplayer < Formula
   # Previously git-cloned by CMake FetchContent and built from source on every
   # bottle. Now taken from prebuilt Homebrew bottles via
   # -DVTPLAYER_USE_SYSTEM_DEPS=ON (find_package). This removes the TagLib
-  # source build and per-dependency resource sha256 churn.
-  depends_on "cxxopts"
+  # source build and per-dependency resource sha256 churn. cxxopts is no
+  # longer listed: it is vendored as a single header in deps/include/cxxopts/.
   depends_on "sqlite"
   depends_on "taglib"
 

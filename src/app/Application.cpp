@@ -16,11 +16,7 @@
 #include "../visualizer/TagInfoView.h"
 #include "../visualizer/VinylVis.h"
 
-#ifdef VTPLAYER_BUILD_BUNDLE
-#include <ventty/ventty_gfx.h>
-#else
 #include <ventty/terminal/Terminal.h>
-#endif
 
 #include <ventty/art/AsciiArt.h>
 
@@ -176,6 +172,11 @@ namespace vtplayer
     int Application::run()
     {
         init();
+        if (!_terminal)
+        {
+            _audio.shutdown();
+            return 1;
+        }
         _running = true;
 
         while (_running && _terminal->isRunning())
@@ -192,8 +193,7 @@ namespace vtplayer
             draw();
 
             // Drive ventty's hardware cursor for whichever text-input
-            // modal currently owns input. ANSI backend honors these
-            // calls; GFX/Bundle backend ignores them.
+            // modal currently owns input.
             if (_tagEditDialog && _tagEditDialog->wantsCursor())
             {
                 _terminal->setCursorPos(_tagEditDialog->cursorScreenX(),
@@ -224,27 +224,18 @@ namespace vtplayer
     {
         _audio.stop();
         _running = false;
-        _terminal->quit();
+        if (_terminal)
+            _terminal->quit();
     }
 
     void Application::initTerminal()
     {
-#ifdef VTPLAYER_BUILD_BUNDLE
-        auto term = std::make_unique<ventty::GfxTerminal>();
-        if (!term->init(100, 35, "VT-PLAYER", 1))
-        {
-            return;
-        }
-        term->loadBuiltinFont();
-        _terminal = std::move(term);
-#else
         auto term = std::make_unique<ventty::Terminal>();
         if (!term->init())
         {
             return;
         }
         _terminal = std::move(term);
-#endif
     }
 
     void Application::init()
@@ -1798,9 +1789,8 @@ namespace vtplayer
             return;
 
         _audio.stop();
-        if (_audio.load(*track))
+        if (_audio.load(*track) && _audio.play())
         {
-            _audio.play();
             _playQueueView->setPlayingIndex(index);
         }
         else
@@ -1969,7 +1959,7 @@ namespace vtplayer
 
         _collectActive.store(false);
 
-        if (canceled || entries.empty())
+        if (canceled)
         {
             if (_terminal)
                 _terminal->forceRedraw();
