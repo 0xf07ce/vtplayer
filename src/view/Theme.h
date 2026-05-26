@@ -36,12 +36,20 @@ namespace vtplayer
         Color browserSelFg{0xE0, 0xD8, 0xEC};
         Color browserHeaderFg{0x8B, 0x5C, 0x8B};
 
-        // Library tree — three muted tones so the hierarchy reads at a
-        // glance while staying in vtplayer's tone: amber artists → muted
-        // periwinkle (blue→slight-violet) albums → sage tracks.
+        // Library tree — four muted tones so the four-level hierarchy
+        // (Grouping → Artist → Album → Track) reads at a glance while
+        // staying in vtplayer's tone: warm cream groupings → amber artists
+        // → muted periwinkle albums → sage tracks. Two extra tints set
+        // the synthetic group labels apart: `(null)` (greyed lilac, "tag
+        // is missing") and `(stream)` (faint cyan, "this isn't a tagged
+        // file"), applied wherever they appear (depth 0 grouping, depth 1
+        // artist).
+        Color libraryGroupingFg{0xE6, 0xC8, 0x82};
         Color libraryArtistFg{0xC9, 0xA0, 0x62};
         Color libraryAlbumFg{0x8C, 0x93, 0xC2};
         Color libraryTrackFg{0x8E, 0x9A, 0x77};
+        Color libraryNullFg{0x80, 0x76, 0x8C};
+        Color libraryStreamFg{0x6A, 0xA8, 0xC9};
 
         // Play queue
         Color playQueueBg{0x12, 0x10, 0x1A};
@@ -120,9 +128,12 @@ namespace vtplayer
             set("browser_header_fg", browserHeaderFg);
 
             // Library tree
+            set("library_grouping_fg", libraryGroupingFg);
             set("library_artist_fg", libraryArtistFg);
             set("library_album_fg", libraryAlbumFg);
             set("library_track_fg", libraryTrackFg);
+            set("library_null_fg", libraryNullFg);
+            set("library_stream_fg", libraryStreamFg);
 
             // Play queue
             set("play_queue_bg", playQueueBg);

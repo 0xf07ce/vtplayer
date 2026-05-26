@@ -46,14 +46,20 @@ namespace vtplayer
         PlayQueue,
     };
 
-    /// Left-panel mode on the Browser screen. Artist/Album/Directory are
-    /// projections of the indexed MediaLibrary (rendered by LibraryView);
-    /// FileBrowser is live filesystem navigation from the launch CWD. Bound
-    /// to 1/2/3/4 respectively.
+    /// Left-panel mode on the Browser screen. Three projections of the
+    /// indexed MediaLibrary (rendered by LibraryView) plus the live
+    /// FileBrowser:
+    ///   1 (AlbumArtistTree) — Grouping > AlbumArtist > Album > Track, label "Album"
+    ///   2 (ArtistTree)      — Grouping > Artist      > Album > Track, label "Artist"
+    ///   3 (Directory)       — folder tree under the library root
+    ///   4 (FileBrowser)     — live filesystem from the launch CWD
+    /// Both library tree modes share the same four-level shape; the
+    /// depth-0 axis is `TrackInfo::grouping` (ID3v2 TIT1 / Vorbis GROUPING
+    /// / MP4 ©grp) and the depth-1 axis differs by mode.
     enum class LeftMode
     {
-        Artist,
-        Album,
+        AlbumArtistTree,
+        ArtistTree,
         Directory,
         FileBrowser,
     };
@@ -121,16 +127,17 @@ namespace vtplayer
         /// now-visible widget, and requests a redraw.
         void setLeftMode(LeftMode mode);
 
-        /// True when the left panel is a MediaLibrary projection (Artist /
-        /// Album / Directory) rather than the live FileBrowser.
+        /// True when the left panel is a MediaLibrary projection
+        /// (AlbumArtistTree / ArtistTree / Directory) rather than the live
+        /// FileBrowser.
         // During a scan the LibraryView tree is dropped (pass 1) and not
         // rebuilt until finalizeScan() (its results land all at once), so the
         // left panel behaves as the FileBrowser for drawing, input and mouse
         // routing for the whole scan — both passes.
         bool leftIsLibrary() const
         {
-            return (_leftMode == LeftMode::Artist
-                    || _leftMode == LeftMode::Album
+            return (_leftMode == LeftMode::AlbumArtistTree
+                    || _leftMode == LeftMode::ArtistTree
                     || _leftMode == LeftMode::Directory)
                    && !_collectActive.load() && !_ingestActive.load();
         }
@@ -205,7 +212,7 @@ namespace vtplayer
         Screen _screen = Screen::Browser;
         Screen _previousScreen = Screen::Browser; // restored when leaving Help
         FocusPanel _focus = FocusPanel::FileBrowser;
-        LeftMode _leftMode = LeftMode::Album;
+        LeftMode _leftMode = LeftMode::AlbumArtistTree;
         bool _libraryPanelVisible = true; // `l` toggles the left panel
 
         /// Last focused track in a library projection (1/2/3). Saved when

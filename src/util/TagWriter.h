@@ -21,6 +21,7 @@ struct TagUpdate
     std::optional<std::string> album;
     std::optional<std::string> albumArtist;
     std::optional<std::string> genre;
+    std::optional<std::string> grouping;
     std::optional<int>         trackNumber;
     std::optional<int>         discNumber;
     std::optional<int>         year;
@@ -28,7 +29,8 @@ struct TagUpdate
     bool empty() const
     {
         return !title && !artist && !album && !albumArtist
-               && !genre && !trackNumber && !discNumber && !year;
+               && !genre && !grouping
+               && !trackNumber && !discNumber && !year;
     }
 };
 

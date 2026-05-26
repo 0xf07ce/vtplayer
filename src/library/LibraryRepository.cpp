@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS tracks (
     format       INTEGER NOT NULL DEFAULT 0,
     mtime        INTEGER NOT NULL DEFAULT 0,
     size         INTEGER NOT NULL DEFAULT 0,
-    stream_url   TEXT NOT NULL DEFAULT ''
+    stream_url   TEXT NOT NULL DEFAULT '',
+    grouping     TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_tracks_album_artist
     ON tracks(album_artist, album, disc_no, track_no);
@@ -41,8 +42,8 @@ CREATE INDEX IF NOT EXISTS idx_tracks_album_artist
 constexpr char const * kUpsertSql = R"(
 INSERT INTO tracks
     (path, title, artist, album, album_artist, genre,
-     track_no, disc_no, year, duration, format, mtime, size, stream_url)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     track_no, disc_no, year, duration, format, mtime, size, stream_url, grouping)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(path) DO UPDATE SET
     title        = excluded.title,
     artist       = excluded.artist,
@@ -56,7 +57,8 @@ ON CONFLICT(path) DO UPDATE SET
     format       = excluded.format,
     mtime        = excluded.mtime,
     size         = excluded.size,
-    stream_url   = excluded.stream_url;
+    stream_url   = excluded.stream_url,
+    grouping     = excluded.grouping;
 )";
 
 constexpr char const * kEraseSql = "DELETE FROM tracks WHERE path = ?;";
@@ -150,6 +152,27 @@ bool LibraryRepository::ensureSchema()
     sqlite3_exec(_db,
                  "ALTER TABLE tracks ADD COLUMN stream_url TEXT NOT NULL DEFAULT ''",
                  nullptr, nullptr, nullptr);
+
+    // Schema versioning starts at 1 with the grouping column. Pre-versioned
+    // DBs report user_version=0, get the column added, and have their mtimes
+    // wiped so the next scan re-reads the file's GROUPING tag instead of
+    // skipping every entry as "unchanged".
+    int userVersion = 0;
+    sqlite3_stmt * vs = nullptr;
+    if (sqlite3_prepare_v2(_db, "PRAGMA user_version;", -1, &vs, nullptr) == SQLITE_OK)
+    {
+        if (sqlite3_step(vs) == SQLITE_ROW)
+            userVersion = sqlite3_column_int(vs, 0);
+        sqlite3_finalize(vs);
+    }
+    if (userVersion < 1)
+    {
+        sqlite3_exec(_db,
+                     "ALTER TABLE tracks ADD COLUMN grouping TEXT NOT NULL DEFAULT ''",
+                     nullptr, nullptr, nullptr);
+        sqlite3_exec(_db, "UPDATE tracks SET mtime = 0;", nullptr, nullptr, nullptr);
+        sqlite3_exec(_db, "PRAGMA user_version = 1;", nullptr, nullptr, nullptr);
+    }
     return true;
 }
 
@@ -159,7 +182,7 @@ bool LibraryRepository::loadInto(MediaLibrary & library)
 
     constexpr char const * kSelect = R"(
 SELECT path, title, artist, album, album_artist, genre,
-       track_no, disc_no, year, duration, format, mtime, size, stream_url
+       track_no, disc_no, year, duration, format, mtime, size, stream_url, grouping
 FROM tracks;
 )";
 
@@ -186,6 +209,7 @@ FROM tracks;
         info.mtime       = sqlite3_column_int64(stmt, 11);
         info.size        = sqlite3_column_int64(stmt, 12);
         info.streamUrl   = columnText(stmt, 13);
+        info.grouping    = columnText(stmt, 14);
         library.upsert(std::move(info));
     }
 
@@ -214,6 +238,7 @@ bool LibraryRepository::upsert(TrackInfo const & track)
     sqlite3_bind_int64 (_upsertStmt, 12, track.mtime);
     sqlite3_bind_int64 (_upsertStmt, 13, track.size);
     bindText           (_upsertStmt, 14, track.streamUrl);
+    bindText           (_upsertStmt, 15, track.grouping);
 
     return sqlite3_step(_upsertStmt) == SQLITE_DONE;
 }

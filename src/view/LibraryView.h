@@ -20,17 +20,22 @@ namespace vtplayer
 class MediaLibrary;
 
 /// Hierarchical browser over the MediaLibrary index. Three modes:
-///   - Artist:    AlbumArtist > Album > Track, collapsed to the artist level
-///   - Album:     AlbumArtist > Album > Track, expanded to the album level
-///   - Directory: folder tree under the library root (from the DB index)
-/// Artist and Album share the same tree; they differ only in the initial
-/// fold depth. Group nodes can be expanded/collapsed; only currently-visible
-/// rows are rendered (virtual scrolling). Selection actions go out via
-/// callbacks so the view stays decoupled from Application/PlayQueue wiring.
+///   - AlbumArtistTree: Grouping > AlbumArtist > Album > Track (UI label "Album")
+///   - ArtistTree:      Grouping > Artist      > Album > Track (UI label "Artist")
+///   - Directory:       folder tree under the library root (from the DB index)
+/// Both library projections share the four-level Grouping/Artist/Album/
+/// Track shape. Depth 0 is `TrackInfo::grouping` (ID3v2 TIT1 / Vorbis
+/// GROUPING / MP4 ©grp) — a user-defined top-level bucket like "kpop",
+/// "pop", "jazz". The depth-1 axis differs by mode (`albumArtist` vs
+/// `artist`). Both start fully collapsed; locate() unfolds only the
+/// ancestors of the focused track. Group nodes can be expanded/collapsed;
+/// only currently-visible rows are rendered (virtual scrolling). Selection
+/// actions go out via callbacks so the view stays decoupled from
+/// Application/PlayQueue wiring.
 class LibraryView : public ventty::Widget
 {
 public:
-    enum class Mode { Artist, Album, Directory };
+    enum class Mode { AlbumArtistTree, ArtistTree, Directory };
 
     void setTheme(Theme const & theme) { _theme = theme; }
     void setLibrary(MediaLibrary const * library);
@@ -52,12 +57,12 @@ public:
     /// Drills all the way down to the track. No-op if `path` is not indexed.
     void locate(std::filesystem::path const & path);
 
-    /// Like locate(), but in Artist/Album mode stops at the artist or album
-    /// group that represents `path` (ancestors expanded, the chosen group
-    /// left folded) so switching axes lands on the artist / album instead
-    /// of always jumping to a track. Directory mode still drills to the
+    /// Like locate(), but in AlbumArtistTree/ArtistTree mode stops at the
+    /// album group that represents `path` (ancestors expanded, the album
+    /// itself left folded) so switching axes lands on the album rather
+    /// than always jumping to a track. Directory mode still drills to the
     /// track itself (folders expanded to reveal the file). Used when
-    /// switching axes (F1-F4).
+    /// switching axes (1-4).
     void locateForMode(std::filesystem::path const & path);
 
     /// Path of a track representing the current cursor: the selected track
@@ -86,8 +91,9 @@ public:
     enum class SelectionKind
     {
         None,           ///< no selection
-        Artist,         ///< Artist/Album mode, depth-0 group (top-level)
-        Album,          ///< Artist/Album mode, depth-1 group
+        Grouping,       ///< AlbumArtistTree/ArtistTree, depth-0 group (top-level "kpop", "jazz", ...)
+        Artist,         ///< AlbumArtistTree/ArtistTree, depth-1 group
+        Album,          ///< AlbumArtistTree/ArtistTree, depth-2 group
         DirectoryGroup, ///< Directory mode, any group (folder)
         Track,          ///< a single track leaf (any mode)
     };
@@ -136,7 +142,7 @@ private:
 
     Theme _theme;
     MediaLibrary const * _library = nullptr;
-    Mode _mode = Mode::Album;
+    Mode _mode = Mode::AlbumArtistTree;
 
     std::vector<Node>        _nodes;
     std::vector<std::size_t> _roots;     ///< top-level node indices

@@ -73,25 +73,29 @@ namespace vtplayer
     {
         LeftMode leftModeFromConfig(std::string const &s)
         {
+            // Config strings preserved across the v0.11→v0.12 mode redesign:
+            // "album" still selects the slot labelled "Album" (now the
+            // AlbumArtist tree) and "artist" the slot labelled "Artist"
+            // (now the Artist tree). The user's last UI label survives.
             if (s == "artist")
-                return LeftMode::Artist;
+                return LeftMode::ArtistTree;
             if (s == "directory")
                 return LeftMode::Directory;
             // Legacy "radio" mode (v0.9.x and earlier) falls back to album —
             // RadioView was removed in v0.10.0 when streaming moved into the
             // unified library.
-            return LeftMode::Album; // default; "filebrowser" is never persisted
+            return LeftMode::AlbumArtistTree; // default; "filebrowser" is never persisted
         }
 
         char const *leftModeToConfig(LeftMode m)
         {
             switch (m)
             {
-            case LeftMode::Artist:
+            case LeftMode::ArtistTree:
                 return "artist";
             case LeftMode::Directory:
                 return "directory";
-            case LeftMode::Album:
+            case LeftMode::AlbumArtistTree:
                 return "album";
             // FileBrowser is transient — normalize so a fresh run starts
             // back in the indexed library.
@@ -425,8 +429,8 @@ namespace vtplayer
             // If the index isn't ready yet (scan pending), finalizeScan()
             // re-applies it after the tree is rebuilt.
             _libraryAnchor = _config.libraryFocus;
-            bool const initIsLibrary = (initMode == LeftMode::Artist
-                                        || initMode == LeftMode::Album
+            bool const initIsLibrary = (initMode == LeftMode::AlbumArtistTree
+                                        || initMode == LeftMode::ArtistTree
                                         || initMode == LeftMode::Directory);
             if (!_libraryAnchor.empty() && _libraryView && initIsLibrary)
                 _libraryView->locateForMode(_libraryAnchor);
@@ -1153,15 +1157,17 @@ namespace vtplayer
         }
 
         // 1-4: pick the Browser-screen left panel directly.
-        //   1 Artist · 2 Album · 3 Directory (all from the library index)
+        //   1 Album  (AlbumArtist > Album > Track tree)
+        //   2 Artist (Artist      > Album > Track tree)
+        //   3 Directory (folder tree from the library index)
         //   4 FileBrowser (live filesystem from the launch CWD)
         // Internet radio is no longer a separate mode — PLS playlists in the
         // library surface in modes 1/2/3 like any other track.
         if (_screen == Screen::Browser && event.key == Key::Char && !event.alt && !event.ctrl
             && (ch == '1' || ch == '2' || ch == '3' || ch == '4'))
         {
-            LeftMode const target = (ch == '1')   ? LeftMode::Artist
-                                    : (ch == '2') ? LeftMode::Album
+            LeftMode const target = (ch == '1')   ? LeftMode::AlbumArtistTree
+                                    : (ch == '2') ? LeftMode::ArtistTree
                                     : (ch == '3') ? LeftMode::Directory
                                                   : LeftMode::FileBrowser;
             // Leaving a library projection (1/2/3): remember the focused
@@ -1184,8 +1190,8 @@ namespace vtplayer
             // expects the cursor to land on the focused item's group (e.g.
             // pressing 2 on a track jumps to that track's album), not reset
             // to the top.
-            bool const targetIsLibrary = (target == LeftMode::Artist
-                                          || target == LeftMode::Album
+            bool const targetIsLibrary = (target == LeftMode::AlbumArtistTree
+                                          || target == LeftMode::ArtistTree
                                           || target == LeftMode::Directory);
             if (targetIsLibrary && !_libraryAnchor.empty() && _libraryView)
             {
@@ -1469,11 +1475,11 @@ namespace vtplayer
         {
             switch (mode)
             {
-            case LeftMode::Artist:
-                _libraryView->setMode(LibraryView::Mode::Artist);
+            case LeftMode::AlbumArtistTree:
+                _libraryView->setMode(LibraryView::Mode::AlbumArtistTree);
                 break;
-            case LeftMode::Album:
-                _libraryView->setMode(LibraryView::Mode::Album);
+            case LeftMode::ArtistTree:
+                _libraryView->setMode(LibraryView::Mode::ArtistTree);
                 break;
             case LeftMode::Directory:
                 _libraryView->setMode(LibraryView::Mode::Directory);
@@ -1599,6 +1605,15 @@ namespace vtplayer
                 tracks = std::move(sel.tracks);
                 switch (sel.kind)
                 {
+                case LibraryView::SelectionKind::Grouping:
+                    // No dedicated Scope::Grouping — fall back to the
+                    // multi-track form which exposes every field including
+                    // the Grouping row, so editing in bulk Just Works.
+                    scope = tracks.size() > 1 ? TagEditDialog::Scope::MultiTrack
+                                              : TagEditDialog::Scope::SingleTrack;
+                    headerText = "Grouping: " + sel.label
+                                 + "  (" + std::to_string(tracks.size()) + " tracks)";
+                    break;
                 case LibraryView::SelectionKind::Artist:
                     scope = TagEditDialog::Scope::Artist;
                     headerText = "Artist: " + sel.label
@@ -2100,10 +2115,10 @@ namespace vtplayer
             return;
 
         // Locate only makes sense in a library projection; switch out of
-        // FileBrowser into Album mode if needed.
+        // FileBrowser into the "Album" slot (AlbumArtist tree) if needed.
         if (!leftIsLibrary())
         {
-            setLeftMode(LeftMode::Album);
+            setLeftMode(LeftMode::AlbumArtistTree);
         }
         _libraryView->locate(path);
     }

@@ -97,6 +97,9 @@ TrackInfo extractMetadata(fs::path const & path)
     info.album       = toNfc(firstValue(props, "ALBUM"));
     info.albumArtist = toNfc(firstValue(props, "ALBUMARTIST"));
     info.genre       = toNfc(firstValue(props, "GENRE"));
+    // ID3v2 TIT1 / Vorbis GROUPING / MP4 ©grp — TagLib normalizes them all
+    // to the PropertyMap key "GROUPING". Used as the top-level tree axis.
+    info.grouping    = toNfc(firstValue(props, "GROUPING"));
     info.trackNumber = parseLeadingInt(firstValue(props, "TRACKNUMBER"));
     info.discNumber  = parseLeadingInt(firstValue(props, "DISCNUMBER"));
     info.year        = parseLeadingInt(firstValue(props, "DATE"));

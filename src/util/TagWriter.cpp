@@ -73,6 +73,7 @@ bool applyTagUpdate(std::filesystem::path const & path, TagUpdate const & upd)
     if (upd.album)       setStringField(props, "ALBUM",       *upd.album);
     if (upd.albumArtist) setStringField(props, "ALBUMARTIST", *upd.albumArtist);
     if (upd.genre)       setStringField(props, "GENRE",       *upd.genre);
+    if (upd.grouping)    setStringField(props, "GROUPING",    *upd.grouping);
     if (upd.trackNumber) setIntField(props, "TRACKNUMBER",    *upd.trackNumber);
     if (upd.discNumber)  setIntField(props, "DISCNUMBER",     *upd.discNumber);
     if (upd.year)        setIntField(props, "DATE",           *upd.year);

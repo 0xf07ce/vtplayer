@@ -182,6 +182,8 @@ void TagEditDialog::buildFields()
              commonString(_tracks, [](TrackInfo const & t) -> std::string const & { return t.album; }));
     strField("Genre:", "genre",
              commonString(_tracks, [](TrackInfo const & t) -> std::string const & { return t.genre; }));
+    strField("Grouping:", "grouping",
+             commonString(_tracks, [](TrackInfo const & t) -> std::string const & { return t.grouping; }));
     intField("Disc:", "discNumber",
              commonInt(_tracks, [](TrackInfo const & t) { return t.discNumber; }));
     intField("Year:", "year",

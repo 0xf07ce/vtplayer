@@ -1,5 +1,54 @@
 # CHANGELOG
 
+## 0.12.0 (2026-05-26)
+
+- Left-panel modes 1 and 2 were redesigned. The labels swap (key 1 is now
+  "Album", key 2 is now "Artist") and the two slots no longer share a
+  tree: key 1 groups by `albumArtist` only and key 2 by `artist` only,
+  with no fallback between them. A track tagged `albumArtist=VA,
+  artist=거미` shows under "VA" in mode 1 and under "거미" in mode 2.
+  Tag values are treated as opaque strings — "거미,휘성", "거미, 휘성",
+  and "휘성,거미" produce three distinct groups, no comma-splitting or
+  reordering. Both modes start fully collapsed; locate() still unfolds
+  only the ancestors of the focused track. Group keys are NFC-normalized
+  and ASCII-trimmed before grouping, so "015B" (NFD) and "015B"
+  (NFC), or "015B" and "015B " (trailing space), fold into the same
+  group instead of appearing twice.
+- New top-level **Grouping** axis above artist. Both library tree modes
+  are now four-level: Grouping → Artist → Album → Track. The depth-0
+  key is the new `TrackInfo::grouping` field, populated from ID3v2 TIT1
+  / Vorbis `GROUPING` / MP4 `©grp` (all normalized by TagLib to the
+  PropertyMap key `GROUPING`). Empty grouping → `(ungrouped)`; other
+  empty tag axes → `(null)`. A `library_grouping_fg` theme color
+  carries the new top-level tint; `(ungrouped)` / `(null)` / `(stream)`
+  reuse `library_null_fg` / `library_stream_fg`.
+- Database schema bumped to `PRAGMA user_version = 1`. The migration
+  adds a `grouping` column to the `tracks` table and resets every row's
+  `mtime` to 0 so the next scan re-reads tags into the new column —
+  existing libraries auto-populate without any user action beyond the
+  next launch.
+- Stream channels (PLS URL entries) now render as a flatter
+  `(stream) → <pls stem> → channel` three-level subtree (the album axis
+  is skipped, since PlsReader pins both artist and album to the pls
+  stem and the duplicate `(stream)/(stream)/...` was redundant). The
+  `(stream)` group is still pinned to the top of the Grouping axis.
+- Depth-aware sort pinning. `(stream)` and `(ungrouped)` pin to the top
+  of the Grouping axis; `(null)` and (in AlbumArtistTree only)
+  `Various Artists` pin to the top of the Artist axis inside each
+  grouping. Directory mode keeps pure alphabetical ordering.
+- `TagEditDialog` gains a `Grouping` row in the multi-track and
+  single-track scopes; `TagUpdate` / `TagWriter` write GROUPING
+  end-to-end so the new field is editable as soon as the dialog's
+  view-only flag is flipped. A new `SelectionKind::Grouping` lets the
+  ESC menu / `T` shortcut scope a tag edit to every track under a
+  Grouping node.
+- `LeftMode` / `LibraryView::Mode` enums renamed to
+  `AlbumArtistTree` / `ArtistTree` so the symbol name reflects the new
+  semantics (the previous `Artist` / `Album` names referred to the old
+  shared tree and would have lied to anyone reading the diff). Config
+  string values ("album" / "artist") are preserved across the upgrade
+  — users land in whichever UI label they last picked.
+
 ## 0.11.1 (2026-05-22)
 
 - cxxopts is no longer fetched via `FetchContent` (or `find_package` under

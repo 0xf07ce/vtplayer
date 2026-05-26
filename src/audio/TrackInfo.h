@@ -36,6 +36,10 @@ struct TrackInfo
     std::string album;
     std::string albumArtist;
     std::string genre;
+    /// Top-level user-defined grouping (e.g. "kpop", "pop", "jazz").
+    /// Maps to ID3v2 TIT1, Vorbis `GROUPING`, MP4 `©grp` — TagLib's
+    /// PropertyMap normalizes all of these to the key `GROUPING`.
+    std::string grouping;
     int   trackNumber = 0;
     int   discNumber  = 0;
     int   year        = 0;
