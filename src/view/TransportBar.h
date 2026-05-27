@@ -26,6 +26,9 @@ public:
     void setTheme(Theme const & theme) { _theme = theme; }
     void setState(PlayState state) { _state = state; }
     void setRepeatMode(RepeatMode mode) { _repeatMode = mode; }
+    /// Shuffle mode: when on, an `s` glyph is shown immediately to the
+    /// left of the r/R repeat indicator (e.g. "sR" for shuffle + repeat-all).
+    void setShuffleMode(bool on) { _shuffleMode = on; }
     void setTrackName(std::string const & name) { _trackName = name; }
     void setPosition(float pos) { _position = pos; }
     void setDuration(float dur) { _duration = dur; }
@@ -54,6 +57,7 @@ private:
     Theme _theme;
     PlayState _state = PlayState::Stopped;
     RepeatMode _repeatMode = RepeatMode::None;
+    bool _shuffleMode = false;
     std::string _trackName;
     float _position = 0.0f;
     float _duration = 0.0f;

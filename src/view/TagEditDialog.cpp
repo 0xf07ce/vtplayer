@@ -24,27 +24,22 @@ using Key = ventty::KeyEvent::Key;
 /// Marker that flips a field to "mixed values" display. Never written.
 constexpr char const * kVariousPlaceholder = "<various>";
 
-/// Trim codepoints off the LEFT until the string fits in `maxWidth` display
-/// cells. Used to scroll long edit-buffers horizontally so the right end
-/// (where the cursor lives) stays visible. Always cuts at codepoint
-/// boundaries — never in the middle of a UTF-8 sequence.
-std::string leftTruncateToWidth(std::string_view s, int maxWidth)
-{
-    if (maxWidth <= 0) return {};
-    int total = ventty::stringWidth(s);
-    if (total <= maxWidth) return std::string(s);
-    std::size_t pos = 0;
-    while (pos < s.size() && total > maxWidth)
-    {
-        char32_t const cp = ventty::decode(s, pos);
-        total -= ventty::displayWidth(cp);
-    }
-    return std::string(s.substr(pos));
-}
-
 std::string intOrEmpty(int v)
 {
     return v > 0 ? std::to_string(v) : std::string{};
+}
+
+int parseIntOrZero(std::string const & s)
+{
+    if (s.empty()) return 0;
+    try
+    {
+        return std::stoi(s);
+    }
+    catch (...)
+    {
+        return 0;
+    }
 }
 
 /// Common value across all tracks for the string field selected by `pick`;
@@ -75,12 +70,11 @@ std::optional<int> commonInt(std::vector<TrackInfo> const & tracks, F pick)
 
 } // namespace
 
-void TagEditDialog::open(Scope scope,
-                         std::string header,
+void TagEditDialog::open(std::string header,
                          std::vector<TrackInfo> tracks)
 {
     _open = true;
-    _scope = scope;
+    _mode = Mode::View;
     _header = std::move(header);
     _tracks = std::move(tracks);
     _targetPaths.clear();
@@ -90,11 +84,13 @@ void TagEditDialog::open(Scope scope,
 
     buildFields();
     _focusedField = 0;
+    _confirmYes = true;
 }
 
 void TagEditDialog::close()
 {
     _open = false;
+    _mode = Mode::View;
     _tracks.clear();
     _targetPaths.clear();
     _fields.clear();
@@ -143,50 +139,25 @@ void TagEditDialog::buildFields()
         _fields.push_back(std::move(f));
     };
 
-    // For an Artist scope we present a single "Artist" field. Prefer the
-    // common albumArtist (the library groups by it); if that's not uniform
-    // fall back to artist. If both vary we still show the row but it
-    // starts empty + flagged as <various>.
-    if (_scope == Scope::Artist)
-    {
-        auto byAlbumArtist = commonString(_tracks,
-            [](TrackInfo const & t) -> std::string const & { return t.albumArtist; });
-        auto byArtist = commonString(_tracks,
-            [](TrackInfo const & t) -> std::string const & { return t.artist; });
-        std::optional<std::string> common;
-        if (byAlbumArtist && !byAlbumArtist->empty())
-            common = byAlbumArtist;
-        else if (byArtist)
-            common = byArtist;
-        else
-            common = byAlbumArtist; // both nullopt → still nullopt
-        strField("Artist:", "artist", common);
-        return;
-    }
-
-    bool const showTitleAndTrack = (_scope == Scope::SingleTrack
-                                    || _scope == Scope::MultiTrack);
-
-    if (showTitleAndTrack)
-    {
-        strField("Title:", "title",
-                 commonString(_tracks, [](TrackInfo const & t) -> std::string const & { return t.title; }));
-        intField("Track #:", "trackNumber",
-                 commonInt(_tracks, [](TrackInfo const & t) { return t.trackNumber; }));
-    }
-    strField("Artist:", "artist",
+    // Unified field set — same regardless of how the dialog was opened.
+    // Empty fields the user never touches stay sparse and won't be written.
+    strField("Title:",        "title",
+             commonString(_tracks, [](TrackInfo const & t) -> std::string const & { return t.title; }));
+    intField("Track #:",      "trackNumber",
+             commonInt(_tracks, [](TrackInfo const & t) { return t.trackNumber; }));
+    strField("Artist:",       "artist",
              commonString(_tracks, [](TrackInfo const & t) -> std::string const & { return t.artist; }));
     strField("Album Artist:", "albumArtist",
              commonString(_tracks, [](TrackInfo const & t) -> std::string const & { return t.albumArtist; }));
-    strField("Album:", "album",
+    strField("Album:",        "album",
              commonString(_tracks, [](TrackInfo const & t) -> std::string const & { return t.album; }));
-    strField("Genre:", "genre",
+    strField("Genre:",        "genre",
              commonString(_tracks, [](TrackInfo const & t) -> std::string const & { return t.genre; }));
-    strField("Grouping:", "grouping",
+    strField("Grouping:",     "grouping",
              commonString(_tracks, [](TrackInfo const & t) -> std::string const & { return t.grouping; }));
-    intField("Disc:", "discNumber",
+    intField("Disc:",         "discNumber",
              commonInt(_tracks, [](TrackInfo const & t) { return t.discNumber; }));
-    intField("Year:", "year",
+    intField("Year:",         "year",
              commonInt(_tracks, [](TrackInfo const & t) { return t.year; }));
 }
 
@@ -319,19 +290,87 @@ void TagEditDialog::moveCursorEnd()
     f.cursorPos = static_cast<int>(f.value.size());
 }
 
-void TagEditDialog::commit()
+TagUpdate TagEditDialog::buildUpdate() const
 {
-    // Saving is disabled in this release — the dialog is view-only.
-    // Closing without invoking _onSave keeps the on-disk tags untouched.
-    close();
+    TagUpdate u;
+    for (auto const & f : _fields)
+    {
+        if (!f.dirty) continue;
+        std::string const k = f.key;
+        if (k == "title")            u.title       = f.value;
+        else if (k == "artist")      u.artist      = f.value;
+        else if (k == "album")       u.album       = f.value;
+        else if (k == "albumArtist") u.albumArtist = f.value;
+        else if (k == "genre")       u.genre       = f.value;
+        else if (k == "grouping")    u.grouping    = f.value;
+        else if (k == "trackNumber") u.trackNumber = parseIntOrZero(f.value);
+        else if (k == "discNumber")  u.discNumber  = parseIntOrZero(f.value);
+        else if (k == "year")        u.year        = parseIntOrZero(f.value);
+    }
+    return u;
+}
+
+bool TagEditDialog::hasEdits() const
+{
+    for (auto const & f : _fields)
+        if (f.dirty) return true;
+    return false;
 }
 
 bool TagEditDialog::handleKey(ventty::KeyEvent const & event)
 {
     if (!_open) return false;
 
+    // ----- Confirm Save overlay -----
+    if (_mode == Mode::ConfirmSave)
+    {
+        if (event.key == Key::Escape)
+        {
+            _mode = Mode::Edit;
+            return true;
+        }
+        if (event.key == Key::Left || event.key == Key::Right
+            || event.key == Key::Tab)
+        {
+            _confirmYes = !_confirmYes;
+            return true;
+        }
+        if (event.key == Key::Char && !event.ctrl && !event.alt)
+        {
+            char32_t const ch = event.ch;
+            if (ch == 'y' || ch == 'Y') { _confirmYes = true;  }
+            else if (ch == 'n' || ch == 'N') { _confirmYes = false; }
+        }
+        if (event.key == Key::Enter)
+        {
+            if (_confirmYes)
+            {
+                TagUpdate const u = buildUpdate();
+                if (_onSave && !u.empty())
+                    _onSave(_targetPaths, u);
+                close();
+            }
+            else
+            {
+                _mode = Mode::Edit;
+            }
+            return true;
+        }
+        return true; // swallow everything else
+    }
+
     if (event.key == Key::Escape)
     {
+        if (_mode == Mode::Edit)
+        {
+            // First ESC in Edit mode rolls the edits back and drops to View;
+            // a second ESC (now in View) closes. _tracks is the untouched
+            // snapshot from open(), so rebuilding fields restores originals.
+            buildFields();
+            _focusedField = 0;
+            _mode = Mode::View;
+            return true;
+        }
         close();
         return true;
     }
@@ -339,9 +378,34 @@ bool TagEditDialog::handleKey(ventty::KeyEvent const & event)
     if (_fields.empty())
         return true;
 
-    // Row movement: Up/Down jump between fields, Tab too. Home/End take
-    // the cursor to the start/end of the current value rather than
-    // jumping fields — that matches what users expect in a text input.
+    // ----- Mode toggles -----
+    // Ctrl+E in View mode: enter Edit mode.
+    if (_mode == Mode::View && event.key == Key::Char && event.ctrl
+        && (event.ch == 'e' || event.ch == 'E' || event.ch == 0x05))
+    {
+        _mode = Mode::Edit;
+        return true;
+    }
+    // Ctrl+S in Edit mode: bring up the save-confirm overlay (only if the
+    // user actually changed something — there's nothing to confirm otherwise).
+    if (_mode == Mode::Edit && event.key == Key::Char && event.ctrl
+        && (event.ch == 's' || event.ch == 'S' || event.ch == 0x13))
+    {
+        if (hasEdits())
+        {
+            _mode = Mode::ConfirmSave;
+            _confirmYes = true;
+        }
+        return true;
+    }
+
+    // ----- View mode swallows the rest (read-only) -----
+    // Arrow keys/Tab are inert here: there is no field to move into when
+    // nothing is editable, so they would only confuse the visual focus.
+    if (_mode == Mode::View)
+        return true;
+
+    // ----- Edit mode: row movement -----
     if (event.key == Key::Up)
     {
         if (_focusedField > 0) --_focusedField;
@@ -353,7 +417,7 @@ bool TagEditDialog::handleKey(ventty::KeyEvent const & event)
         return true;
     }
 
-    // Intra-line navigation.
+    // ----- Edit mode: text input -----
     if (event.key == Key::Left)
     {
         moveCursorLeft();
@@ -374,7 +438,6 @@ bool TagEditDialog::handleKey(ventty::KeyEvent const & event)
         moveCursorEnd();
         return true;
     }
-
     if (event.key == Key::Backspace)
     {
         backspaceUtf8();
@@ -386,13 +449,9 @@ bool TagEditDialog::handleKey(ventty::KeyEvent const & event)
         return true;
     }
 
+    // Enter in Edit mode does nothing — saving goes through Ctrl+S → confirm.
     if (event.key == Key::Enter)
-    {
-        // No multi-line text to insert, so Enter commits the form
-        // regardless of which field has focus.
-        commit();
         return true;
-    }
 
     if (event.key == Key::Char && !event.ctrl && !event.alt && event.ch >= 0x20)
     {
@@ -413,8 +472,6 @@ void TagEditDialog::draw(ventty::Window & window)
     int const screenW = window.width();
     int const screenH = window.height();
 
-    // Width: roughly 70 cols, clamped to terminal. Height: header + per-
-    // field row + footer + padding.
     int const fieldRows = static_cast<int>(_fields.size());
     int const desiredH  = 4 /*frame+header+sep+spacer*/ + fieldRows + 3 /*sep+footer+pad*/;
     int const dlgW = std::min(80, std::max(50, screenW - 8));
@@ -422,6 +479,20 @@ void TagEditDialog::draw(ventty::Window & window)
     int const x = (screenW - dlgW) / 2;
     int const y = (screenH - dlgH) / 2;
 
+    drawEditor(window, x, y, dlgW, dlgH);
+
+    if (_mode == Mode::ConfirmSave)
+    {
+        // Confirm overlay swallows the cursor — it has its own focus model.
+        _cursorScreenX = -1;
+        _cursorScreenY = -1;
+        drawConfirm(window);
+    }
+}
+
+void TagEditDialog::drawEditor(ventty::Window & window,
+                               int x, int y, int dlgW, int dlgH)
+{
     ventty::Style const frame {_theme.border,           _theme.background};
     ventty::Style const body  {_theme.browserFg,        _theme.browserBg};
     ventty::Style const accent{_theme.browserHeaderFg,  _theme.browserBg, ventty::Attr::Bold};
@@ -431,8 +502,14 @@ void TagEditDialog::draw(ventty::Window & window)
     window.fill(x, y, dlgW, dlgH, U' ', body);
     window.drawBox(x, y, dlgW, dlgH, frame, /*doubleLine=*/true);
 
-    // Title strip.
-    std::string title = " Edit Tags ";
+    // Title strip — title text reflects the current mode.
+    std::string title;
+    switch (_mode)
+    {
+    case Mode::View:        title = " Tags ";       break;
+    case Mode::Edit:        title = " Edit Tags ";  break;
+    case Mode::ConfirmSave: title = " Edit Tags ";  break;
+    }
     window.drawText(x + 2, y, title, accent);
 
     // Sub-header: scope description (the caller-provided label).
@@ -456,7 +533,10 @@ void TagEditDialog::draw(ventty::Window & window)
     int const valueX  = fieldX + labelW + 1;
     int const valueW  = (x + dlgW - 2) - valueX;
 
+    bool const editable = (_mode == Mode::Edit);
+
     int const firstRowY = sepY + 2;
+    int const fieldRows = static_cast<int>(_fields.size());
     for (int i = 0; i < fieldRows; ++i)
     {
         int const ry = firstRowY + i;
@@ -468,8 +548,11 @@ void TagEditDialog::draw(ventty::Window & window)
         ventty::Style const labelStyle = focused ? accent : body;
         window.drawText(fieldX, ry, f.label, labelStyle);
 
-        // Value cell — full-width fill so the focused row is obvious.
-        ventty::Style const cellStyle = focused ? sel : body;
+        // Value cell — in Edit mode the focused row gets the selection fill
+        // to mark the active edit target; in View mode we leave the row plain
+        // so the dialog reads as a static info panel.
+        ventty::Style const cellStyle =
+            (focused && editable) ? sel : body;
         window.fill(valueX, ry, valueW, 1, U' ', cellStyle);
 
         bool showingPlaceholder = false;
@@ -480,16 +563,20 @@ void TagEditDialog::draw(ventty::Window & window)
         {
             display = truncateToWidth(f.placeholder, valueW, "");
             showingPlaceholder = true;
-            if (focused) cursorCol = valueX; // park cursor at the start
+            if (focused && editable) cursorCol = valueX; // park cursor at the start
+        }
+        else if (!editable)
+        {
+            // Static view — just truncate. No horizontal scroll because
+            // there's no cursor to anchor it on.
+            display = truncateToWidth(f.value, valueW, "...");
         }
         else
         {
-            // Reserve one cell at the right edge so the cursor has a place
-            // to sit when it follows the last character. Compute a scroll
-            // offset (in display cells) that keeps the cursor inside the
-            // visible window — once the prefix exceeds the budget, push
-            // the visible window right so the cursor stays one cell from
-            // the right edge.
+            // Edit mode: reserve one cell at the right edge so the cursor
+            // has a place to sit when it follows the last character.
+            // Compute a scroll offset (in display cells) that keeps the
+            // cursor inside the visible window.
             int const reserve  = focused ? 1 : 0;
             int const showW    = std::max(0, valueW - reserve);
 
@@ -503,8 +590,6 @@ void TagEditDialog::draw(ventty::Window & window)
             if (showW > 0 && prefW >= showW)
                 scroll = prefW - (showW - 1);
 
-            // Drop `scroll` cells from the front, then take up to `showW`
-            // cells. Both walk codepoint boundaries — never byte slices.
             std::size_t pos = 0;
             int dropped = 0;
             while (pos < f.value.size() && dropped < scroll)
@@ -536,11 +621,11 @@ void TagEditDialog::draw(ventty::Window & window)
         }
 
         ventty::Style const textStyle = showingPlaceholder
-                                            ? (focused ? sel : dim)
+                                            ? (focused && editable ? sel : dim)
                                             : cellStyle;
         window.drawText(valueX, ry, display, textStyle);
 
-        if (focused && cursorCol >= 0)
+        if (focused && editable && cursorCol >= 0)
         {
             _cursorScreenX = cursorCol;
             _cursorScreenY = ry;
@@ -554,9 +639,62 @@ void TagEditDialog::draw(ventty::Window & window)
         window.putChar(x + i, footerSepY, ventty::HR_THIN, frame);
     }
 
-    std::string const footer = " Tab/Up/Down: move   ESC: close ";
+    std::string footer;
+    switch (_mode)
+    {
+    case Mode::View:
+        footer = " Ctrl+E: edit   ESC: close ";
+        break;
+    case Mode::Edit:
+        footer = " Tab/Up/Down: move   Ctrl+S: save   ESC: revert ";
+        break;
+    case Mode::ConfirmSave:
+        footer = " ←/→: choose   Enter: confirm   ESC: cancel ";
+        break;
+    }
     std::string footerCut = truncateToWidth(footer, dlgW - 4, "...");
     window.drawText(x + 2, y + dlgH - 1, footerCut, dim);
+}
+
+void TagEditDialog::drawConfirm(ventty::Window & window)
+{
+    int const screenW = window.width();
+    int const screenH = window.height();
+
+    int const boxW = 40;
+    int const boxH = 7;
+    int const bx = (screenW - boxW) / 2;
+    int const by = (screenH - boxH) / 2;
+
+    ventty::Style const frame {_theme.border,          _theme.background};
+    ventty::Style const body  {_theme.browserFg,       _theme.browserBg};
+    ventty::Style const accent{_theme.browserHeaderFg, _theme.browserBg, ventty::Attr::Bold};
+    ventty::Style const sel   {_theme.browserSelFg,    _theme.browserSelBg};
+    ventty::Style const dim   {_theme.separatorFg,     _theme.browserBg};
+
+    window.fill(bx, by, boxW, boxH, U' ', body);
+    window.drawBox(bx, by, boxW, boxH, frame, /*doubleLine=*/true);
+
+    std::string const title = " Save changes? ";
+    window.drawText(bx + 2, by, title, accent);
+
+    std::string const prompt = "Write tag changes to the selected files?";
+    std::string const promptCut = truncateToWidth(prompt, boxW - 4, "...");
+    int const promptX = bx + (boxW - static_cast<int>(promptCut.size())) / 2;
+    window.drawText(promptX, by + 2, promptCut, body);
+
+    std::string const yesLabel = "  Yes  ";
+    std::string const noLabel  = "  No  ";
+    int const btnRowY = by + 4;
+    int const yesX = bx + boxW / 2 - 8;
+    int const noX  = bx + boxW / 2 + 2;
+
+    ventty::Style const yesStyle = _confirmYes ? sel : body;
+    ventty::Style const noStyle  = !_confirmYes ? sel : body;
+    window.drawText(yesX, btnRowY, yesLabel, yesStyle);
+    window.drawText(noX,  btnRowY, noLabel,  noStyle);
+
+    (void)dim;
 }
 
 } // namespace vtplayer

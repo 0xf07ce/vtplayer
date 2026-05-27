@@ -154,6 +154,37 @@ namespace vtplayer
         void addToPlayQueue(std::filesystem::path const &path);
         void activateFromBrowser(std::vector<std::filesystem::path> const &paths);
 
+        /// Flip shuffle mode. Turning it on rebuilds `_shuffleOrder` with the
+        /// currently-playing (or otherwise about-to-play) track at the head;
+        /// turning it off discards the order. The visible play queue order
+        /// never changes — only future prev/next/auto-advance lookups do.
+        void toggleShuffleMode();
+
+        /// Build `_shuffleOrder` from the current play queue. When
+        /// `seedIndex` is a valid queue index, that track is pinned at
+        /// position 0 and the rest is shuffled after it; otherwise the
+        /// whole queue is shuffled with no seed.
+        void rebuildShuffleOrder(int seedIndex);
+
+        /// Walk `_shuffleOrder` forward (`dir=+1`) or backward (`dir=-1`),
+        /// skipping any entries no longer in the play queue, and return
+        /// the play-queue index of the next reachable track. -1 means the
+        /// pass is exhausted in that direction. When `wrap` is true the
+        /// walk wraps cyclically; otherwise it stops at the end.
+        /// `_shufflePos` is advanced to the returned position.
+        int shuffleAdvance(int dir, bool wrap);
+
+        /// After an explicit play (Enter, library activate, etc.), keep
+        /// the shuffle pointer in sync: jump `_shufflePos` to the track's
+        /// position in `_shuffleOrder`, or rebuild the order with this
+        /// track as the new head if it isn't present. No-op when shuffle
+        /// mode is off.
+        void syncShuffleTo(int queueIndex);
+
+        /// Resolve the path at `_shuffleOrder[_shufflePos]` to a current
+        /// play-queue index. -1 if the order is empty or stale.
+        int currentShuffleQueueIndex() const;
+
         /// Read an .m3u file and append its tracks to the current play queue.
         void appendPlayQueueFile(std::filesystem::path const &path);
 
@@ -273,6 +304,18 @@ namespace vtplayer
         Theme _theme;
         int _visualizerIndex = 1; // 1 = AudioSpectrum (default), 0 = Oscilloscope
         RepeatMode _repeatMode = RepeatMode::None;
+
+        // Shuffle state. Session-only — not persisted to config.
+        //
+        // `_shuffleOrder` is the playback order while shuffle is on, stored
+        // as paths so it survives reorders, removes, and inserts in the
+        // visible play queue. `_shufflePos` is the index into that order
+        // representing the currently-playing entry; -1 when the order is
+        // empty/unset. Walks (prev/next/auto-advance) consult this order
+        // instead of the queue's natural index sequence.
+        bool _shuffleMode = false;
+        std::vector<std::filesystem::path> _shuffleOrder;
+        int _shufflePos = -1;
 
         // Views
         std::unique_ptr<HeaderBar> _headerBar;

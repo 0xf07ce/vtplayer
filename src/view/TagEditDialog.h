@@ -18,27 +18,28 @@
 namespace vtplayer
 {
 
-/// Modal "edit tags" overlay. Centered, mirrors LibrarySearchDialog style.
-/// The set of editable fields depends on Scope:
-///   - Artist:          artist (writes both ARTIST and ALBUMARTIST)
-///   - Album:           artist, albumArtist, album, genre, disc, year
-///                      (title / track number stay per-track)
-///   - SingleTrack:     every tag field
-///   - MultiTrack:      every field, but empty == "leave unchanged" — a
-///                      field is only written when the user actually edits
-///                      it (the dirty flag flips on first keystroke).
+/// Modal "tags" overlay. Always shows the same set of fields regardless of
+/// what the caller selected — UX consistency wins over scope-specific
+/// trimming. The dialog has three modes:
+///   - View:         title is "Tags"; fields are read-only. Ctrl+E enters
+///                   Edit mode. ESC closes. Arrow keys are inert — there is
+///                   nothing to focus when nothing is editable.
+///   - Edit:         title is "Edit Tags"; fields accept text input.
+///                   Ctrl+S brings up a save confirmation. ESC reverts all
+///                   pending edits and drops back to View (a second ESC then
+///                   closes); nothing is written until the user confirms.
+///   - ConfirmSave:  Yes/No overlay on top of the editor. Yes invokes
+///                   _onSave with a sparse update built from the fields
+///                   the user actually touched (the dirty flag); No
+///                   returns to Edit mode.
+///
+/// Fields the user never typed in stay sparse — they are *not* written, so
+/// loading a multi-track selection with mixed values and editing only one
+/// row will not clobber the others.
 class TagEditDialog
 {
 public:
-    enum class Scope
-    {
-        Artist,
-        Album,
-        SingleTrack,
-        MultiTrack,
-    };
-
-    /// Hand-back from a successful save. `targets` is the path list passed
+    /// Hand-back from a confirmed save. `targets` is the path list passed
     /// in by open(); `update` is the sparse change to apply to each.
     using OnSave =
         std::function<void(std::vector<std::filesystem::path> const & targets,
@@ -47,12 +48,10 @@ public:
     void setTheme(Theme const & theme) { _theme = theme; }
     void setOnSave(OnSave cb) { _onSave = std::move(cb); }
 
-    /// Open the dialog. `tracks` is the full list of tracks to edit (used
-    /// to seed initial field values — common values shown, mixed values
-    /// shown as "<various>"). `header` is the title strip text.
-    void open(Scope scope,
-              std::string header,
-              std::vector<TrackInfo> tracks);
+    /// Open the dialog over `tracks`. `header` is the sub-title shown
+    /// below the main title strip — used to describe what's being viewed
+    /// (e.g. "Album: Kid A  (12 tracks)").
+    void open(std::string header, std::vector<TrackInfo> tracks);
     void close();
     bool isOpen() const { return _open; }
 
@@ -60,14 +59,20 @@ public:
     void draw(ventty::Window & window);
 
     /// Terminal-cell coordinates where the hardware cursor should sit
-    /// while this dialog owns input. -1 means "no cursor". Updated by
-    /// draw(); read by the host run loop right after Terminal::render()
-    /// so the cursor lands on top of the latest cell output.
+    /// while this dialog owns input. -1 means "no cursor". Only the Edit
+    /// mode parks a cursor; View mode hides it. Updated by draw().
     bool wantsCursor() const { return _open && _cursorScreenX >= 0; }
     int cursorScreenX() const { return _cursorScreenX; }
     int cursorScreenY() const { return _cursorScreenY; }
 
 private:
+    enum class Mode
+    {
+        View,
+        Edit,
+        ConfirmSave,
+    };
+
     struct Field
     {
         std::string label;       ///< display label, e.g. "Artist:"
@@ -88,19 +93,30 @@ private:
     void moveCursorRight();
     void moveCursorHome();
     void moveCursorEnd();
-    void commit();
+
+    /// Assemble a sparse TagUpdate from the dirty fields.
+    TagUpdate buildUpdate() const;
+    /// True if at least one field has been touched in this Edit session.
+    bool hasEdits() const;
+
+    void drawEditor(ventty::Window & window, int x, int y, int dlgW, int dlgH);
+    void drawConfirm(ventty::Window & window);
 
     Theme _theme;
     OnSave _onSave;
 
     bool _open = false;
-    Scope _scope = Scope::SingleTrack;
+    Mode _mode = Mode::View;
     std::string _header;
     std::vector<TrackInfo> _tracks;
     std::vector<std::filesystem::path> _targetPaths;
 
     std::vector<Field> _fields;
     int _focusedField = 0;
+
+    /// Default the confirm overlay to Yes — the user just pressed
+    /// Ctrl+S, so making Enter mean "go ahead and save" matches intent.
+    bool _confirmYes = true;
 
     int _cursorScreenX = -1;
     int _cursorScreenY = -1;

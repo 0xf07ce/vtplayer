@@ -4,7 +4,6 @@
 #include "PlayQueue.h"
 
 #include <algorithm>
-#include <random>
 
 namespace vtplayer
 {
@@ -34,13 +33,6 @@ void PlayQueue::swap(int i, int j)
     int const sz = static_cast<int>(_tracks.size());
     if (i == j || i < 0 || j < 0 || i >= sz || j >= sz) return;
     std::swap(_tracks[i], _tracks[j]);
-}
-
-void PlayQueue::shuffle()
-{
-    if (_tracks.size() < 2) return;
-    static std::mt19937 rng{std::random_device{}()};
-    std::shuffle(_tracks.begin(), _tracks.end(), rng);
 }
 
 } // namespace vtplayer

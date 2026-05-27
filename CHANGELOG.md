@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## 0.13.0 (2026-05-27)
+
+- Shuffle mode (`S` on the play screen). Toggling it builds a randomized
+  playback order pinned to the currently-playing track; next / prev /
+  auto-advance walk that order instead of the queue's natural index
+  sequence. The visible play queue order is never reshuffled — only the
+  hidden walk changes — so the user's manual ordering is preserved.
+  The shuffle order is stored as paths so queue inserts, removes, and
+  reorders don't invalidate it. `TransportBar` shows an `s` glyph
+  immediately to the left of the repeat indicator while shuffle is on
+  (e.g. `sR` for shuffle + repeat-all). State is session-only and not
+  persisted to config. The one-shot "shuffle now" action and its
+  `PlayQueue::shuffle()` / `PlayQueueView::shuffle()` helpers are gone.
+- `TagEditDialog` overhauled into three modes. Opening with `T` now
+  lands in **View** (title "Tags", fields read-only); `Ctrl+E` switches
+  to **Edit** (title "Edit Tags", fields accept input); `Ctrl+S` from
+  Edit raises a **ConfirmSave** Yes/No overlay before anything is
+  written. ESC in Edit reverts pending edits and drops back to View;
+  a second ESC then closes. The `Scope` enum (Artist / Album /
+  SingleTrack / MultiTrack) is gone — every field is shown regardless
+  of selection, but multi-track edits stay sparse because only fields
+  the user actually typed in are committed. View mode hides the
+  cursor; only Edit parks one.
+
 ## 0.12.0 (2026-05-26)
 
 - Left-panel modes 1 and 2 were redesigned. The labels swap (key 1 is now

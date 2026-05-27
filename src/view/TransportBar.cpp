@@ -43,20 +43,32 @@ void TransportBar::draw(ventty::Window & window)
     }
     window.putChar(r.x + r.width - 1, y1, ventty::DOUBLE_BOX.br, baseBorder);
 
-    // Embed transport controls into the border line
+    // Embed transport controls into the border line. The two indicator
+    // slots are reserved unconditionally so toggling either mode doesn't
+    // shift the track name to the right — when an indicator is off, the
+    // existing double-line border glyph already drawn on that column shows
+    // through.
     int cx = r.x + 2;
+    ventty::Style indicatorStyle{_theme.transportStateFg, _theme.transportBg};
 
-    // Repeat-mode indicator. The play/pause/stop state is conveyed by the
-    // play-time on the right, so this slot is reused for the repeat mode:
-    //   R = repeat-all, r = repeat-1. When no repeat, leave the existing
-    //   double-line border glyph untouched so the slot blends in.
+    // Shuffle slot (always reserved). Sits immediately to the left of the
+    // repeat slot so the two render as a single label ("sR" / "sr" / "s")
+    // when both modes are on.
+    if (_shuffleMode)
+    {
+        window.drawText(cx, y1, "s", indicatorStyle);
+    }
+    cx++;
+
+    // Repeat slot (always reserved). The play/pause/stop state is conveyed
+    // by the play-time on the right, so this slot is reused for the repeat
+    // mode: R = repeat-all, r = repeat-1.
     if (_repeatMode != RepeatMode::None)
     {
         char repeatGlyph = (_repeatMode == RepeatMode::One) ? 'r' : 'R';
-        window.drawText(cx, y1, std::string(1, repeatGlyph),
-                        ventty::Style{_theme.transportStateFg, _theme.transportBg});
+        window.drawText(cx, y1, std::string(1, repeatGlyph), indicatorStyle);
     }
-    cx += 2;
+    cx += 2; // repeat slot + 1 col padding before the track name
 
     // Track name (display-width truncation; advance cx by display width, not byte size)
     if (!_trackName.empty())

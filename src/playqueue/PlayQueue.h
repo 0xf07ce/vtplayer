@@ -37,10 +37,6 @@ public:
     /// Swap two entries. No-op if either index is out of range or equal.
     void swap(int i, int j);
 
-    /// Randomize the order in place. Caller is responsible for re-locating any
-    /// tracked indices (e.g. the currently-playing track).
-    void shuffle();
-
 private:
     std::vector<TrackInfo> _tracks;
 };

@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <random>
 #include <system_error>
 #include <thread>
 
@@ -559,6 +560,26 @@ namespace vtplayer
                 {
                     playTrack(current);
                 }
+                else if (_shuffleMode)
+                {
+                    // Walk the shuffle order without wrapping; a finished
+                    // pass ends playback unless repeat-all is on, in which
+                    // case we re-shuffle a fresh pass and start over.
+                    int idx = shuffleAdvance(+1, /*wrap=*/false);
+                    if (idx < 0 && _repeatMode == RepeatMode::All && count > 0)
+                    {
+                        rebuildShuffleOrder(/*seedIndex=*/-1);
+                        idx = currentShuffleQueueIndex();
+                    }
+                    if (idx >= 0)
+                    {
+                        playTrack(idx);
+                    }
+                    else
+                    {
+                        _playQueueView->setPlayingIndex(-1);
+                    }
+                }
                 else if (current + 1 < count)
                 {
                     playTrack(current + 1);
@@ -577,6 +598,7 @@ namespace vtplayer
         // Update transport
         _transportBar->setState(state);
         _transportBar->setRepeatMode(_repeatMode);
+        _transportBar->setShuffleMode(_shuffleMode);
         _transportBar->setTrackName(_audio.currentTrack().title);
         _transportBar->setPosition(_audio.position());
         _transportBar->setDuration(_audio.duration());
@@ -698,7 +720,7 @@ namespace vtplayer
             {"  N / P",                 "Next / Previous track", false},
             {"  < / >",                 "Seek -5s / +5s", false},
             {"  R",                     "Cycle repeat: none -> all -> one", false},
-            {"  S",                     "Shuffle play queue", false},
+            {"  S",                     "Toggle shuffle mode (next/prev follow a random order)", false},
             {"  G",                     "Toggle gain normalization (ReplayGain / auto-gain)", false},
             {"", "", false},
             {"Browser - Library", "", true},
@@ -944,24 +966,34 @@ namespace vtplayer
             return;
         }
 
-        // Modal search dialog consumes all input while open.
+        // Modal overlays consume all input while open. When a dialog closes
+        // we ask the terminal for a full redraw: the diff renderer keys on
+        // per-cell equality and skips the lead cell of a CJK fullwidth char
+        // even when its companion cell was overwritten by the overlay's
+        // frame, leaving the border glyph stuck in the second column of any
+        // wide character the dialog had crossed. A full redraw re-emits the
+        // wide char, restoring the underlying content.
         if (_searchDialog && _searchDialog->isOpen())
         {
             _searchDialog->handleKey(event);
+            if (!_searchDialog->isOpen() && _terminal)
+                _terminal->forceRedraw();
             return;
         }
 
-        // Modal tag editor consumes all input while open.
         if (_tagEditDialog && _tagEditDialog->isOpen())
         {
             _tagEditDialog->handleKey(event);
+            if (!_tagEditDialog->isOpen() && _terminal)
+                _terminal->forceRedraw();
             return;
         }
 
-        // Modal context menu consumes all input while open.
         if (_contextMenu && _contextMenu->isOpen())
         {
             _contextMenu->handleKey(event);
+            if (!_contextMenu->isOpen() && _terminal)
+                _terminal->forceRedraw();
             return;
         }
 
@@ -1306,10 +1338,12 @@ namespace vtplayer
             return;
         }
 
-        // s: shuffle current play queue (one-shot reorder)
+        // s: toggle shuffle mode. The visible play queue order is left
+        // intact; prev/next/auto-advance instead walk an internal random
+        // order seeded with the currently-playing track.
         if (event.key == Key::Char && (ch == 's' || ch == 'S') && !event.alt && !event.ctrl)
         {
-            _playQueueView->shuffle();
+            toggleShuffleMode();
             return;
         }
 
@@ -1557,7 +1591,6 @@ namespace vtplayer
 
         std::vector<TrackInfo> tracks;
         std::string headerText;
-        TagEditDialog::Scope scope = TagEditDialog::Scope::SingleTrack;
 
         if (_focus == FocusPanel::PlayQueue && _playQueueView)
         {
@@ -1579,14 +1612,12 @@ namespace vtplayer
             }
             if (tracks.empty())
                 return;
-            scope = tracks.size() > 1 ? TagEditDialog::Scope::MultiTrack
-                                      : TagEditDialog::Scope::SingleTrack;
             if (tracks.size() == 1)
                 headerText = "Track: " + (tracks[0].title.empty()
                                               ? tracks[0].path.filename().string()
                                               : tracks[0].title);
             else
-                headerText = "Editing " + std::to_string(tracks.size())
+                headerText = std::to_string(tracks.size())
                              + " tracks (queue)";
         }
         else if (_screen == Screen::Browser && _focus == FocusPanel::FileBrowser)
@@ -1603,39 +1634,27 @@ namespace vtplayer
                 if (sel.tracks.empty())
                     return;
                 tracks = std::move(sel.tracks);
+                // Header reflects which library node the user opened the
+                // dialog over — the dialog body itself is identical in all
+                // cases, so this is purely informational.
+                char const * kindLabel = "Selection";
                 switch (sel.kind)
                 {
-                case LibraryView::SelectionKind::Grouping:
-                    // No dedicated Scope::Grouping — fall back to the
-                    // multi-track form which exposes every field including
-                    // the Grouping row, so editing in bulk Just Works.
-                    scope = tracks.size() > 1 ? TagEditDialog::Scope::MultiTrack
-                                              : TagEditDialog::Scope::SingleTrack;
-                    headerText = "Grouping: " + sel.label
+                case LibraryView::SelectionKind::Grouping:       kindLabel = "Grouping"; break;
+                case LibraryView::SelectionKind::Artist:         kindLabel = "Artist";   break;
+                case LibraryView::SelectionKind::Album:          kindLabel = "Album";    break;
+                case LibraryView::SelectionKind::DirectoryGroup: kindLabel = "Folder";   break;
+                case LibraryView::SelectionKind::Track:          kindLabel = "Track";    break;
+                case LibraryView::SelectionKind::None:           return;
+                }
+                if (sel.kind == LibraryView::SelectionKind::Track)
+                {
+                    headerText = std::string(kindLabel) + ": " + sel.label;
+                }
+                else
+                {
+                    headerText = std::string(kindLabel) + ": " + sel.label
                                  + "  (" + std::to_string(tracks.size()) + " tracks)";
-                    break;
-                case LibraryView::SelectionKind::Artist:
-                    scope = TagEditDialog::Scope::Artist;
-                    headerText = "Artist: " + sel.label
-                                 + "  (" + std::to_string(tracks.size()) + " tracks)";
-                    break;
-                case LibraryView::SelectionKind::Album:
-                    scope = TagEditDialog::Scope::Album;
-                    headerText = "Album: " + sel.label
-                                 + "  (" + std::to_string(tracks.size()) + " tracks)";
-                    break;
-                case LibraryView::SelectionKind::DirectoryGroup:
-                    scope = tracks.size() > 1 ? TagEditDialog::Scope::MultiTrack
-                                              : TagEditDialog::Scope::SingleTrack;
-                    headerText = "Folder: " + sel.label
-                                 + "  (" + std::to_string(tracks.size()) + " tracks)";
-                    break;
-                case LibraryView::SelectionKind::Track:
-                    scope = TagEditDialog::Scope::SingleTrack;
-                    headerText = "Track: " + sel.label;
-                    break;
-                case LibraryView::SelectionKind::None:
-                    return;
                 }
             }
             else if (_fileBrowser)
@@ -1663,7 +1682,6 @@ namespace vtplayer
                     seed.format = TrackInfo::formatFromPath(entry->path);
                 }
                 tracks.push_back(std::move(seed));
-                scope = TagEditDialog::Scope::SingleTrack;
                 headerText = "File: " + entry->path.filename().string();
             }
         }
@@ -1671,7 +1689,7 @@ namespace vtplayer
         if (tracks.empty())
             return;
 
-        _tagEditDialog->open(scope, std::move(headerText), std::move(tracks));
+        _tagEditDialog->open(std::move(headerText), std::move(tracks));
         if (_terminal)
             _terminal->forceRedraw();
     }
@@ -1724,6 +1742,7 @@ namespace vtplayer
             if (update.album)       merged.album       = *update.album;
             if (update.albumArtist) merged.albumArtist = *update.albumArtist;
             if (update.genre)       merged.genre       = *update.genre;
+            if (update.grouping)    merged.grouping    = *update.grouping;
             if (update.trackNumber) merged.trackNumber = *update.trackNumber;
             if (update.discNumber)  merged.discNumber  = *update.discNumber;
             if (update.year)        merged.year        = *update.year;
@@ -1751,6 +1770,7 @@ namespace vtplayer
                 if (update.album)       cur.album       = *update.album;
                 if (update.albumArtist) cur.albumArtist = *update.albumArtist;
                 if (update.genre)       cur.genre       = *update.genre;
+                if (update.grouping)    cur.grouping    = *update.grouping;
                 if (update.trackNumber) cur.trackNumber = *update.trackNumber;
                 if (update.discNumber)  cur.discNumber  = *update.discNumber;
                 if (update.year)        cur.year        = *update.year;
@@ -1807,6 +1827,7 @@ namespace vtplayer
         if (_audio.load(*track) && _audio.play())
         {
             _playQueueView->setPlayingIndex(index);
+            syncShuffleTo(index);
         }
         else
         {
@@ -1816,24 +1837,149 @@ namespace vtplayer
 
     void Application::playNext()
     {
-        int current = _playQueueView->playingIndex();
         int count = _playQueueView->trackCount();
         if (count == 0)
             return;
 
+        if (_shuffleMode)
+        {
+            int idx = shuffleAdvance(+1, /*wrap=*/true);
+            if (idx >= 0) playTrack(idx);
+            return;
+        }
+
+        int current = _playQueueView->playingIndex();
         int next = (current + 1) % count;
         playTrack(next);
     }
 
     void Application::playPrev()
     {
-        int current = _playQueueView->playingIndex();
         int count = _playQueueView->trackCount();
         if (count == 0)
             return;
 
+        if (_shuffleMode)
+        {
+            int idx = shuffleAdvance(-1, /*wrap=*/true);
+            if (idx >= 0) playTrack(idx);
+            return;
+        }
+
+        int current = _playQueueView->playingIndex();
         int prev = (current - 1 + count) % count;
         playTrack(prev);
+    }
+
+    void Application::toggleShuffleMode()
+    {
+        _shuffleMode = !_shuffleMode;
+        if (_shuffleMode)
+        {
+            int seed = _playQueueView->playingIndex();
+            if (seed < 0) seed = _playQueueView->selectedIndex();
+            rebuildShuffleOrder(seed);
+        }
+        else
+        {
+            _shuffleOrder.clear();
+            _shufflePos = -1;
+        }
+    }
+
+    void Application::rebuildShuffleOrder(int seedIndex)
+    {
+        _shuffleOrder.clear();
+        _shufflePos = -1;
+        int const count = _playQueueView->trackCount();
+        if (count <= 0) return;
+
+        if (seedIndex < 0 || seedIndex >= count) seedIndex = -1;
+
+        std::vector<int> indices;
+        indices.reserve(count);
+        for (int i = 0; i < count; ++i)
+        {
+            if (i != seedIndex) indices.push_back(i);
+        }
+
+        static std::mt19937 rng{std::random_device{}()};
+        std::shuffle(indices.begin(), indices.end(), rng);
+
+        _shuffleOrder.reserve(count);
+        if (seedIndex >= 0)
+        {
+            if (auto const *t = _playQueueView->track(seedIndex))
+                _shuffleOrder.push_back(t->path);
+        }
+        for (int i : indices)
+        {
+            if (auto const *t = _playQueueView->track(i))
+                _shuffleOrder.push_back(t->path);
+        }
+        if (!_shuffleOrder.empty()) _shufflePos = 0;
+    }
+
+    int Application::shuffleAdvance(int dir, bool wrap)
+    {
+        if (_shuffleOrder.empty() || dir == 0) return -1;
+        int const orderSize = static_cast<int>(_shuffleOrder.size());
+
+        // Skip over paths that have since been removed from the queue.
+        // Bounded to one full pass so a fully stale order can't spin forever.
+        for (int steps = 0; steps < orderSize; ++steps)
+        {
+            int next = _shufflePos + dir;
+            if (next < 0 || next >= orderSize)
+            {
+                if (!wrap) return -1;
+                next = (next % orderSize + orderSize) % orderSize;
+            }
+            _shufflePos = next;
+
+            auto const &p = _shuffleOrder[_shufflePos];
+            int const n = _playQueueView->trackCount();
+            for (int i = 0; i < n; ++i)
+            {
+                auto const *t = _playQueueView->track(i);
+                if (t && t->path == p) return i;
+            }
+        }
+        return -1;
+    }
+
+    void Application::syncShuffleTo(int queueIndex)
+    {
+        if (!_shuffleMode) return;
+        auto const *track = _playQueueView->track(queueIndex);
+        if (!track) return;
+        for (int i = 0; i < static_cast<int>(_shuffleOrder.size()); ++i)
+        {
+            if (_shuffleOrder[i] == track->path)
+            {
+                _shufflePos = i;
+                return;
+            }
+        }
+        // The picked track is not in the current shuffle order (queue was
+        // replaced, or the user reached for a fresh track from the library).
+        // Start a new pass with it at the head.
+        rebuildShuffleOrder(queueIndex);
+    }
+
+    int Application::currentShuffleQueueIndex() const
+    {
+        if (_shuffleOrder.empty() || _shufflePos < 0 ||
+            _shufflePos >= static_cast<int>(_shuffleOrder.size()))
+            return -1;
+        auto const &p = _shuffleOrder[_shufflePos];
+        int const n = _playQueueView->trackCount();
+        for (int i = 0; i < n; ++i)
+        {
+            auto const *t = _playQueueView->track(i);
+            if (t && t->path == p) return i;
+        }
+        return -1;
     }
 
     namespace

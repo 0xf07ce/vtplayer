@@ -120,37 +120,6 @@ void PlayQueueView::clear()
     }
 }
 
-void PlayQueueView::shuffle()
-{
-    if (_queue.size() < 2) return;
-
-    std::filesystem::path playingPath;
-    if (_playingIndex >= 0 && _playingIndex < _queue.size())
-    {
-        playingPath = _queue.tracks()[_playingIndex].path;
-    }
-
-    _queue.shuffle();
-
-    if (!playingPath.empty())
-    {
-        auto const & tracks = _queue.tracks();
-        for (int i = 0; i < static_cast<int>(tracks.size()); ++i)
-        {
-            if (tracks[i].path == playingPath)
-            {
-                _playingIndex = i;
-                break;
-            }
-        }
-    }
-
-    _selectedIndex = 0;
-    _scrollOffset = 0;
-    clearMultiSelection();
-    scrollToSelected();
-}
-
 void PlayQueueView::setTracks(std::vector<TrackInfo> tracks)
 {
     bool const hadPlaying = (_playingIndex >= 0);
