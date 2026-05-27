@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## 0.13.2 (2026-05-28)
+
+- Transport keys remapped: `]` / `[` now drive next / previous
+  track. The old `n` / `p` bindings are freed so `n` / `N` can be
+  reused for vim-style search-result navigation (see below).
+- `LibrarySearchDialog` gained a filter tab bar at the top of the
+  dialog — `Any` / `Artist` / `Album` / `Title` / `Year`, cycled
+  with `Tab` and `Shift+Tab`. `Any` matches every searchable field
+  (the previous behavior); the others narrow to one. The selected
+  filter persists across opens within a session.
+- The dialog's match list survives a close, so `n` / `N` in the
+  library panel step forward / backward through the last search's
+  hits (vim-style) without reopening the dialog. The snapshot is
+  invalidated whenever the library is rebuilt (rescan or root
+  switch) so navigation never resolves a stale path. If `n` / `N`
+  fires while the left panel is in FileBrowser, the app first
+  switches into a library projection so the located track is
+  actually visible.
+- ESC menu reordered: `Focus playing track` is now the first
+  entry, and it does the right thing for whichever panel has
+  focus — on the play queue it scrolls the currently-playing
+  track to the top of the visible area; on the library it locates
+  the playing track in the tree (switching into the AlbumArtist
+  slot if the left panel is currently in FileBrowser).
+- Bumped vendored `ventty` to `v0.3.1`.
+
 ## 0.13.1 (2026-05-27)
 
 - Idle-aware main loop. The run loop no longer spins at a fixed

@@ -413,6 +413,13 @@ namespace vtplayer
         _searchDialog->setTheme(_theme);
         _searchDialog->setOnLocate([this](std::filesystem::path const &path)
                                    {
+                                       // Nav (n / N) can fire after the user has
+                                       // switched into FileBrowser, where the
+                                       // library tree isn't visible. Re-enter a
+                                       // library projection so the locate is
+                                       // actually seen.
+                                       if (!leftIsLibrary())
+                                           setLeftMode(LeftMode::AlbumArtistTree);
                                        if (_libraryView)
                                            _libraryView->locate(path);
                                        if (_terminal)
@@ -770,7 +777,7 @@ namespace vtplayer
             {"", "", false},
             {"Playback", "", true},
             {"  Space",                 "Play / Pause", false},
-            {"  N / P",                 "Next / Previous track", false},
+            {"  [ / ]",                 "Previous / Next track", false},
             {"  < / >",                 "Seek -5s / +5s", false},
             {"  R",                     "Cycle repeat: none -> all -> one", false},
             {"  S",                     "Toggle shuffle mode (next/prev follow a random order)", false},
@@ -783,7 +790,8 @@ namespace vtplayer
             {"  Left / Right",          "Collapse / expand selected group", false},
             {"  Enter",                 "Replace play queue with artist/album/track and play", false},
             {"  A",                     "Append artist/album/track to play queue", false},
-            {"  /",                     "Search library", false},
+            {"  /",                     "Search library (Tab cycles filter: Any/Artist/Album/Title/Year)", false},
+            {"  N / Shift+N",           "Jump to next / previous search result", false},
             {"  T",                     "Edit tags (artist/album/track or folder)", false},
             {"", "", false},
             {"Browser - Files", "", true},
@@ -1400,17 +1408,29 @@ namespace vtplayer
             return;
         }
 
-        // n: next track
-        if (event.key == Key::Char && (ch == 'n' || ch == 'N') && !event.alt && !event.ctrl)
+        // ]: next track
+        if (event.key == Key::Char && ch == ']' && !event.alt && !event.ctrl)
         {
             playNext();
             return;
         }
 
-        // p: previous track
-        if (event.key == Key::Char && (ch == 'p' || ch == 'P') && !event.alt && !event.ctrl)
+        // [: previous track
+        if (event.key == Key::Char && ch == '[' && !event.alt && !event.ctrl)
         {
             playPrev();
+            return;
+        }
+
+        // n / N: vim-style next / previous search result. Active only on the
+        // Browser screen and only when the library search dialog left a
+        // navigable result set behind; otherwise the keys fall through and
+        // do nothing.
+        if (event.key == Key::Char && (ch == 'n' || ch == 'N') && !event.alt && !event.ctrl
+            && _screen == Screen::Browser && _searchDialog && _searchDialog->hasNav())
+        {
+            if (ch == 'N') _searchDialog->navigatePrev();
+            else           _searchDialog->navigateNext();
             return;
         }
 
@@ -1494,6 +1514,9 @@ namespace vtplayer
         std::vector<std::string> items;
         _contextMenuActions.clear();
 
+        items.emplace_back("Focus playing track");
+        _contextMenuActions.push_back(MenuAction::LocatePlaying);
+
         if (!leftIsLibrary())
         {
             items.emplace_back("Set current directory as library root");
@@ -1504,9 +1527,6 @@ namespace vtplayer
             items.emplace_back("Rescan library");
             _contextMenuActions.push_back(MenuAction::RescanLibrary);
         }
-
-        items.emplace_back("Locate playing track in library");
-        _contextMenuActions.push_back(MenuAction::LocatePlaying);
 
         items.emplace_back("Exit");
         _contextMenuActions.push_back(MenuAction::Exit);
@@ -2228,6 +2248,11 @@ namespace vtplayer
             if (_leftMode != LeftMode::FileBrowser && !_libraryAnchor.empty())
                 _libraryView->locateForMode(_libraryAnchor);
         }
+        // Saved search nav (n / N) holds paths into the previous index —
+        // drop them so we don't locate a track that was removed or
+        // re-tagged out of the result set.
+        if (_searchDialog)
+            _searchDialog->invalidateNav();
 
         // Persist the scanned tree's signature so the next startup can skip
         // the walk. Only on a full completion (not a shutdown bail-out).
@@ -2301,20 +2326,33 @@ namespace vtplayer
         {
             _libraryRepo->clear();
         }
+        if (_searchDialog)
+            _searchDialog->invalidateNav();
 
         scanLibrary(/*force=*/true);
     }
 
     void Application::locatePlayingInLibrary()
     {
+        // Right-panel focus → scroll the play queue so the currently-playing
+        // track is shown at the top of the visible area.
+        if (_focus == FocusPanel::PlayQueue)
+        {
+            if (_playQueueView)
+                _playQueueView->focusPlayingTrack();
+            return;
+        }
+
+        // Left-panel focus → locate the playing track inside the library
+        // tree. Switch out of FileBrowser into the "Album" slot (AlbumArtist
+        // tree) if needed, since locate only makes sense in a library
+        // projection.
         if (!_libraryView)
             return;
         auto const &path = _audio.currentTrack().path;
         if (path.empty())
             return;
 
-        // Locate only makes sense in a library projection; switch out of
-        // FileBrowser into the "Album" slot (AlbumArtist tree) if needed.
         if (!leftIsLibrary())
         {
             setLeftMode(LeftMode::AlbumArtistTree);

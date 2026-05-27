@@ -43,6 +43,11 @@ public:
     int playingIndex() const { return _playingIndex; }
     void setPlayingIndex(int idx) { _playingIndex = idx; }
 
+    /// Scroll the list so the currently-playing track sits at the top of the
+    /// visible area, then move the cursor onto it. No-op if nothing is
+    /// playing.
+    void focusPlayingTrack();
+
     TrackInfo const * selectedTrack() const;
     TrackInfo const * track(int idx) const;
     int trackCount() const { return _queue.size(); }

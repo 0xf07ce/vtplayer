@@ -21,13 +21,31 @@ class MediaLibrary;
 
 /// Modal search overlay backed by the in-memory MediaLibrary index.
 /// One-line query field on top, live-filtered results below. Matching is
-/// case-insensitive substring on title / artist / album / albumArtist /
-/// genre. Enter on a result closes the dialog and locates that track in
-/// the library tree (cursor moves there, parents expand) — it does not
-/// touch the play queue or playback. ESC closes without locating.
+/// case-insensitive substring; the field set is selected by a tab bar at
+/// the top of the dialog (Any / Artist / Album / Title / Year), cycled
+/// with Tab and Shift+Tab. Enter on a result closes the dialog and locates
+/// that track in the library tree (cursor moves there, parents expand) —
+/// it does not touch the play queue or playback. ESC closes without
+/// locating.
+///
+/// The result list survives a close so the host can step through hits
+/// with `navigateNext()` / `navigatePrev()` (driven by `n` / `N` in the
+/// library panel, vim-style). `invalidateNav()` must be called whenever
+/// the library is rebuilt to drop the now-stale snapshot.
 class LibrarySearchDialog
 {
 public:
+    /// Which fields the query is matched against. `Any` ORs every searchable
+    /// field together (the historical default); the others narrow to one.
+    enum class Filter
+    {
+        Any,
+        Artist,
+        Album,
+        Title,
+        Year,
+    };
+
     /// Fired with the chosen track's path when the user presses Enter on a
     /// result. The host moves the LibraryView cursor to it.
     using OnLocate = std::function<void(std::filesystem::path const & path)>;
@@ -53,13 +71,25 @@ public:
     int cursorScreenX() const { return _cursorScreenX; }
     int cursorScreenY() const { return _cursorScreenY; }
 
+    /// Step to the next / previous saved match and re-fire `_onLocate`.
+    /// Returns true iff a result was located. Used by the host's `n` / `N`
+    /// keys outside the dialog (vim-style search navigation).
+    bool navigateNext();
+    bool navigatePrev();
+    bool hasNav() const { return !_navPaths.empty(); }
+
+    /// Drop the saved match snapshot. Call when the library index changes
+    /// (rescan, root switch) so `n` / `N` don't locate paths that may have
+    /// vanished from the tree.
+    void invalidateNav();
+
 private:
-    /// Build `_haystack`: one pre-lowered, tab-joined searchable string per
-    /// track. Done once when the dialog opens so each subsequent keystroke
-    /// is a flat O(n) substring sweep over already-lowered text instead of
-    /// repeatedly re-lowering five fields per track.
+    /// Build `_haystack`: per-track pre-lowered fields plus a tab-joined
+    /// "any" blob. Done once when the dialog opens so each subsequent
+    /// keystroke is a flat O(n) substring sweep over already-lowered text.
     void rebuildHaystack();
     void recomputeMatches();
+    void cycleFilter(int dir);
     void insertUtf8(char32_t ch);
     void backspaceUtf8();
     void deleteForward();
@@ -73,6 +103,7 @@ private:
     OnLocate _onLocate;
 
     bool _open = false;
+    Filter _filter = Filter::Any;                    ///< Persists across opens
     std::string _query;                              ///< UTF-8 query text
     int  _cursorBytePos = 0;                         ///< insertion point in _query
     std::vector<TrackInfo const *> _matches;
@@ -85,9 +116,20 @@ private:
     struct HaystackRow
     {
         TrackInfo const * track;
-        std::string lower;
+        std::string any;
+        std::string artist;
+        std::string album;
+        std::string title;
+        std::string year;
     };
     std::vector<HaystackRow> _haystack;
+
+    /// Persistent snapshot for `n` / `N` navigation outside the dialog.
+    /// Stored as paths (not pointers) so that a library rebuild between
+    /// close() and the next nav doesn't dangle — the host re-resolves the
+    /// path through LibraryView::locate.
+    std::vector<std::filesystem::path> _navPaths;
+    int _navIndex = -1;
 
     int _cursorScreenX = -1;
     int _cursorScreenY = -1;

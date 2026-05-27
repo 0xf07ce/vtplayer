@@ -479,6 +479,16 @@ bool PlayQueueView::handleMouse(ventty::MouseEvent const & event)
     return false;
 }
 
+void PlayQueueView::focusPlayingTrack()
+{
+    if (_playingIndex < 0 || _playingIndex >= _queue.size())
+        return;
+    _selectedIndex = _playingIndex;
+    int const listH = rect().height - 2;
+    int const maxOffset = std::max(0, _queue.size() - std::max(1, listH));
+    _scrollOffset = std::min(_playingIndex, maxOffset);
+}
+
 void PlayQueueView::scrollToSelected()
 {
     int listH = rect().height - 2;

@@ -10,8 +10,8 @@
 | `Tab` | Switch focus between file browser and play queue |
 | `Space` | Play / pause |
 | `s` | Stop playback |
-| `n` | Next track |
-| `p` | Previous track |
+| `]` | Next track |
+| `[` | Previous track |
 | `Left` / `Right` | Seek backward / forward (5s) |
 | `a` | Add selected file to play queue (on a directory: add every audio file inside it, non-recursive) |
 | `Ctrl+Up` / `Ctrl+Down` | Move play-queue item up / down |

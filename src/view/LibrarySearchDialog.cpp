@@ -10,6 +10,7 @@
 #include <ventty/core/Utf8.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 
 namespace vtplayer
@@ -19,6 +20,15 @@ namespace
 {
 
 using Key = ventty::KeyEvent::Key;
+using Filter = LibrarySearchDialog::Filter;
+
+constexpr std::array<std::pair<Filter, char const *>, 5> kTabs = {{
+    {Filter::Any,    "Any"},
+    {Filter::Artist, "Artist"},
+    {Filter::Album,  "Album"},
+    {Filter::Title,  "Title"},
+    {Filter::Year,   "Year"},
+}};
 
 /// Trim codepoints off the LEFT until the string fits in `maxWidth`
 /// display cells. Mirrors TagEditDialog's horizontal-scroll helper so the
@@ -56,7 +66,7 @@ std::size_t nextCodepointStart(std::string const & s, std::size_t pos)
     return p;
 }
 
-std::string toLowerAscii(std::string const & in)
+std::string toLowerAscii(std::string_view in)
 {
     std::string out;
     out.reserve(in.size());
@@ -65,27 +75,6 @@ std::string toLowerAscii(std::string const & in)
         out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
     }
     return out;
-}
-
-std::string buildHaystackLower(TrackInfo const & t)
-{
-    // Single tab-joined string covering every searchable field. Tabs are
-    // a sentinel that can't appear in a needle typed by the user, so a
-    // substring hit anywhere in this blob means at least one field
-    // matches — no need for five separate find() calls per keystroke.
-    std::string s;
-    s.reserve(t.title.size() + t.artist.size() + t.album.size()
-              + t.albumArtist.size() + t.genre.size() + 8);
-    s += t.title;       s.push_back('\t');
-    s += t.artist;      s.push_back('\t');
-    s += t.album;       s.push_back('\t');
-    s += t.albumArtist; s.push_back('\t');
-    s += t.genre;
-    for (auto & c : s)
-    {
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    }
-    return s;
 }
 
 std::string formatRow(TrackInfo const & t)
@@ -111,6 +100,8 @@ void LibrarySearchDialog::open()
     _cursorScreenY = -1;
     // Rebuild on every open so an intervening library reload (scan
     // completion, tag edit, root change) can never serve stale rows.
+    // The active filter (`_filter`) survives across opens as a UI
+    // preference; only the query and result cursor are reset.
     rebuildHaystack();
     recomputeMatches();
 }
@@ -123,7 +114,36 @@ void LibrarySearchDialog::rebuildHaystack()
     _haystack.reserve(tracks.size());
     for (auto const & t : tracks)
     {
-        _haystack.push_back({&t, buildHaystackLower(t)});
+        HaystackRow row;
+        row.track  = &t;
+        // Artist field folds in albumArtist too — a single hit on either
+        // should count, since the displayed name on compilations is the
+        // albumArtist.
+        std::string artistBlob = t.artist;
+        if (!t.albumArtist.empty())
+        {
+            if (!artistBlob.empty()) artistBlob.push_back('\t');
+            artistBlob += t.albumArtist;
+        }
+        row.artist = toLowerAscii(artistBlob);
+        row.album  = toLowerAscii(t.album);
+        row.title  = toLowerAscii(t.title);
+        row.year   = (t.year > 0) ? std::to_string(t.year) : std::string{};
+        // `any` blob — tabs are a sentinel that can't appear in a typed
+        // needle, so a substring hit anywhere here means at least one of
+        // the included fields matches.
+        std::string anyBlob = t.title;
+        anyBlob.push_back('\t'); anyBlob += t.artist;
+        anyBlob.push_back('\t'); anyBlob += t.album;
+        anyBlob.push_back('\t'); anyBlob += t.albumArtist;
+        anyBlob.push_back('\t'); anyBlob += t.genre;
+        if (t.year > 0)
+        {
+            anyBlob.push_back('\t');
+            anyBlob += std::to_string(t.year);
+        }
+        row.any = toLowerAscii(anyBlob);
+        _haystack.push_back(std::move(row));
     }
 }
 
@@ -138,6 +158,17 @@ void LibrarySearchDialog::recomputeMatches()
 {
     _matches.clear();
     std::string const needle = toLowerAscii(_query);
+    auto pickField = [this](HaystackRow const & r) -> std::string const & {
+        switch (_filter)
+        {
+            case Filter::Artist: return r.artist;
+            case Filter::Album:  return r.album;
+            case Filter::Title:  return r.title;
+            case Filter::Year:   return r.year;
+            case Filter::Any:
+            default:             return r.any;
+        }
+    };
     if (needle.empty())
     {
         _matches.reserve(_haystack.size());
@@ -147,7 +178,7 @@ void LibrarySearchDialog::recomputeMatches()
     {
         for (auto const & row : _haystack)
         {
-            if (row.lower.find(needle) != std::string::npos)
+            if (pickField(row).find(needle) != std::string::npos)
                 _matches.push_back(row.track);
         }
     }
@@ -156,6 +187,21 @@ void LibrarySearchDialog::recomputeMatches()
         _selectedIndex = std::max(0, static_cast<int>(_matches.size()) - 1);
     }
     _scrollOffset = 0;
+}
+
+void LibrarySearchDialog::cycleFilter(int dir)
+{
+    int const n = static_cast<int>(kTabs.size());
+    int idx = 0;
+    for (int i = 0; i < n; ++i)
+    {
+        if (kTabs[i].first == _filter) { idx = i; break; }
+    }
+    idx = ((idx + dir) % n + n) % n;
+    _filter = kTabs[idx].first;
+    _selectedIndex = 0;
+    _scrollOffset  = 0;
+    recomputeMatches();
 }
 
 void LibrarySearchDialog::insertUtf8(char32_t ch)
@@ -235,6 +281,14 @@ bool LibrarySearchDialog::handleKey(ventty::KeyEvent const & event)
         return true;
     }
 
+    // Tab / Shift+Tab cycle the filter tab bar. Down/Up own list navigation
+    // now — Tab is no longer aliased to Down.
+    if (event.key == Key::Tab)
+    {
+        cycleFilter(event.shift ? -1 : +1);
+        return true;
+    }
+
     if (event.key == Key::Backspace)
     {
         backspaceUtf8();
@@ -268,7 +322,7 @@ bool LibrarySearchDialog::handleKey(ventty::KeyEvent const & event)
         if (_selectedIndex > 0) _selectedIndex--;
         return true;
     }
-    if (event.key == Key::Down || event.key == Key::Tab)
+    if (event.key == Key::Down)
     {
         if (_selectedIndex < static_cast<int>(_matches.size()) - 1) _selectedIndex++;
         return true;
@@ -298,9 +352,19 @@ bool LibrarySearchDialog::handleKey(ventty::KeyEvent const & event)
 
     if (event.key == Key::Enter)
     {
-        if (!_matches.empty() && _onLocate)
+        if (!_matches.empty())
         {
-            _onLocate(_matches[_selectedIndex]->path);
+            // Snapshot paths for n / N navigation outside the dialog. The
+            // pointer array would dangle on a library rebuild, so we keep
+            // owned paths and re-resolve via LibraryView::locate.
+            _navPaths.clear();
+            _navPaths.reserve(_matches.size());
+            for (auto const * t : _matches) _navPaths.push_back(t->path);
+            _navIndex = _selectedIndex;
+            if (_onLocate)
+            {
+                _onLocate(_matches[_selectedIndex]->path);
+            }
         }
         close();
         return true;
@@ -315,6 +379,30 @@ bool LibrarySearchDialog::handleKey(ventty::KeyEvent const & event)
     return true; // swallow all other keys while modal
 }
 
+bool LibrarySearchDialog::navigateNext()
+{
+    if (_navPaths.empty() || !_onLocate) return false;
+    int const n = static_cast<int>(_navPaths.size());
+    _navIndex = (_navIndex + 1) % n;
+    _onLocate(_navPaths[_navIndex]);
+    return true;
+}
+
+bool LibrarySearchDialog::navigatePrev()
+{
+    if (_navPaths.empty() || !_onLocate) return false;
+    int const n = static_cast<int>(_navPaths.size());
+    _navIndex = (_navIndex - 1 + n) % n;
+    _onLocate(_navPaths[_navIndex]);
+    return true;
+}
+
+void LibrarySearchDialog::invalidateNav()
+{
+    _navPaths.clear();
+    _navIndex = -1;
+}
+
 void LibrarySearchDialog::draw(ventty::Window & window)
 {
     _cursorScreenX = -1;
@@ -323,28 +411,51 @@ void LibrarySearchDialog::draw(ventty::Window & window)
 
     int const screenW = window.width();
     int const screenH = window.height();
-    int const dlgW = std::min(80, std::max(40, screenW - 8));
-    int const dlgH = std::min(20, std::max(8,  screenH - 6));
+    int const dlgW = std::min(80, std::max(48, screenW - 8));
+    int const dlgH = std::min(20, std::max(9,  screenH - 6));
     int const x = (screenW - dlgW) / 2;
     int const y = (screenH - dlgH) / 2;
 
     ventty::Style const frame{_theme.border,            _theme.background};
     ventty::Style const body { _theme.browserFg,        _theme.browserBg};
+    ventty::Style const dim  { _theme.headerFg,         _theme.browserBg};
     ventty::Style const accent{_theme.browserHeaderFg,  _theme.browserBg, ventty::Attr::Bold};
+    ventty::Style const tabSel{_theme.browserSelFg,     _theme.browserSelBg, ventty::Attr::Bold};
     ventty::Style const sel  { _theme.browserSelFg,     _theme.browserSelBg};
 
     // Frame
     window.fill(x, y, dlgW, dlgH, U' ', body);
     window.drawBox(x, y, dlgW, dlgH, frame, /*doubleLine=*/true);
 
-    // Title
+    // Title (top border overlay)
     std::string title = " Search Library ";
     int titleX = x + 2;
     window.drawText(titleX, y, title, accent);
 
-    // Query line — cell-width aware so CJK aligns and the cursor lands on
-    // the right cell. We slide the visible window leftwards just enough to
-    // keep the cursor in view, then stash terminal-cell coords for the
+    // Tab bar (y+1): filter scope on the left, result count on the right.
+    int const tabY = y + 1;
+    int tabX = x + 2;
+    for (auto const & [f, label] : kTabs)
+    {
+        bool const active = (_filter == f);
+        std::string item = " ";
+        item += label;
+        item += " ";
+        window.drawText(tabX, tabY, item, active ? tabSel : dim);
+        tabX += static_cast<int>(ventty::stringWidth(item)) + 1;
+    }
+    std::string countLine = std::to_string(_matches.size()) + " match"
+                            + (_matches.size() == 1 ? "" : "es");
+    int const countW = ventty::stringWidth(countLine);
+    int const countX = x + dlgW - 2 - countW;
+    if (countX > tabX)
+    {
+        window.drawText(countX, tabY, countLine, dim);
+    }
+
+    // Query line (y+2) — cell-width aware so CJK aligns and the cursor lands
+    // on the right cell. We slide the visible window leftwards just enough
+    // to keep the cursor in view, then stash terminal-cell coords for the
     // host to drive ventty's hardware cursor.
     int const queryY = y + 2;
     std::string const label = " Query: ";
@@ -399,11 +510,6 @@ void LibrarySearchDialog::draw(ventty::Window & window)
     {
         window.putChar(x + i, sepY, ventty::HR_THIN, frame);
     }
-
-    // Result count
-    std::string countLine = "  " + std::to_string(_matches.size()) + " match"
-                            + (_matches.size() == 1 ? "" : "es");
-    window.drawText(x + 2, y + 1, countLine, body);
 
     // Result list (virtual scroll)
     int const listY     = sepY + 1;
