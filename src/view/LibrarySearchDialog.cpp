@@ -67,21 +67,25 @@ std::string toLowerAscii(std::string const & in)
     return out;
 }
 
-bool containsCI(std::string const & haystackLower, std::string const & needleLower)
+std::string buildHaystackLower(TrackInfo const & t)
 {
-    if (needleLower.empty()) return true;
-    return haystackLower.find(needleLower) != std::string::npos;
-}
-
-bool matches(TrackInfo const & t, std::string const & needleLower)
-{
-    if (needleLower.empty()) return true;
-    if (containsCI(toLowerAscii(t.title),       needleLower)) return true;
-    if (containsCI(toLowerAscii(t.artist),      needleLower)) return true;
-    if (containsCI(toLowerAscii(t.album),       needleLower)) return true;
-    if (containsCI(toLowerAscii(t.albumArtist), needleLower)) return true;
-    if (containsCI(toLowerAscii(t.genre),       needleLower)) return true;
-    return false;
+    // Single tab-joined string covering every searchable field. Tabs are
+    // a sentinel that can't appear in a needle typed by the user, so a
+    // substring hit anywhere in this blob means at least one field
+    // matches — no need for five separate find() calls per keystroke.
+    std::string s;
+    s.reserve(t.title.size() + t.artist.size() + t.album.size()
+              + t.albumArtist.size() + t.genre.size() + 8);
+    s += t.title;       s.push_back('\t');
+    s += t.artist;      s.push_back('\t');
+    s += t.album;       s.push_back('\t');
+    s += t.albumArtist; s.push_back('\t');
+    s += t.genre;
+    for (auto & c : s)
+    {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return s;
 }
 
 std::string formatRow(TrackInfo const & t)
@@ -105,7 +109,22 @@ void LibrarySearchDialog::open()
     _scrollOffset = 0;
     _cursorScreenX = -1;
     _cursorScreenY = -1;
+    // Rebuild on every open so an intervening library reload (scan
+    // completion, tag edit, root change) can never serve stale rows.
+    rebuildHaystack();
     recomputeMatches();
+}
+
+void LibrarySearchDialog::rebuildHaystack()
+{
+    _haystack.clear();
+    if (!_library) return;
+    auto const & tracks = _library->tracks();
+    _haystack.reserve(tracks.size());
+    for (auto const & t : tracks)
+    {
+        _haystack.push_back({&t, buildHaystackLower(t)});
+    }
 }
 
 void LibrarySearchDialog::close()
@@ -118,11 +137,19 @@ void LibrarySearchDialog::close()
 void LibrarySearchDialog::recomputeMatches()
 {
     _matches.clear();
-    if (!_library) return;
     std::string const needle = toLowerAscii(_query);
-    for (auto const & t : _library->tracks())
+    if (needle.empty())
     {
-        if (matches(t, needle)) _matches.push_back(&t);
+        _matches.reserve(_haystack.size());
+        for (auto const & row : _haystack) _matches.push_back(row.track);
+    }
+    else
+    {
+        for (auto const & row : _haystack)
+        {
+            if (row.lower.find(needle) != std::string::npos)
+                _matches.push_back(row.track);
+        }
     }
     if (_selectedIndex >= static_cast<int>(_matches.size()))
     {

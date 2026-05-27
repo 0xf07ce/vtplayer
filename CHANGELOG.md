@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## 0.13.1 (2026-05-27)
+
+- Idle-aware main loop. The run loop no longer spins at a fixed
+  ~62 Hz: it now blocks on STDIN with a screen-appropriate timeout
+  (60 / 30 / 15 FPS for the Visualizer, 250 ms while playing, 1 s
+  while fully idle). Keystrokes wake the loop immediately, so input
+  responsiveness is unchanged while idle CPU drops close to zero on
+  the Browser and Help screens — including when the player is sitting
+  in a background tmux pane or another desktop.
+- `[visualizer] fps` (default 30, accepts 15 / 30 / 60) controls the
+  Visualizer screen's animation rate. The value is snapped to the
+  nearest supported tier on load so stray edits can't bake an
+  arbitrary refresh rate into the loop.
+- Spectrum visualizer (key `1`) no longer renders the gray trail
+  layer behind dropped bars. Only the currently-lit portion of each
+  bar is drawn; the empty cells above rely on the per-frame window
+  clear, which removes a whole-grid trail pass from each frame.
+- Matrix Rain (key `2`) trail length halved (`tail = 3..9` rows,
+  was `6..18`) and shimmer probability lowered (`0.04`, was `0.10`).
+  Steady-state lit-cell count and per-frame RNG passes both drop
+  roughly in half, which translates directly to fewer `putChar`
+  calls and aging-loop iterations.
+- Lower default `[visualizer] bar_count` from 48 to 24.
+- `LibrarySearchDialog` now builds a per-track pre-lowered, tab-joined
+  haystack once when the dialog opens, and each subsequent keystroke
+  does a single `find()` over those strings. Previous behavior
+  re-lowered five fields per track on every keystroke, which made
+  large libraries stutter on fast typing.
+
 ## 0.13.0 (2026-05-27)
 
 - Shuffle mode (`S` on the play screen). Toggling it builds a randomized

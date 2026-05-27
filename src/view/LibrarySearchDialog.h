@@ -54,6 +54,11 @@ public:
     int cursorScreenY() const { return _cursorScreenY; }
 
 private:
+    /// Build `_haystack`: one pre-lowered, tab-joined searchable string per
+    /// track. Done once when the dialog opens so each subsequent keystroke
+    /// is a flat O(n) substring sweep over already-lowered text instead of
+    /// repeatedly re-lowering five fields per track.
+    void rebuildHaystack();
     void recomputeMatches();
     void insertUtf8(char32_t ch);
     void backspaceUtf8();
@@ -73,6 +78,16 @@ private:
     std::vector<TrackInfo const *> _matches;
     int _selectedIndex = 0;
     int _scrollOffset  = 0;
+
+    /// Pre-lowered haystack rebuilt by open(). Parallel to the snapshot of
+    /// `_library->tracks()` taken at open time; matches() consults this
+    /// rather than re-lowering five fields per track per keystroke.
+    struct HaystackRow
+    {
+        TrackInfo const * track;
+        std::string lower;
+    };
+    std::vector<HaystackRow> _haystack;
 
     int _cursorScreenX = -1;
     int _cursorScreenY = -1;

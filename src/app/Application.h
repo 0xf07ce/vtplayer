@@ -95,6 +95,15 @@ namespace vtplayer
 
         void resize();
         void draw();
+
+        /// Compute the next idle-timeout (ms) for the main loop. Visualizer
+        /// screen uses the configured FPS; Browser/Help screens fall back to
+        /// a long sleep when idle so the process doesn't spin at 60 Hz.
+        int  computeIdleTimeoutMs() const;
+        /// Block on STDIN for up to `ms` milliseconds. Returns when input is
+        /// available, on EINTR, or on timeout. Used in place of a fixed
+        /// sleep_for so the loop wakes immediately on the next keystroke.
+        void waitForInputOrTimeout(int ms) const;
         void drawBrowserScreen();
         void drawVisualizerScreen();
         void drawHelpScreen();

@@ -24,8 +24,11 @@ struct Config
     bool showHidden = false;
 
     // [visualizer]
-    int barCount = 48;
+    int barCount = 24;
     int visualizerIndex = 1;  ///< 0=Oscilloscope, 1=Spectrum, 2=MatrixRain, 3=DebugBars, 4=TagInfo, 5=Vinyl
+    /// Animation rate of the Visualizer screen. Clamped to 15/30/60 on load.
+    /// Browser/Help screens use an idle-aware pacing regardless.
+    int visualizerFps = 30;
 
     // [formats]
     std::string extensions = "mp3,wav,ogg,flac,m4a,mp4,aac,opus,wma,webm";

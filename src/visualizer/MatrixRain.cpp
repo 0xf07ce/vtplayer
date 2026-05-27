@@ -138,13 +138,18 @@ namespace vtplayer
         // 프레임 → BPM 환산용 가정 frame rate (Application 의 메인루프 ≈ 60 fps).
         // 절대 BPM 정밀도가 아닌 시각 동기 용도라 가정값으로 충분.
         constexpr float kAssumedFps = 60.0f;
-        // 꼬리 길이: uniform-random tail length per drop.
-        constexpr int kTailMin = 6;
-        constexpr int kTailMax = 18;
+        // 꼬리 길이: uniform-random tail length per drop. Shorter trails
+        // mean fewer non-empty cells in steady state — both the aging loop
+        // in stepSimulation() and the putChar pass in draw() scale with the
+        // count of lit cells, so halving the tail roughly halves their
+        // per-frame cost.
+        constexpr int kTailMin = 3;
+        constexpr int kTailMax = 9;
         // 글자 셔머: per-column shimmer-attempt probability per frame.
-        // Algorithm picks only active glyphs so this translates ~directly
-        // to visible mutations.
-        constexpr float kShimmerProb = 0.10f;
+        // Each fired attempt does a reservoir-sampling pass over all
+        // active cells in the column, so this is the second-biggest knob
+        // after tail length. Lowered to reduce per-frame RNG work.
+        constexpr float kShimmerProb = 0.04f;
 
         // 머리 강조: head 색상을 밝은 녹색 쪽으로 lerp 하는 비율
         // (0 = theme color 그대로, 1 = 완전 bright green).

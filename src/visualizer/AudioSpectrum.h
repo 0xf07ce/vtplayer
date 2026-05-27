@@ -27,9 +27,6 @@ namespace vtplayer
 
         std::vector<float> _barValues;
         std::vector<float> _peakValues;
-
-        /// Per-bar, per-row brightness used for the fade-to-black trail.
-        std::vector<std::vector<float>> _trail;
     };
 
 } // namespace vtplayer

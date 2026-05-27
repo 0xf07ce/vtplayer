@@ -122,24 +122,7 @@ namespace vtplayer
             return;
         int totalBars = std::min(drawBars, w);
 
-        // Per-bar trail buffers: one brightness value per row, decayed each
-        // frame so a dropped bar leaves a fading ghost in the cells it just
-        // vacated. 0.951 / frame at ~60 fps reaches ~5% after ~1000 ms.
-        if (static_cast<int>(_trail.size()) != numBars)
-            _trail.assign(numBars, std::vector<float>(h, 0.0f));
-        for (auto &col : _trail)
-        {
-            if (static_cast<int>(col.size()) != h)
-                col.assign(h, 0.0f);
-        }
-        constexpr float kTrailDecay = 0.951f;
-        constexpr float kTrailMin = 0.04f;
-        for (auto &col : _trail)
-            for (auto &v : col)
-                v *= kTrailDecay;
-
         Color const bg = _theme.background;
-        Color const trailMax = _theme.visTrailFg;
 
         // Pre-compute the row-wise gradient: bottom row = visBarLow (deep
         // purple), top row = visBarHigh (light purple), with visBarMid
@@ -172,44 +155,18 @@ namespace vtplayer
             int fullRows = static_cast<int>(heightF) / 8;
             int partial = static_cast<int>(heightF) % 8;
 
-            // Refresh trail for currently-lit rows so the live bar stays solid.
-            for (int row = 0; row < fullRows && row < h; ++row)
-                _trail[i][row] = 1.0f;
-            if (fullRows < h && partial > 0)
+            // Only the lit portion of the bar is painted. The root window is
+            // cleared to the theme background each frame, so vacated cells
+            // already read as empty — no trail/ghost layer is rendered.
+            int const lastRow = std::min(h, fullRows + (partial > 0 ? 1 : 0));
+            for (int row = 0; row < lastRow; ++row)
             {
-                float p = static_cast<float>(partial) / 8.0f;
-                if (_trail[i][fullRows] < p)
-                    _trail[i][fullRows] = p;
-            }
+                int const drawY = y + h - 1 - row;
+                char32_t ch;
+                if (row < fullRows)        ch = ventty::VBAR[8];
+                else                       ch = ventty::VBAR[partial];
 
-            for (int row = 0; row < h; ++row)
-            {
-                int drawY = y + h - 1 - row;
-                char32_t ch = U' ';
-                Color fg = bg;
-
-                if (row < fullRows)
-                {
-                    ch = ventty::VBAR[8];
-                    fg = rowColor[row];
-                }
-                else if (row == fullRows && partial > 0)
-                {
-                    ch = ventty::VBAR[partial];
-                    fg = rowColor[row];
-                }
-                else
-                {
-                    float t = _trail[i][row];
-                    if (t <= kTrailMin)
-                        continue; // window is cleared each frame; nothing to draw
-                    // Trail fades along the gray axis only (gray → black),
-                    // independent of the bar's purple color.
-                    ch = ventty::VBAR[8];
-                    fg = lerpColor(bg, trailMax, t);
-                }
-
-                ventty::Style style{fg, bg};
+                ventty::Style style{rowColor[row], bg};
                 for (int bw = 0; bw < barW && bx + bw < x + w; ++bw)
                 {
                     window.putChar(bx + bw, drawY, ch, style);

@@ -26,6 +26,9 @@
 #include <system_error>
 #include <thread>
 
+#include <poll.h>
+#include <unistd.h>
+
 namespace vtplayer
 {
 
@@ -218,7 +221,12 @@ namespace vtplayer
 
             _terminal->render();
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            // Idle-aware pacing. Block on STDIN for the screen-appropriate
+            // window instead of unconditionally spinning at ~60 Hz: Browser
+            // and Help can sit for hundreds of ms when nothing is changing,
+            // dropping idle CPU close to zero. The Visualizer screen still
+            // wakes at the configured FPS so its animation stays smooth.
+            waitForInputOrTimeout(computeIdleTimeoutMs());
         }
 
         cleanup();
@@ -231,6 +239,51 @@ namespace vtplayer
         _running = false;
         if (_terminal)
             _terminal->quit();
+    }
+
+    int Application::computeIdleTimeoutMs() const
+    {
+        // Visualizer is animated — pace it at the configured FPS regardless
+        // of input. AudioSpectrum/MatrixRain/VinylVis are all designed
+        // around that frame rate.
+        if (_screen == Screen::Visualizer)
+        {
+            int const fps = std::clamp(_config.visualizerFps, 15, 60);
+            return std::max(1, 1000 / fps);
+        }
+
+        // Inline collect (pass 1) keeps the loop interactive for ESC even
+        // while it blocks; tighten the timeout so the count refreshes.
+        if (_collectActive.load() || _ingestActive.load())
+        {
+            return 100;
+        }
+
+        // While playing (or buffering a stream), wake often enough for the
+        // TransportBar second counter / buffering indicator to refresh. 250
+        // ms is comfortably under one second and still ~4 redraws/sec —
+        // negligible CPU.
+        auto const state = _audio.state();
+        if (state == PlayState::Playing || _audio.isStreamBuffering())
+        {
+            return 250;
+        }
+
+        // Fully idle: block up to 1 s. Keystrokes wake the poll
+        // immediately; this just caps how long background signals
+        // (track-end, ingest completion) can wait before being noticed.
+        return 1000;
+    }
+
+    void Application::waitForInputOrTimeout(int ms) const
+    {
+        if (ms <= 0) return;
+        struct pollfd pfd{};
+        pfd.fd = STDIN_FILENO;
+        pfd.events = POLLIN;
+        // Any POLLIN return value (or EINTR, or timeout) is fine — the run
+        // loop will simply pollEvent() again and decide what to do.
+        ::poll(&pfd, 1, ms);
     }
 
     void Application::initTerminal()

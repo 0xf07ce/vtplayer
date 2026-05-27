@@ -167,6 +167,21 @@ namespace vtplayer
             {
             }
         }
+        if (auto *v = get("visualizer.fps"))
+        {
+            try
+            {
+                int fps = std::stoi(*v);
+                // Snap to the nearest supported tier so a stray value
+                // doesn't bake an arbitrary refresh rate into the loop.
+                if (fps <= 22) visualizerFps = 15;
+                else if (fps <= 45) visualizerFps = 30;
+                else visualizerFps = 60;
+            }
+            catch (...)
+            {
+            }
+        }
         if (auto *v = get("formats.extensions"))
         {
             // Merge rather than replace: keep the user's saved order/additions
@@ -303,7 +318,8 @@ namespace vtplayer
 
         out << "[visualizer]\n";
         out << "bar_count = " << barCount << "\n";
-        out << "index = " << visualizerIndex << "\n\n";
+        out << "index = " << visualizerIndex << "\n";
+        out << "fps = " << visualizerFps << "\n\n";
 
         out << "[formats]\n";
         out << "extensions = " << extensions << "\n\n";
