@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 0.13.3 (2026-05-28)
+
+- Play queue rows now show the track artist between title and
+  duration. The artist is right-aligned (its right edge sits one
+  cell before the duration) and rendered in a new muted color
+  (`play_queue_artist_fg`) so it reads as secondary metadata
+  without competing with title or duration. When the title would
+  overflow its space, the artist on that row is omitted so the
+  title can use the full band.
+- New shortcut `X` — hard-stop playback: tears down the decoder /
+  stream and clears the `▶` marker on the play queue. Added to
+  the in-app help screen and `docs/keybindings.md` (the stale
+  `s = Stop` entry, which had been repurposed for shuffle, is
+  corrected).
+
 ## 0.13.2 (2026-05-28)
 
 - Transport keys remapped: `]` / `[` now drive next / previous

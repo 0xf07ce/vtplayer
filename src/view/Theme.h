@@ -59,6 +59,7 @@ namespace vtplayer
         Color playQueuePlayingFg{0xA0, 0x88, 0xB0};
         Color playQueueIndexFg{0x3A, 0x32, 0x45};
         Color playQueueDurationFg{0x3A, 0x32, 0x45};
+        Color playQueueArtistFg{0x60, 0x55, 0x70};
         Color playQueueHeaderFg{0x8B, 0x5C, 0x8B};
 
         // Transport bar
@@ -143,6 +144,7 @@ namespace vtplayer
             set("play_queue_playing_fg", playQueuePlayingFg);
             set("play_queue_index_fg", playQueueIndexFg);
             set("play_queue_duration_fg", playQueueDurationFg);
+            set("play_queue_artist_fg", playQueueArtistFg);
             set("play_queue_header_fg", playQueueHeaderFg);
 
             // Transport

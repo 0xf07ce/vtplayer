@@ -9,7 +9,7 @@
 | `Esc` | Back to browser from visualizer |
 | `Tab` | Switch focus between file browser and play queue |
 | `Space` | Play / pause |
-| `s` | Stop playback |
+| `x` | Stop playback |
 | `]` | Next track |
 | `[` | Previous track |
 | `Left` / `Right` | Seek backward / forward (5s) |

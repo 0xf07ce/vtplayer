@@ -777,6 +777,7 @@ namespace vtplayer
             {"", "", false},
             {"Playback", "", true},
             {"  Space",                 "Play / Pause", false},
+            {"  X",                     "Stop playback", false},
             {"  [ / ]",                 "Previous / Next track", false},
             {"  < / >",                 "Seek -5s / +5s", false},
             {"  R",                     "Cycle repeat: none -> all -> one", false},
@@ -1378,6 +1379,15 @@ namespace vtplayer
                 int idx = _playQueueView->selectedIndex();
                 playTrack(idx);
             }
+            return;
+        }
+
+        // x: hard stop (tear down decoder/stream and clear the ▶ marker).
+        if (event.key == Key::Char && (ch == 'x' || ch == 'X') &&
+            !event.alt && !event.ctrl)
+        {
+            _audio.stop();
+            _playQueueView->setPlayingIndex(-1);
             return;
         }
 

@@ -6,6 +6,7 @@
 #include "../util/UnicodeNormalize.h"
 
 #include <ventty/art/AsciiArt.h>
+#include <ventty/core/Utf8.h>
 
 #include <algorithm>
 #include <cmath>
@@ -232,6 +233,13 @@ void PlayQueueView::draw(ventty::Window & window)
     int listH = r.height - 2;
     int contentW = r.width - 2; // right border + padding
 
+    // Layout anchors for the title/artist/duration band.
+    int const titleStart = r.x + 5;            // border(1) + idx(4)
+    int const durLen     = 5;                  // "MM:SS" / "--:--"
+    int const durX       = r.x + r.width - 2 - durLen;
+    int const usable     = std::max(0, durX - titleStart - 1);
+    int const maxArtistW = std::max(0, usable - 8 - 1); // keep ≥8 cells for title
+
     for (int i = 0; i < listH; ++i)
     {
         int idx = _scrollOffset + i;
@@ -271,10 +279,8 @@ void PlayQueueView::draw(ventty::Window & window)
         ventty::Style style{fg, bg};
         window.fill(r.x, y, r.width - 1, 1, U' ', style);
 
-        // Prefix: index number, or ▶ for the currently-playing row.
-        // Drawn at r.x + 1 (the panel separator at r.x would otherwise
-        // overwrite anything drawn at column r.x). 3 cells wide to align
-        // with the "%2d." format used for non-playing rows.
+        // Prefix: queue index, or ▶ for the currently-playing row.
+        // Drawn at r.x + 1; 3 cells wide to align with the "%2d." format.
         if (playing)
         {
             Color arrowFg = cursor ? _theme.playQueueSelFg : _theme.playQueuePlayingFg;
@@ -289,15 +295,33 @@ void PlayQueueView::draw(ventty::Window & window)
             window.drawText(r.x + 1, y, numBuf, indexStyle);
         }
 
-        // Track name (display-width truncation; CJK = 2 cells per codepoint)
-        int const durLen = 6; // " MM:SS"
-        int const maxNameW = contentW - 5 - durLen; // 4 for index, 1 padding
-        std::string name = truncateToWidth(track.title, maxNameW);
-        window.drawText(r.x + 5, y, name, style);
+        // Title + artist band (per-row right-aligned artist):
+        //   - artist text ends 1 cell before duration (right-anchored);
+        //   - title fills from titleStart up to artist start - 1;
+        //   - if title would overflow that space, artist is omitted on this
+        //     row and title takes over the full band.
+        std::string const & artist = track.artist;
+        int const titleW   = ventty::stringWidth(track.title);
+        int       artistW  = std::min(ventty::stringWidth(artist), maxArtistW);
+        int const titleMax = (artistW > 0) ? (usable - artistW - 1) : usable;
+
+        if (artist.empty() || artistW == 0 || titleW > titleMax)
+        {
+            std::string name = truncateToWidth(track.title, usable);
+            window.drawText(titleStart, y, name, style);
+        }
+        else
+        {
+            window.drawText(titleStart, y, track.title, style);
+            std::string artistCut = truncateToWidth(artist, artistW);
+            int const renderedW = ventty::stringWidth(artistCut);
+            int const artistX   = durX - 1 - renderedW;
+            ventty::Style artistStyle{cursor ? fg : _theme.playQueueArtistFg, bg};
+            window.drawText(artistX, y, artistCut, artistStyle);
+        }
 
         // Duration (right-aligned)
-        std::string dur = formatDuration(track.duration);
-        int durX = r.x + r.width - 2 - static_cast<int>(dur.size());
+        std::string const dur = formatDuration(track.duration);
         ventty::Style durStyle{cursor ? fg : _theme.playQueueDurationFg, bg};
         window.drawText(durX, y, dur, durStyle);
     }
