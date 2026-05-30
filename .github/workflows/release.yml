@@ -128,8 +128,23 @@ jobs:
     steps:
       - name: Tap (picks up the bump from prepare)
         run: |
-          brew update --quiet
-          brew tap "${TAP_NAME}"
+          set -euo pipefail
+          # Retry to ride out transient runner network hiccups
+          # (e.g. "Could not resolve host: github.com" during the tap clone).
+          retry() {
+            local attempt
+            for attempt in 1 2 3; do
+              if "$@"; then
+                return 0
+              fi
+              echo "::warning::'$*' failed (attempt ${attempt}/3); retrying in $((attempt * 10))s"
+              sleep $((attempt * 10))
+            done
+            echo "::error::'$*' failed after 3 attempts"
+            return 1
+          }
+          retry brew update --quiet
+          retry brew tap "${TAP_NAME}"
 
       - name: Build with --build-bottle
         run: brew install --build-bottle "${FORMULA}"
