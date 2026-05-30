@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## 0.14.0 (2026-05-30)
+
+- Hardening for the 1.0 track: out-of-range `config.ini` values are
+  now clamped on load — `stream_buffer_seconds` (1–600),
+  `stream_prebuffer_seconds` (0.5–600) and `bar_count` (4–256) — so a
+  stray or negative value can no longer size buffers to zero/gigabytes
+  or blow up FFT binning. The fail-soft fallback to defaults is kept.
+- The libav HTTP `user_agent` now derives from the build version
+  instead of the stale hardcoded `vtplayer/0.8`.
+- Added a vendored zero-dependency unit-test harness and 21 cases
+  covering `M3uReader`, `PlsReader`, `UnicodeNormalize::toNfc`,
+  `PlayQueue` and `Config` (including the new clamp behavior). Gated
+  behind the `VTPLAYER_BUILD_TESTS` CMake option and wired into the
+  macOS CI build via `ctest`.
+- Docs: rewrote `docs/keybindings.md` against the actual input handler
+  (the `1`–`4` panel modes, `0`–`5` visualizers, `R`/`S`/`G`, `T`,
+  `N`/`Shift+N`, `L`, `/`, `X`, the ESC menu and TagEditDialog keys),
+  corrected `docs/configuration.md` (defaults, clamp ranges, the `fps`
+  key, a valid `[theme]` example) and fixed the in-app help row that
+  swapped the Album / Artist panel labels.
+
 ## 0.13.3 (2026-05-28)
 
 - Play queue rows now show the track artist between title and
