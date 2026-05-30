@@ -3,6 +3,7 @@
 
 #include "Config.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
@@ -127,7 +128,9 @@ namespace vtplayer
         {
             try
             {
-                streamBufferSeconds = std::stof(*v);
+                // Clamp to a sane window: a stray/negative value must not
+                // size the radio ring buffer to zero or to gigabytes.
+                streamBufferSeconds = std::clamp(std::stof(*v), 1.0f, 600.0f);
             }
             catch (...)
             {
@@ -137,7 +140,9 @@ namespace vtplayer
         {
             try
             {
-                streamPrebufferSeconds = std::stof(*v);
+                // Absolute clamp only; the prebuffer is additionally pinned
+                // below the buffer depth at runtime (AudioEngine::setBuffer).
+                streamPrebufferSeconds = std::clamp(std::stof(*v), 0.5f, 600.0f);
             }
             catch (...)
             {
@@ -151,7 +156,9 @@ namespace vtplayer
         {
             try
             {
-                barCount = std::stoi(*v);
+                // Documented range is 4–256; clamp so an absurd value can't
+                // blow up FFT binning / render work.
+                barCount = std::clamp(std::stoi(*v), 4, 256);
             }
             catch (...)
             {

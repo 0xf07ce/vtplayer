@@ -110,7 +110,10 @@ bool Decoder::open(std::string const & source, bool isUrl)
         av_dict_set(&opts, "reconnect",            "1", 0);
         av_dict_set(&opts, "reconnect_streamed",   "1", 0);
         av_dict_set(&opts, "reconnect_delay_max",  "5", 0);
-        av_dict_set(&opts, "user_agent",           "vtplayer/0.8", 0);
+#ifndef VTPLAYER_VERSION
+#define VTPLAYER_VERSION "0"
+#endif
+        av_dict_set(&opts, "user_agent",           "vtplayer/" VTPLAYER_VERSION, 0);
         // Tighten the connect timeout so a dead host fails fast (5 s).
         av_dict_set(&opts, "rw_timeout",           "5000000", 0);
     }
