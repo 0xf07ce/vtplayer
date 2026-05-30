@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "ISampleSource.h"
+
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -34,14 +36,14 @@ class Decoder;
 /// discarding the oldest samples: this trades live-edge latency for a deep,
 /// stable cushion, which is the right call for radio. Buffer depth and the
 /// prebuffer threshold are configurable via setBuffer().
-class StreamSource
+class StreamSource : public ISampleSource
 {
 public:
     static constexpr int kSampleRate = 44100;
     static constexpr int kChannels   = 2;
 
     StreamSource();
-    ~StreamSource();
+    ~StreamSource() override;
 
     StreamSource(StreamSource const &)            = delete;
     StreamSource & operator=(StreamSource const &) = delete;
@@ -66,14 +68,24 @@ public:
     /// Pull up to `frames` stereo frames into `out` (out holds
     /// frames*kChannels floats). Returns the number of frames actually
     /// written; the caller zero-fills the remainder on underrun.
-    unsigned int read(float * out, unsigned int frames);
+    unsigned int read(float * out, unsigned int frames) override;
 
     /// libav has reached EOF (or the source closed) and the buffer is drained.
     bool ended() const;
 
+    // ---- ISampleSource ---- //
+    /// Live streams are not seekable; seek is a no-op that reports failure.
+    bool   seek(double /*seconds*/) override { return false; }
+    double duration() const override { return 0.0; } ///< live → unknown
+    bool   seekable() const override { return false; }
+    /// eof() for the engine == ended(): upstream closed AND buffer drained.
+    /// A transient underrun (buffering) is deliberately NOT eof.
+    bool   eof() const override { return ended(); }
+    bool   isStream() const override { return true; }
+
     /// Playback is gated while the prebuffer fills (initial start or after
     /// an underrun). True until enough audio has accumulated to resume.
-    bool buffering() const { return _buffering.load(std::memory_order_acquire); }
+    bool buffering() const override { return _buffering.load(std::memory_order_acquire); }
 
     std::string const & error() const { return _error; }
 

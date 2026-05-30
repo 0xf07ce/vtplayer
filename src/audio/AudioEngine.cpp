@@ -12,9 +12,13 @@
 #include "AudioEngine.h"
 
 #include "Decoder.h"
+#include "PluginSource.h"
 #include "ReplayGain.h"
 #include "StreamSource.h"
+#include "../plugin/DecoderRegistry.h"
 #include "../util/UnicodeNormalize.h"
+
+#include "vtplayer/plugin.h"
 
 #include <algorithm>
 #include <cmath>
@@ -107,7 +111,7 @@ bool AudioEngine::load(TrackInfo const & track)
 
         {
             std::lock_guard<std::mutex> lock(_audioMutex);
-            _stream = std::move(src);
+            _source = std::move(src);
         }
         _isStream.store(true, std::memory_order_release);
 
@@ -122,6 +126,51 @@ bool AudioEngine::load(TrackInfo const & track)
     }
 
     auto const & path = track.path;
+
+    // Extension (lowercase, no dot) drives the decode-backend choice: an input
+    // plugin that owns it wins, otherwise libav handles the built-in formats.
+    std::string ext = path.extension().string();
+    if (!ext.empty() && ext.front() == '.')
+        ext.erase(0, 1);
+    for (auto & c : ext)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+    if (VtpInputPlugin const * plug = DecoderRegistry::instance().find(ext))
+    {
+        _currentFormat = AudioFormat::Plugin;
+        _currentTrack  = track;
+        _currentTrack.format = _currentFormat;
+        if (_currentTrack.title.empty())
+            _currentTrack.title = vtplayer::toNfc(path.stem().string());
+        _currentTrack.duration = 0.0f;
+
+        auto ps = std::make_unique<PluginSource>(plug);
+        if (!ps->open(path.string()))
+        {
+            _lastError = ps->error();
+            return false;
+        }
+
+        _currentTrack.duration = static_cast<float>(ps->duration());
+        _duration.store(_currentTrack.duration, std::memory_order_relaxed);
+
+        {
+            std::lock_guard<std::mutex> lock(_audioMutex);
+            _source = std::move(ps);
+        }
+        _isStream.store(false, std::memory_order_release);
+
+        _framesPlayed = 0;
+        _position.store(0.0f, std::memory_order_relaxed);
+        // Plugin formats (chip music etc.) carry no ReplayGain tags → use the
+        // runtime auto-gain path, same as streams.
+        _replayGainLinear.store(1.0f, std::memory_order_relaxed);
+        _gainSource.store(GainSource::Auto, std::memory_order_relaxed);
+        _currentGain.store(1.0f, std::memory_order_relaxed);
+        _lastError.clear();
+        return true;
+    }
+
     _currentFormat = TrackInfo::formatFromPath(path);
     if (_currentFormat == AudioFormat::Unknown)
     {
@@ -147,7 +196,7 @@ bool AudioEngine::load(TrackInfo const & track)
 
     {
         std::lock_guard<std::mutex> lock(_audioMutex);
-        _decoder = std::move(dec);
+        _source = std::move(dec);
     }
 
     _framesPlayed = 0;
@@ -191,7 +240,7 @@ bool AudioEngine::isStreamBuffering() const
     if (!_isStream.load(std::memory_order_acquire))
         return false;
     std::lock_guard<std::mutex> lock(_audioMutex);
-    return _stream && _stream->buffering();
+    return _source && _source->buffering();
 }
 
 bool AudioEngine::play()
@@ -214,7 +263,7 @@ bool AudioEngine::play()
     }
 
     // Start fresh playback
-    if (!_decoder && !_isStream.load(std::memory_order_acquire))
+    if (!_source)
     {
         _lastError = "no source loaded";
         return false;
@@ -261,7 +310,7 @@ void AudioEngine::stop()
     auto prev = _state.exchange(PlayState::Stopped, std::memory_order_acq_rel);
 
     // Uninit the device first — this blocks until the audio callback
-    // has fully returned, so after this point no thread touches _decoder.
+    // has fully returned, so after this point no thread touches _source.
     if (prev != PlayState::Stopped)
     {
         ma_device_uninit(_device);
@@ -269,16 +318,10 @@ void AudioEngine::stop()
 
     std::lock_guard<std::mutex> lock(_audioMutex);
 
-    if (_decoder)
-    {
-        _decoder.reset();
-    }
-
-    if (_stream)
-    {
-        _stream->stop();
-        _stream.reset();
-    }
+    // Releasing the source tears down whatever it is: ~Decoder frees libav
+    // state, ~StreamSource joins its reader thread, ~PluginSource calls the
+    // plugin's close().
+    _source.reset();
     _isStream.store(false, std::memory_order_release);
 
     _trackEnded.store(false, std::memory_order_relaxed);
@@ -301,13 +344,12 @@ void AudioEngine::seek(float seconds)
 
     std::lock_guard<std::mutex> lock(_audioMutex);
 
-    if (_decoder)
+    // Live streams report seekable() == false and seek() == false, so this is
+    // a no-op for them; files and seekable plugin sources move the cursor.
+    if (_source && _source->seek(static_cast<double>(seconds)))
     {
-        if (_decoder->seek(static_cast<double>(seconds)))
-        {
-            _framesPlayed = static_cast<uint64_t>(seconds * SAMPLE_RATE);
-            _position.store(seconds, std::memory_order_relaxed);
-        }
+        _framesPlayed = static_cast<uint64_t>(seconds * SAMPLE_RATE);
+        _position.store(seconds, std::memory_order_relaxed);
     }
 }
 
@@ -360,41 +402,24 @@ void AudioEngine::fillBuffer(float * output, unsigned int frameCount)
 
     std::lock_guard<std::mutex> lock(_audioMutex);
 
-    unsigned int framesRead = 0;
-
-    if (_isStream.load(std::memory_order_acquire))
+    if (!_source)
     {
-        unsigned int const got =
-            _stream ? _stream->read(output, frameCount) : 0u;
-        framesRead = got;
-        if (got < frameCount)
-        {
-            // Underrun: emit silence for the gap. Only flag end-of-track
-            // when ffmpeg has actually exited and the buffer is drained —
-            // a transient buffer dip must not look like the stream ending.
-            std::memset(output + got * CHANNELS, 0,
-                        (frameCount - got) * CHANNELS * sizeof(float));
-            if (_stream && _stream->ended())
-                _trackEnded.store(true, std::memory_order_release);
-        }
+        std::memset(output, 0, totalSamples * sizeof(float));
+        return;
     }
-    else
+
+    unsigned int const framesRead = _source->read(output, frameCount);
+
+    if (framesRead < frameCount)
     {
-        if (!_decoder)
-        {
-            std::memset(output, 0, totalSamples * sizeof(float));
-            return;
-        }
-
-        framesRead = _decoder->read(output, frameCount);
-
-        if (framesRead < frameCount)
-        {
-            // End of file — zero remaining
-            std::memset(output + framesRead * CHANNELS, 0,
-                        (frameCount - framesRead) * CHANNELS * sizeof(float));
+        // Short read: zero-fill the gap. Flag end-of-track only on a real
+        // eof() — for a file that is EOF; for a stream it means ffmpeg exited
+        // AND the buffer drained, so a transient rebuffering dip (read returns
+        // short but eof() is false) does not look like the track ending.
+        std::memset(output + framesRead * CHANNELS, 0,
+                    (frameCount - framesRead) * CHANNELS * sizeof(float));
+        if (_source->eof())
             _trackEnded.store(true, std::memory_order_release);
-        }
     }
 
     // --- Resolve target gain and smooth toward it ---

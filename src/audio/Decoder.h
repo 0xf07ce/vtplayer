@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "ISampleSource.h"
+
 #include <atomic>
 #include <cstddef>
 #include <string>
@@ -27,14 +29,14 @@ namespace vtplayer
 ///
 /// `miniaudio` is intentionally not used for decoding — it now only drives
 /// `ma_device` for cross-platform audio output (see `AudioEngine`).
-class Decoder
+class Decoder : public ISampleSource
 {
 public:
     static constexpr int kSampleRate = 44100;
     static constexpr int kChannels   = 2;
 
     Decoder() = default;
-    ~Decoder();
+    ~Decoder() override;
 
     Decoder(Decoder const &)             = delete;
     Decoder & operator=(Decoder const &) = delete;
@@ -57,21 +59,22 @@ public:
     /// Pull up to `frames` stereo frames into `out` (size frames*kChannels
     /// floats). Returns the number of frames actually written. Returns 0 on
     /// EOF or error; check eof() / error() to distinguish.
-    unsigned int read(float * out, unsigned int frames);
+    unsigned int read(float * out, unsigned int frames) override;
 
     /// Seek to `seconds` (file sources only). Returns false on streams or on
     /// libav errors.
-    bool seek(double seconds);
+    bool seek(double seconds) override;
 
     /// Total duration in seconds. 0 for live streams or when libav reports no
     /// known duration.
-    double duration() const;
+    double duration() const override;
 
     /// True if seek() can succeed for this source (false for live streams).
+    bool seekable() const override { return _seekable; }
     bool isSeekable() const { return _seekable; }
 
     /// End-of-stream reached on the last read().
-    bool eof() const { return _eof; }
+    bool eof() const override { return _eof; }
 
     std::string const & error() const { return _error; }
 

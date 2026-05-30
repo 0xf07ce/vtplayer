@@ -23,9 +23,14 @@ enum class AudioFormat
     Opus,
     Wma,
     Webm,
-    // Keep Stream at the end: persisted as INTEGER in the SQLite library,
-    // so reordering earlier values would silently remap existing rows.
+    // These values are persisted as INTEGER in the SQLite library, so only
+    // ever append new variants — reordering would silently remap existing
+    // rows. (Stream historically sat last; Plugin was appended after it.)
     Stream,
+    // A format handled by a loaded input plugin (libvgm, ROL/IMS/SOL, …).
+    // The owning plugin is resolved at play time via DecoderRegistry, keyed
+    // by file extension, so the specific format need not be enumerated here.
+    Plugin,
 };
 
 struct TrackInfo

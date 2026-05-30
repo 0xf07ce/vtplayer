@@ -6,6 +6,7 @@
 #include "../audio/AudioEngine.h"
 #include "../config/Config.h"
 #include "../library/MediaLibrary.h"
+#include "../plugin/PluginHost.h"
 #include "../view/ContextMenu.h"
 #include "../view/FileBrowser.h"
 #include "../view/HeaderBar.h"
@@ -243,6 +244,12 @@ namespace vtplayer
         // Audio
         AudioEngine _audio;
         Config _config;
+
+        // Dynamically loaded plugins. Loaded early in init() (so plugin file
+        // extensions are known before the browser/scanner are configured) and
+        // unloaded in cleanup() AFTER the audio engine stops — an active
+        // source can hold pointers into a plugin's code pages.
+        PluginHost _pluginHost;
 
         // Media library (track index of the configured root directory)
         MediaLibrary _library;

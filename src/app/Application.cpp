@@ -6,6 +6,7 @@
 #include "../library/LibraryRepository.h"
 #include "../library/LibraryScanner.h"
 #include "../playqueue/PlayQueueCache.h"
+#include "../plugin/DecoderRegistry.h"
 #include "../util/M3uReader.h"
 #include "../util/PlsReader.h"
 #include "../util/TagWriter.h"
@@ -315,6 +316,13 @@ namespace vtplayer
                                _config.streamPrebufferSeconds);
         _audio.setStreamDebug(_debug);
 
+        // Load plugins before the terminal comes up: input plugins register
+        // their file extensions into DecoderRegistry, which the FileBrowser,
+        // library scanner and AudioEngine all consult below. Loader/plugin
+        // diagnostics print to stderr only with --debug (keeps the TUI clean).
+        _pluginHost.setDebug(_debug);
+        _pluginHost.loadAll();
+
         // Init terminal
         initTerminal();
         if (!_terminal)
@@ -347,7 +355,17 @@ namespace vtplayer
         _fileBrowser->setTheme(_theme);
         _fileBrowser->setFocused(true);
         _fileBrowser->setShowHidden(_config.showHidden);
-        _fileBrowser->setAllowedExtensions(_config.extensions);
+        {
+            // Show plugin-handled formats in the browser too: append every
+            // extension claimed by a loaded input plugin to the configured set.
+            std::string exts = _config.extensions;
+            for (auto const & e : DecoderRegistry::instance().extensions())
+            {
+                exts += ',';
+                exts += e;
+            }
+            _fileBrowser->setAllowedExtensions(exts);
+        }
         {
             // FileBrowser opens at the directory implied by the startup
             // argument (a directory itself, or the parent of a file), and
@@ -554,6 +572,11 @@ namespace vtplayer
         // Audio must stop before terminal restores — otherwise audio thread
         // output can corrupt the restored terminal.
         _audio.shutdown();
+
+        // Unload plugins only after the audio engine has fully stopped: a live
+        // PluginSource holds pointers into the module's code, so dlclose() any
+        // earlier would risk a use-after-unmap crash.
+        _pluginHost.shutdown();
 
         if (_terminal)
         {
