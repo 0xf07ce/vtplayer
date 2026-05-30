@@ -785,7 +785,7 @@ namespace vtplayer
             {"  G",                     "Toggle gain normalization (ReplayGain / auto-gain)", false},
             {"", "", false},
             {"Browser - Library", "", true},
-            {"  1 / 2 / 3 / 4",         "Left panel: Artist / Album / Directory / Files", false},
+            {"  1 / 2 / 3 / 4",         "Left panel: Album / Artist / Directory / Files", false},
             {"  L",                     "Toggle left panel (play queue full-width when hidden)", false},
             {"  Tab",                   "Switch focus (browser <-> play queue)", false},
             {"  Left / Right",          "Collapse / expand selected group", false},
