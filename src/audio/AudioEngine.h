@@ -17,8 +17,7 @@ struct ma_device;
 
 namespace vtplayer
 {
-class Decoder;
-class StreamSource;
+class ISampleSource;
 }
 
 namespace vtplayer
@@ -128,10 +127,12 @@ private:
     void fillBuffer(float * output, unsigned int frameCount);
 
     ma_device * _device = nullptr;
-    std::unique_ptr<Decoder> _decoder;              ///< libav decoder for files
 
-    std::unique_ptr<StreamSource> _stream;          ///< set when streaming
-    std::atomic<bool> _isStream{false};
+    /// The one active source: a libav Decoder (file), a StreamSource (network
+    /// radio) or a PluginSource (input plugin). fillBuffer() only ever calls
+    /// _source->read(); the branch on source kind is gone.
+    std::unique_ptr<ISampleSource> _source;
+    std::atomic<bool> _isStream{false};             ///< cached _source->isStream() for lock-free UI
     float _streamBufferSec    = 20.0f;              ///< config: ring depth
     float _streamPrebufferSec = 5.0f;               ///< config: prebuffer
     bool  _streamDebug        = false;              ///< keep ffmpeg stderr

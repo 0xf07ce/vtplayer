@@ -17,6 +17,15 @@ add_executable(vtplayer
     audio/TrackInfo.h
     audio/RingBuffer.h
     audio/Fft.h
+    audio/ISampleSource.h
+    audio/PluginSource.h
+    audio/PluginSource.cpp
+
+    # plugin host
+    plugin/PluginHost.h
+    plugin/PluginHost.cpp
+    plugin/DecoderRegistry.h
+    plugin/DecoderRegistry.cpp
 
     # view
     view/Theme.h
@@ -85,6 +94,10 @@ add_executable(vtplayer
     util/TagWriter.cpp
 )
 
-target_include_directories(vtplayer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(vtplayer ventty vtplayerDep)
+target_include_directories(vtplayer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include   # public plugin ABI header (vtplayer/plugin.h)
+)
+# ${CMAKE_DL_LIBS} is libdl on Linux, empty on macOS (dlopen lives in libc).
+target_link_libraries(vtplayer ventty vtplayerDep ${CMAKE_DL_LIBS})
 target_compile_definitions(vtplayer PRIVATE VTPLAYER_VERSION="${PROJECT_VERSION}")

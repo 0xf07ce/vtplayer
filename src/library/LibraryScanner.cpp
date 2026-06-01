@@ -4,8 +4,11 @@
 #include "LibraryScanner.h"
 
 #include "LibraryRepository.h"
+#include "../plugin/DecoderRegistry.h"
 #include "../util/PlsReader.h"
 #include "../util/UnicodeNormalize.h"
+
+#include "vtplayer/plugin.h"
 
 // Bare header names — see audio/ReplayGain.cpp for rationale.
 #include <audioproperties.h>
@@ -82,6 +85,32 @@ TrackInfo extractMetadata(fs::path const & path)
     info.format = TrackInfo::formatFromPath(path);
     info.title  = toNfc(path.stem().string()); // fallback if no tag
 
+    // Plugin-owned formats (VGM, ROL, …) are not TagLib formats. Ask the
+    // owning input plugin for metadata first; if it has no read_tags or it
+    // fails, the filename-stem fallback above stands. Either way TagLib is
+    // skipped — opening a chip-tune file through TagLib would just fail.
+    if (VtpInputPlugin const * plug = DecoderRegistry::instance().find(lowerExt(path)))
+    {
+        info.format = AudioFormat::Plugin;
+        if (plug->read_tags)
+        {
+            VtpTagOut t{};
+            t.struct_size = sizeof(t);
+            if (plug->read_tags(path.string().c_str(), &t) == 0)
+            {
+                if (t.title[0])    info.title    = toNfc(t.title);
+                if (t.artist[0])   info.artist   = toNfc(t.artist);
+                if (t.album[0])    info.album    = toNfc(t.album);
+                if (t.grouping[0]) info.grouping = toNfc(t.grouping);
+                info.trackNumber = t.track_number;
+                info.year        = t.year;
+                if (t.duration > 0.0)
+                    info.duration = static_cast<float>(t.duration);
+            }
+        }
+        return info;
+    }
+
     TagLib::FileRef ref(path.c_str());
     if (ref.isNull() || !ref.file())
     {
@@ -153,6 +182,12 @@ LibraryScanner::collect(fs::path const & root,
     // `[formats] extensions` setting — they aren't audio containers and
     // shouldn't have to be listed there.
     extSet.insert("pls");
+
+    // Extensions claimed by loaded input plugins are always collected so
+    // plugin-handled formats (VGM, ROL, …) get indexed without the user
+    // having to add them to `[formats] extensions`.
+    for (auto & e : DecoderRegistry::instance().extensions())
+        extSet.insert(std::move(e));
 
     // Tick cadence in *iterated* directory entries (not just matching files)
     // so ESC stays responsive even inside subtrees that contain no audio.
