@@ -51,6 +51,16 @@ public:
     /// Number of currently loaded plugins.
     std::size_t count() const { return _loaded.size(); }
 
+    /// Lightweight, copyable view of a loaded plugin for UI listing.
+    struct PluginInfo
+    {
+        std::string name;    ///< manifest name, or the file name as a fallback
+        std::string version; ///< manifest version, or "0.0.0" when absent
+    };
+
+    /// Snapshot of every currently loaded plugin, in load order.
+    std::vector<PluginInfo> plugins() const;
+
     /// Canonical plugin directory: `~/.config/vtplayer/plugins`. Empty if
     /// $HOME is unset.
     static std::filesystem::path defaultDir();

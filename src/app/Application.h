@@ -47,6 +47,13 @@ namespace vtplayer
         PlayQueue,
     };
 
+    /// Tabs on the Help screen, switched with Tab / Left / Right.
+    enum class HelpTab
+    {
+        Shortcuts, ///< keyboard shortcut reference (default)
+        Plugins,   ///< list of currently loaded plugins
+    };
+
     /// Left-panel mode on the Browser screen. Three projections of the
     /// indexed MediaLibrary (rendered by LibraryView) plus the live
     /// FileBrowser:
@@ -110,7 +117,16 @@ namespace vtplayer
         void drawHelpScreen();
         void updateUI();
         void toggleHelp();
+        /// Rebuild `_helpRows` for the active tab (`_helpTab`).
         void buildHelpRows();
+        /// Keyboard-shortcut reference rows (Shortcuts tab).
+        void buildShortcutRows();
+        /// One row per loaded plugin (Plugins tab).
+        void buildPluginRows();
+        /// Select a help tab, rebuild its rows, and reset the scroll offset.
+        void setHelpTab(HelpTab tab);
+        /// Draw the tab strip on the Help screen's first content row.
+        void drawHelpTabBar(int row);
         /// (Re)flow _helpRows into _helpLines for the current terminal width,
         /// word-wrapping descriptions. No-op if the width is unchanged.
         void ensureHelpLayout() const;
@@ -316,6 +332,10 @@ namespace vtplayer
         mutable std::vector<HelpLine> _helpLines;
         mutable int _helpLayoutWidth = -1;
 
+        // Help screen reserves its first two content rows for the tab strip
+        // (tab labels + a blank spacer); the scrollable body starts below it.
+        static constexpr int kHelpTabRows = 2;
+        HelpTab _helpTab = HelpTab::Shortcuts;
         int _helpScroll = 0;
         Theme _theme;
         int _visualizerIndex = 1; // 1 = AudioSpectrum (default), 0 = Oscilloscope

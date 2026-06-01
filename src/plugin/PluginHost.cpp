@@ -215,6 +215,28 @@ void PluginHost::loadOne(fs::path const & file)
     _loaded.push_back(Loaded{handle, manifest, path});
 }
 
+std::vector<PluginHost::PluginInfo> PluginHost::plugins() const
+{
+    std::vector<PluginInfo> out;
+    out.reserve(_loaded.size());
+    for (auto const & l : _loaded)
+    {
+        PluginInfo info;
+        if (l.manifest && l.manifest->name && *l.manifest->name)
+            info.name = l.manifest->name;
+        else
+            info.name = fs::path(l.path).filename().string();
+
+        if (l.manifest && l.manifest->version && *l.manifest->version)
+            info.version = l.manifest->version;
+        else
+            info.version = "0.0.0";
+
+        out.push_back(std::move(info));
+    }
+    return out;
+}
+
 void PluginHost::shutdown()
 {
     if (_loaded.empty())

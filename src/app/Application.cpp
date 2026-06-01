@@ -791,6 +791,20 @@ namespace vtplayer
 
     void Application::buildHelpRows()
     {
+        switch (_helpTab)
+        {
+        case HelpTab::Plugins:
+            buildPluginRows();
+            break;
+        case HelpTab::Shortcuts:
+        default:
+            buildShortcutRows();
+            break;
+        }
+    }
+
+    void Application::buildShortcutRows()
+    {
 #ifndef VTPLAYER_VERSION
 #define VTPLAYER_VERSION "unknown"
 #endif
@@ -842,6 +856,7 @@ namespace vtplayer
             {"", "", false},
             {"Misc", "", true},
             {"  H / Up / Down / PgUp / PgDn", "Show / scroll this help", false},
+            {"  Tab / Left / Right",    "Switch help tab (Shortcuts / Plugins)", false},
             {"  ESC",                   "Open menu / dismiss overlay", false},
             {"  Q",                     "Quit", false},
         };
@@ -850,6 +865,73 @@ namespace vtplayer
         // Force a re-flow on next draw/scroll-clamp.
         _helpLines.clear();
         _helpLayoutWidth = -1;
+    }
+
+    void Application::buildPluginRows()
+    {
+        _helpRows.clear();
+
+        auto const plugins = _pluginHost.plugins();
+        _helpRows.push_back({"Loaded plugins", "", true});
+        _helpRows.push_back({"", "", false});
+
+        if (plugins.empty())
+        {
+            _helpRows.push_back({"  (no plugins loaded)", "", false});
+        }
+        else
+        {
+            for (auto const &p : plugins)
+                _helpRows.push_back({"  " + p.name, p.version, false});
+        }
+
+        // Force a re-flow on next draw/scroll-clamp.
+        _helpLines.clear();
+        _helpLayoutWidth = -1;
+    }
+
+    void Application::setHelpTab(HelpTab tab)
+    {
+        if (_helpTab == tab)
+            return;
+        _helpTab = tab;
+        _helpScroll = 0;
+        buildHelpRows();
+        if (_terminal)
+            _terminal->forceRedraw();
+    }
+
+    void Application::drawHelpTabBar(int row)
+    {
+        if (!_terminal)
+            return;
+        int const w = _terminal->cols();
+
+        struct TabDef
+        {
+            HelpTab tab;
+            char const *label;
+        };
+        static constexpr TabDef kTabs[] = {
+            {HelpTab::Shortcuts, "Shortcuts"},
+            {HelpTab::Plugins, "Plugins"},
+        };
+
+        // Mirror the LibrarySearchDialog filter bar: the active tab is marked
+        // by a selection-colored background rather than bracket glyphs.
+        ventty::Style const activeStyle{_theme.browserSelFg, _theme.browserSelBg, ventty::Attr::Bold};
+        ventty::Style const inactiveStyle{_theme.headerFg, _theme.background};
+
+        int x = 2;
+        for (auto const &t : kTabs)
+        {
+            bool const active = (t.tab == _helpTab);
+            std::string label = std::string(" ") + t.label + " ";
+            if (x + static_cast<int>(label.size()) > w - 1)
+                break;
+            _rootWindow->drawText(x, row, label, active ? activeStyle : inactiveStyle);
+            x += static_cast<int>(label.size()) + 1;
+        }
     }
 
     void Application::ensureHelpLayout() const
@@ -929,7 +1011,7 @@ namespace vtplayer
         if (!_terminal)
             return 0;
         int const h = _terminal->rows();
-        int const top = 1;
+        int const top = 1 + kHelpTabRows; // below header + tab strip
         int const bottom = h - 2;
         return std::max(0, bottom - top + 1);
     }
@@ -973,18 +1055,22 @@ namespace vtplayer
             _rootWindow->putChar(w - 1, y, ventty::DOUBLE_BOX.v, borderStyle);
         }
 
+        // Tab strip on the first content row; the scrollable body sits below.
+        drawHelpTabBar(top);
+        int const contentTop = top + kHelpTabRows;
+
         ventty::Style headerStyle{_theme.browserHeaderFg, _theme.background, ventty::Attr::Bold};
         ventty::Style keyStyle{_theme.browserAudioFg, _theme.background};
         ventty::Style descStyle{_theme.foreground, _theme.background};
 
         ensureHelpLayout();
-        int const visible = bottom - top + 1;
+        int const visible = bottom - contentTop + 1;
         int const total = static_cast<int>(_helpLines.size());
         int const drawRows = std::min(visible, total - _helpScroll);
 
         for (int i = 0; i < drawRows; ++i)
         {
-            int const y = top + i;
+            int const y = contentTop + i;
             for (auto const &span : _helpLines[_helpScroll + i].spans)
             {
                 int const maxChars = (w - 1) - span.x;
@@ -1026,8 +1112,9 @@ namespace vtplayer
         }
         else
         {
-            if (_helpRows.empty())
-                buildHelpRows();
+            // Rebuild for the active tab so the plugin list reflects the
+            // current host state each time help opens.
+            buildHelpRows();
             _helpScroll = 0;
             _previousScreen = _screen;
             _screen = Screen::Help;
@@ -1120,6 +1207,16 @@ namespace vtplayer
             else if (event.key == Key::Char && (ch == 'q' || ch == 'Q') && !event.alt && !event.ctrl)
             {
                 quit();
+            }
+            else if (event.key == Key::Tab || event.key == Key::Right)
+            {
+                setHelpTab(_helpTab == HelpTab::Shortcuts ? HelpTab::Plugins
+                                                          : HelpTab::Shortcuts);
+            }
+            else if (event.key == Key::Left)
+            {
+                setHelpTab(_helpTab == HelpTab::Plugins ? HelpTab::Shortcuts
+                                                        : HelpTab::Plugins);
             }
             else if (event.key == Key::Up)
             {
