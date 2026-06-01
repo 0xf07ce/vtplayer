@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 0.15.0 (2026-06-01)
+
+- Added a dynamic plugin system foundation: `PluginHost` discovers and
+  loads C-ABI shared libraries from `~/.config/vtplayer/plugins`,
+  validates their manifest/ABI, and wires them into the input pipeline.
+  A vendored test harness exercises load/ABI-mismatch paths
+  (`tests/test_plugin.cpp` with `dummy_input` / `bad_abi` fixtures).
+- The Help screen gained a **Plugins** tab listing every loaded plugin
+  (name + version); switch tabs with Tab / Left / Right.
+
 ## 0.14.0 (2026-05-30)
 
 - Hardening for the 1.0 track: out-of-range `config.ini` values are
