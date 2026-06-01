@@ -188,6 +188,11 @@ void PluginHost::loadOne(fs::path const & file)
         return;
     }
 
+    // abi_version sits at a layout-stable offset (right after struct_size), so
+    // it is safe to read even from a manifest built against a different ABI.
+    // Gate on it FIRST: a mismatch means the rest of the struct may have a
+    // different layout, and dereferencing a relocated field (e.g. `input`)
+    // would fault. Skipping here is how a stale plugin is ignored, not crashed.
     if (manifest->abi_version != VTP_PLUGIN_ABI_VERSION)
     {
         loaderLog(_debug, "ABI version mismatch, skipping: %s", path.c_str());
@@ -195,21 +200,22 @@ void PluginHost::loadOne(fs::path const & file)
         return;
     }
 
-    switch (manifest->kind)
+    // Defense in depth: even at a matching ABI, refuse a manifest too small to
+    // contain the fields we are about to read (a truncated or foreign build).
+    if (manifest->struct_size < sizeof(VtpPluginManifest))
     {
-    case VTP_PLUGIN_INPUT:
-        if (manifest->iface.input)
-            DecoderRegistry::instance().registerInput(manifest->iface.input);
-        break;
-    case VTP_PLUGIN_PROVIDER:
-        // Phase 3 wires provider plugins into the host UI; for now keep the
-        // module loaded so its presence is visible but take no action.
-        break;
-    default:
-        loaderLog(_debug, "unknown plugin kind, skipping: %s", path.c_str());
+        loaderLog(_debug, "manifest smaller than expected, skipping: %s", path.c_str());
         dlclose(handle);
         return;
     }
+
+    if (!manifest->input)
+    {
+        loaderLog(_debug, "manifest carries no input plugin, skipping: %s", path.c_str());
+        dlclose(handle);
+        return;
+    }
+    DecoderRegistry::instance().registerInput(manifest->input);
 
     loaderLog(_debug, "loaded plugin: %s", manifest->name ? manifest->name : path.c_str());
     _loaded.push_back(Loaded{handle, manifest, path});

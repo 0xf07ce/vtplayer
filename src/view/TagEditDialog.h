@@ -23,7 +23,12 @@ namespace vtplayer
 /// trimming. The dialog has three modes:
 ///   - View:         title is "Tags"; fields are read-only. Ctrl+E enters
 ///                   Edit mode. ESC closes. Arrow keys are inert — there is
-///                   nothing to focus when nothing is editable.
+///                   nothing to focus when nothing is editable. When opened
+///                   read-only (every target is a plugin-handled file with no
+///                   TagLib-writable tags) the title reads "Tags (read-only)"
+///                   and Ctrl+E is disabled, so the dialog stays a pure
+///                   inspector — there is no way to enter an edit that would
+///                   silently fail on save.
 ///   - Edit:         title is "Edit Tags"; fields accept text input.
 ///                   Ctrl+S brings up a save confirmation. ESC reverts all
 ///                   pending edits and drops back to View (a second ESC then
@@ -50,8 +55,11 @@ public:
 
     /// Open the dialog over `tracks`. `header` is the sub-title shown
     /// below the main title strip — used to describe what's being viewed
-    /// (e.g. "Album: Kid A  (12 tracks)").
-    void open(std::string header, std::vector<TrackInfo> tracks);
+    /// (e.g. "Album: Kid A  (12 tracks)"). When `readOnly` is true the
+    /// dialog is locked to View mode (Ctrl+E does nothing) — used when the
+    /// targets are plugin-handled files whose tags cannot be written.
+    void open(std::string header, std::vector<TrackInfo> tracks,
+              bool readOnly = false);
     void close();
     bool isOpen() const { return _open; }
 
@@ -107,6 +115,9 @@ private:
 
     bool _open = false;
     Mode _mode = Mode::View;
+    /// Locked to View mode — no plugin-claimed file exposes writable tags,
+    /// so editing is disabled rather than allowed to silently no-op on save.
+    bool _readOnly = false;
     std::string _header;
     std::vector<TrackInfo> _tracks;
     std::vector<std::filesystem::path> _targetPaths;

@@ -58,18 +58,6 @@ TEST_CASE("Config snaps visualizer fps to a supported tier")
     CHECK_EQ(cfg.visualizerFps, 60); // 50 snaps up to 60 (> 45)
 }
 
-TEST_CASE("Config merges user format extensions with built-in defaults")
-{
-    auto path = writeIni("[formats]\nextensions = mp3,flac\n");
-    Config cfg;
-    cfg.loadFrom(path);
-    // User values are kept and the built-in defaults are still present.
-    CHECK(cfg.extensions.find("mp3") != std::string::npos);
-    CHECK(cfg.extensions.find("flac") != std::string::npos);
-    CHECK(cfg.extensions.find("wav") != std::string::npos);  // built-in default
-    CHECK(cfg.extensions.find("opus") != std::string::npos); // built-in default
-}
-
 TEST_CASE("Config ignores a missing file and keeps defaults")
 {
     Config cfg;

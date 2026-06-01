@@ -114,10 +114,9 @@ static const VtpInputPlugin kInput = {
 static const VtpPluginManifest kManifest = {
     sizeof(VtpPluginManifest),
     VTP_PLUGIN_ABI_VERSION,
-    VTP_PLUGIN_INPUT,
     "dummy-sine",
     "0.1.0",
-    {&kInput},
+    &kInput,
 };
 
 VTP_EXPORT const VtpPluginManifest *vtp_register(uint32_t host_abi, const VtpHostApi *host)

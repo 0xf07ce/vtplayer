@@ -40,11 +40,16 @@ On macOS, install via Homebrew:
 brew install 0xf07ce/tap/vtplayer
 ```
 
+The Homebrew formula is managed in the
+[`0xf07ce/homebrew-tap`](https://github.com/0xf07ce/homebrew-tap) repo and is
+bumped automatically by `.github/workflows/release.yml` on each tagged release.
+
 ## Documentation
 
 - [Building](docs/building.md)
 - [Configuration](docs/configuration.md)
 - [Keybindings](docs/keybindings.md)
+- [Plugin Development](docs/plugins.md)
 
 ## License
 

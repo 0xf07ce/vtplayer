@@ -71,10 +71,12 @@ std::optional<int> commonInt(std::vector<TrackInfo> const & tracks, F pick)
 } // namespace
 
 void TagEditDialog::open(std::string header,
-                         std::vector<TrackInfo> tracks)
+                         std::vector<TrackInfo> tracks,
+                         bool readOnly)
 {
     _open = true;
     _mode = Mode::View;
+    _readOnly = readOnly;
     _header = std::move(header);
     _tracks = std::move(tracks);
     _targetPaths.clear();
@@ -379,8 +381,9 @@ bool TagEditDialog::handleKey(ventty::KeyEvent const & event)
         return true;
 
     // ----- Mode toggles -----
-    // Ctrl+E in View mode: enter Edit mode.
-    if (_mode == Mode::View && event.key == Key::Char && event.ctrl
+    // Ctrl+E in View mode: enter Edit mode. Disabled when read-only — the
+    // targets have no writable tags, so there is nothing to edit.
+    if (_mode == Mode::View && !_readOnly && event.key == Key::Char && event.ctrl
         && (event.ch == 'e' || event.ch == 'E' || event.ch == 0x05))
     {
         _mode = Mode::Edit;
@@ -506,7 +509,7 @@ void TagEditDialog::drawEditor(ventty::Window & window,
     std::string title;
     switch (_mode)
     {
-    case Mode::View:        title = " Tags ";       break;
+    case Mode::View:        title = _readOnly ? " Tags (read-only) " : " Tags "; break;
     case Mode::Edit:        title = " Edit Tags ";  break;
     case Mode::ConfirmSave: title = " Edit Tags ";  break;
     }
@@ -643,7 +646,8 @@ void TagEditDialog::drawEditor(ventty::Window & window,
     switch (_mode)
     {
     case Mode::View:
-        footer = " Ctrl+E: edit   ESC: close ";
+        footer = _readOnly ? " Read-only (plugin format)   ESC: close "
+                           : " Ctrl+E: edit   ESC: close ";
         break;
     case Mode::Edit:
         footer = " Tab/Up/Down: move   Ctrl+S: save   ESC: revert ";

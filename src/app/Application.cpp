@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <chrono>
 #include <random>
+#include <string_view>
 #include <system_error>
 #include <thread>
 
@@ -34,6 +35,13 @@ namespace vtplayer
 {
 
     using Key = ventty::KeyEvent::Key;
+
+    // Container formats decoded directly by libav. This is a property of the
+    // binary, not user configuration — hence no [formats] config knob. Plugins
+    // add further extensions dynamically through DecoderRegistry, which every
+    // consumer below merges in on top of this list.
+    static constexpr std::string_view kBuiltinExtensions =
+        "mp3,wav,ogg,flac,m4a,mp4,aac,opus,wma,webm";
 
     // Map Korean Hangul Jamo (ㅂ, ㅈ, etc.) to their QWERTY equivalents
     // so that shortcuts work regardless of IME state.
@@ -358,7 +366,7 @@ namespace vtplayer
         {
             // Show plugin-handled formats in the browser too: append every
             // extension claimed by a loaded input plugin to the configured set.
-            std::string exts = _config.extensions;
+            std::string exts{kBuiltinExtensions};
             for (auto const & e : DecoderRegistry::instance().extensions())
             {
                 exts += ',';
@@ -1892,7 +1900,22 @@ namespace vtplayer
         if (tracks.empty())
             return;
 
-        _tagEditDialog->open(std::move(headerText), std::move(tracks));
+        // Files handled by an input plugin (VGM, ROL, …) have no
+        // TagLib-writable tags — the plugin ABI exposes read_tags but no
+        // write_tags, and TagWriter (TagLib) cannot open them. When every
+        // target is such a file, open the dialog locked to its read-only
+        // View so the user can still inspect the plugin-provided tags
+        // without entering an edit that would silently fail on save.
+        bool const readOnly = std::all_of(
+            tracks.begin(), tracks.end(),
+            [](TrackInfo const & t)
+            {
+                return t.format == AudioFormat::Plugin
+                       || DecoderRegistry::instance().find(
+                              t.path.extension().string()) != nullptr;
+            });
+
+        _tagEditDialog->open(std::move(headerText), std::move(tracks), readOnly);
         if (_terminal)
             _terminal->forceRedraw();
     }
@@ -2258,7 +2281,7 @@ namespace vtplayer
         // Split "mp3,wav,ogg,flac" → ["mp3","wav","ogg","flac"].
         std::vector<std::string> exts;
         std::string token;
-        for (char c : _config.extensions)
+        for (char c : kBuiltinExtensions)
         {
             if (c == ',')
             {

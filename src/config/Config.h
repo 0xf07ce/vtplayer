@@ -30,9 +30,6 @@ struct Config
     /// Browser/Help screens use an idle-aware pacing regardless.
     int visualizerFps = 30;
 
-    // [formats]
-    std::string extensions = "mp3,wav,ogg,flac,m4a,mp4,aac,opus,wma,webm";
-
     // [library]
     std::filesystem::path libraryRoot;
     /// Left-panel mode persisted across sessions: "artist" | "album" |

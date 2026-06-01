@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## 0.16.0 (2026-06-02)
+
+- Plugin ABI cleanup ahead of any external consumers: dropped the
+  never-shipped Provider plugin kind, so `VtpPluginManifest` no longer
+  carries a `kind` enum or `union iface` and exposes the decode backend
+  directly as `const VtpInputPlugin *input`. Because that changed the
+  manifest layout, `VTP_PLUGIN_ABI_VERSION` is bumped to **2**.
+- Hardened `PluginHost` against stale/incompatible modules: the
+  layout-stable `abi_version` gate is checked before any relocated
+  field is read, and a manifest smaller than expected is rejected. An
+  older or mismatched plugin is now skipped cleanly instead of being
+  misread and crashing the host.
+- Removed the `[formats] extensions` config knob. The set of
+  libav-decoded container extensions is a property of the build, not
+  user configuration, so it is now a fixed built-in list; plugin-claimed
+  extensions are still merged in dynamically via `DecoderRegistry`.
+- Added `docs/plugins.md`, a full plugin development guide (contract,
+  threading, build flags, install, pitfalls), linked from the README.
+- Extended the plugin tag ABI with an append-only `album_artist[256]`
+  field on `VtpTagOut`, so plugin-handled tracks can populate the
+  depth-1 axis in AlbumArtist mode. Append-only keeps the ABI at 2 — an
+  older plugin built before the field leaves it zeroed (read as
+  "unknown").
+- `TagEditDialog` now opens read-only when every target is a
+  plugin-handled file: such files expose `read_tags` but no writable
+  tags, so the dialog locks to its inspector View (Ctrl+E disabled,
+  title reads "Tags (read-only)") instead of letting an edit silently
+  no-op on save.
+- Renamed the library's synthetic group labels from parenthesized forms
+  to `#`-prefixed sentinels (`#stream`, `#ungrouped`, `#unknown_artist`,
+  `#unknown_album`) so they sort and read distinctly from real tag
+  values, and added a depth-2 `#unknown_album` bucket for tracks missing
+  an album.
+
 ## 0.15.0 (2026-06-01)
 
 - Added a dynamic plugin system foundation: `PluginHost` discovers and
@@ -489,43 +523,66 @@ channel name.
 ## 0.5.0 (2026-05-18)
 
 - New Vinyl/CD disc visualizer (VinylVis) registered on slot 5.
-- `l` key toggles the left panel; PlayQueue uses the full width when it is hidden.
+- `l` key toggles the left panel; PlayQueue uses the full width when it
+  is hidden.
 - Header bar now shows the player version.
-- Packaging: added Homebrew formula/README and rewrote `release.yml` to automate prepare/bottle/merge on tag push.
-- Build: new `VTPLAYER_USE_SYSTEM_DEPS` option to source TagLib/cxxopts/SQLite3 from system (Homebrew) packages.
+- Packaging: added Homebrew formula/README and rewrote `release.yml` to
+  automate prepare/bottle/merge on tag push.
+- Build: new `VTPLAYER_USE_SYSTEM_DEPS` option to source
+  TagLib/cxxopts/SQLite3 from system (Homebrew) packages.
 
 ## 0.4.0 (2026-05-15)
 
-- ReplayGain normalization: read `REPLAYGAIN_TRACK_GAIN`/`PEAK` on load, falling back to RMS auto-gain when absent. Renamed `auto_gain` config and `AudioEngine` API to `gain_norm`; transport bar shows an RG/AG label.
-- New TagInfoView (slot 4) with scroll via arrow keys / PgUp-Dn / Home-End / wheel.
+- ReplayGain normalization: read `REPLAYGAIN_TRACK_GAIN`/`PEAK` on load,
+  falling back to RMS auto-gain when absent. Renamed `auto_gain` config
+  and `AudioEngine` API to `gain_norm`; transport bar shows an RG/AG
+  label.
+- New TagInfoView (slot 4) with scroll via arrow keys / PgUp-Dn /
+  Home-End / wheel.
 - Added `--dump-tags` CLI flag to inspect a file's TagLib PropertyMap.
-- Integrated TagLib via FetchContent; consolidated the ventty dependency under `deps/`.
+- Integrated TagLib via FetchContent; consolidated the ventty dependency
+  under `deps/`.
 - Split PlayQueue into a volatile container plus a standalone M3uReader.
 - New MediaLibrary domain with extended TrackInfo metadata fields.
-- Library index persisted in SQLite and scanned via TagLib; library actions exposed in the context menu.
+- Library index persisted in SQLite and scanned via TagLib; library
+  actions exposed in the context menu.
 - Connected the library to the play queue with session restore.
-- New LibraryView panel with directory tree and ArtistAlbum group mode (`G` toggle).
-- Modal search dialog with live filtering; "locate playing track" action and empty-library guidance.
-- Unified the left panel into a single F1-F4 mode axis (Artist / Album / Directory / FileBrowser), persisted in `[library] left_mode`. Dropped `[ui] start_directory` and the Shift+Enter quiet-append feature; ESC menu is now built per mode.
+- New LibraryView panel with directory tree and ArtistAlbum group mode
+  (`G` toggle).
+- Modal search dialog with live filtering; "locate playing track" action
+  and empty-library guidance.
+- Unified the left panel into a single F1-F4 mode axis (Artist / Album /
+  Directory / FileBrowser), persisted in `[library] left_mode`. Dropped
+  `[ui] start_directory` and the Shift+Enter quiet-append feature; ESC
+  menu is now built per mode.
 
 ## 0.3.0 (2026-05-14)
 
 - CI: release workflow builds arm64_tahoe/sequoia bottles on tag push.
-- Repeat now has three modes (none / all / one). `R` key cycles through them, and the transport bar shows the current mode on its left edge as `.` / `R` / `r`. The play/pause/stop glyph in that slot is removed — playback state is already conveyed by the time display on the right.
-- Pressing `a` on a directory in the file browser now adds every audio file in that directory to the play queue (non-recursive).
+- Repeat now has three modes (none / all / one). `R` key cycles through
+  them, and the transport bar shows the current mode on its left edge as
+  `.` / `R` / `r`. The play/pause/stop glyph in that slot is removed —
+  playback state is already conveyed by the time display on the right.
+- Pressing `a` on a directory in the file browser now adds every audio
+  file in that directory to the play queue (non-recursive).
 
 ## 0.2.0 (2026-05-12)
 
 - Added `--version` CLI flag.
 - Pinned ventty v0.2.0 and persisted last visualizer index across runs.
 - Added WAV format support.
-- New DebugBars visualizer on slot 3; moved gain/position metrics to bottom of layout.
-- New Matrix rain visualizer with bass-reactive density and beat sync (with precomputed color LUT for empty-cell skipping).
-- Reworked spectrum visualizer: row gradient, fade trail, and scaling fixes; prevented bars from saturating at full scale.
+- New DebugBars visualizer on slot 3; moved gain/position metrics to
+  bottom of layout.
+- New Matrix rain visualizer with bass-reactive density and beat sync
+  (with precomputed color LUT for empty-cell skipping).
+- Reworked spectrum visualizer: row gradient, fade trail, and scaling
+  fixes; prevented bars from saturating at full scale.
 - Scrollable Help screen; dropped hint row and extended frame to bottom.
-- Enter now replaces the playlist; Shift+Enter appends quietly. Added repeat/shuffle keys and a plain dir header.
+- Enter now replaces the playlist; Shift+Enter appends quietly. Added
+  repeat/shuffle keys and a plain dir header.
 - Decluttered track info display with CJK-safe truncation.
-- Playlist multi-select with Backspace bulk-delete; playing-indicator polish.
+- Playlist multi-select with Backspace bulk-delete; playing-indicator
+  polish.
 - Korean filenames normalized to NFC for display.
 - New oscilloscope visualizer with number-key switching.
 - Multi-playlist support with M3U save/load.
@@ -537,6 +594,7 @@ channel name.
 - Initial vtplayer release.
 - CLI file argument for direct playback.
 - Auto-gain and configurable visualizer; dropped game-music-emu backend.
-- Fixed Tab key panel switching and shortcut keys during Korean IME composition.
+- Fixed Tab key panel switching and shortcut keys during Korean IME
+  composition.
 - Fixed Tab switching when playlist is empty.
 - README rewritten in English; added developer documentation.

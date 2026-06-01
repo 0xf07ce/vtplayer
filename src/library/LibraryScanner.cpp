@@ -98,10 +98,11 @@ TrackInfo extractMetadata(fs::path const & path)
             t.struct_size = sizeof(t);
             if (plug->read_tags(path.string().c_str(), &t) == 0)
             {
-                if (t.title[0])    info.title    = toNfc(t.title);
-                if (t.artist[0])   info.artist   = toNfc(t.artist);
-                if (t.album[0])    info.album    = toNfc(t.album);
-                if (t.grouping[0]) info.grouping = toNfc(t.grouping);
+                if (t.title[0])        info.title       = toNfc(t.title);
+                if (t.artist[0])       info.artist      = toNfc(t.artist);
+                if (t.album[0])        info.album       = toNfc(t.album);
+                if (t.album_artist[0]) info.albumArtist = toNfc(t.album_artist);
+                if (t.grouping[0])     info.grouping    = toNfc(t.grouping);
                 info.trackNumber = t.track_number;
                 info.year        = t.year;
                 if (t.duration > 0.0)
@@ -178,14 +179,13 @@ LibraryScanner::collect(fs::path const & root,
         if (!e.empty() && e[0] == '.') e.erase(0, 1);
         if (!e.empty()) extSet.insert(std::move(e));
     }
-    // `.pls` playlists are always collected, regardless of the user's
-    // `[formats] extensions` setting — they aren't audio containers and
-    // shouldn't have to be listed there.
+    // `.pls` playlists are always collected, in addition to the built-in
+    // audio extensions — they aren't audio containers themselves.
     extSet.insert("pls");
 
     // Extensions claimed by loaded input plugins are always collected so
-    // plugin-handled formats (VGM, ROL, …) get indexed without the user
-    // having to add them to `[formats] extensions`.
+    // plugin-handled formats (VGM, ROL, …) get indexed alongside the
+    // built-in formats.
     for (auto & e : DecoderRegistry::instance().extensions())
         extSet.insert(std::move(e));
 

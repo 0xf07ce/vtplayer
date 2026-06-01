@@ -64,10 +64,9 @@ static const VtpInputPlugin kInput = {
 static const VtpPluginManifest kManifest = {
     sizeof(VtpPluginManifest),
     999u, /* incompatible ABI — host must skip */
-    VTP_PLUGIN_INPUT,
     "bad-abi",
     "0.1.0",
-    {&kInput},
+    &kInput,
 };
 
 VTP_EXPORT const VtpPluginManifest *vtp_register(uint32_t host_abi, const VtpHostApi *host)

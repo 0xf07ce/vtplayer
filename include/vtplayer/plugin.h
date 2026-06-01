@@ -4,22 +4,55 @@
  * Copyright (c) 2026 Leon J. Lee
  * SPDX-License-Identifier: MIT
  *
+ * ===========================================================================
+ * WHAT THIS FILE IS
+ * ===========================================================================
  * This header is the ONLY contract between the vtplayer host and a dynamically
- * loaded plugin (`.so` / `.dylib`). It is deliberately a pure C ABI so plugins
- * can be written in C, C++ or Rust, and so the host and plugin can be licensed
- * independently. The host links nothing of the plugin's; the plugin links
- * nothing of the host's. Everything crosses the boundary as POD: `const char*`
- * (UTF-8), flat structs, `float` buffers and function pointers.
+ * loaded plugin (`.so` / `.dylib`). If your code compiles against this header
+ * and follows the rules in the comments, it is a valid plugin — you never need
+ * to link against, or even look at, the host's source.
  *
- * Stability rules (read before changing this file):
+ * It is deliberately a pure C ABI so that:
+ *   - plugins can be written in C, C++ or Rust (anything with a C FFI), and
+ *   - the host and plugin can be licensed independently. This header is MIT;
+ *     the host is LGPL. The host links nothing of the plugin's, and the plugin
+ *     links nothing of the host's.
+ *
+ * Everything that crosses the boundary is plain old data: `const char*`
+ * (always UTF-8), fixed-layout structs, `float` sample buffers, and function
+ * pointers. C++/STL types (std::string, std::filesystem::path, TrackInfo,
+ * ventty::*) NEVER cross the boundary.
+ *
+ * ===========================================================================
+ * HOW A PLUGIN WORKS, END TO END
+ * ===========================================================================
+ *   1. You build a shared library exporting ONE symbol: `vtp_register`.
+ *   2. You drop it into `~/.config/vtplayer/plugins/`.
+ *   3. At startup the host `dlopen`s it, calls `vtp_register`, and you hand
+ *      back a statically-allocated `VtpPluginManifest` describing your plugin
+ *      (or NULL to decline).
+ *   4. The manifest carries a `VtpInputPlugin`: a decode backend that claims
+ *      file extensions (e.g. "vgm") and produces audio frames on demand.
+ *   5. When the user plays a file whose extension you claimed, the host opens
+ *      it through your plugin and pulls PCM from your `read()` callback.
+ *
+ * That is the whole model. There is exactly ONE kind of plugin: an input
+ * (decode) plugin.
+ *
+ * The smallest possible plugin is ~40 lines of C. A complete, copy-pasteable
+ * example plus a full prose guide (threading, build flags, install, pitfalls)
+ * lives in `docs/plugins.md`. Read that if anything here is unclear.
+ *
+ * ===========================================================================
+ * STABILITY RULES (read before changing THIS file)
+ * ===========================================================================
  *   - Every public struct begins with `struct_size` (its own sizeof at build
  *     time). New fields are appended ONLY — never reordered or removed. A
  *     reader checks `struct_size` to learn which fields a counterpart actually
- *     populated, so old and new builds interoperate.
+ *     populated, so old and new builds interoperate over the shared prefix.
  *   - `VTP_PLUGIN_ABI_VERSION` is bumped ONLY for a breaking change (a field's
- *     meaning changes, or one is removed). Appending fields does not bump it.
- *   - C++/STL types (std::string, std::filesystem::path, TrackInfo, ventty::*)
- *     never cross the boundary.
+ *     meaning changes, or one is removed). Appending fields does NOT bump it.
+ *   - C++/STL types never cross the boundary (restated because it matters).
  */
 #ifndef VTPLAYER_PLUGIN_H
 #define VTPLAYER_PLUGIN_H
@@ -31,31 +64,42 @@
 extern "C" {
 #endif
 
-/* Mark the single entry point visible: a plugin is expected to build with
- * hidden default visibility (C_VISIBILITY_PRESET hidden), so vtp_register
- * needs this to remain dlsym-able. */
+/* Marks the single entry point as exported. A plugin is expected to build with
+ * hidden default visibility (CMake `C_VISIBILITY_PRESET hidden`) so that
+ * `vtp_register` is the ONLY symbol the host can `dlsym` — this attribute keeps
+ * it visible despite that. A C++ plugin must additionally wrap the definition
+ * in `extern "C"` so the symbol name is not mangled. */
 #if defined(_WIN32)
 #  define VTP_EXPORT __declspec(dllexport)
 #else
 #  define VTP_EXPORT __attribute__((visibility("default")))
 #endif
 
-/* Bumped only on a breaking ABI change (see header comment). */
-#define VTP_PLUGIN_ABI_VERSION 1u
+/* The ABI version this header describes. Your plugin reports the version it was
+ * built against (in the manifest) and should decline hosts it does not match.
+ * Bumped ONLY on a breaking change — see the stability rules above.
+ *
+ * v2: VtpPluginManifest dropped the `VtpPluginKind kind` field and the
+ *     `union iface` (and the never-shipped VtpProviderPlugin), exposing the
+ *     input backend as a plain `const VtpInputPlugin *input`. That moved the
+ *     struct's later fields, so a v1 plugin's manifest would be misread by a v2
+ *     host. The bump makes the host reject v1 plugins at the abi_version gate
+ *     (a field at a layout-stable offset) instead of dereferencing a relocated
+ *     `input` pointer and crashing. */
+#define VTP_PLUGIN_ABI_VERSION 2u
 
-typedef enum
-{
-    VTP_PLUGIN_INPUT    = 1, /* decode / sample source */
-    VTP_PLUGIN_PROVIDER = 2, /* search / feature provider */
-} VtpPluginKind;
-
-/* Output contract every input plugin MUST honor: interleaved float32,
- * stereo, 44100 Hz. The rest of the pipeline (mixing, gain, visualizers)
- * is blind to the original codec because of this. */
+/* The output contract EVERY input plugin must honor: the samples you write in
+ * read() are interleaved float32 (L,R,L,R,...), stereo, at 44100 Hz, with each
+ * sample nominally in [-1.0, 1.0]. The rest of the pipeline (mixing, gain,
+ * visualizers, the output device) is blind to your source codec precisely
+ * because you normalize to this one format. If your source differs (mono, 48k,
+ * int16, ...), resample/upmix/convert INSIDE the plugin. */
 #define VTP_SAMPLE_RATE 44100
 #define VTP_CHANNELS    2
 
-/* Host log levels (mirror typical syslog ordering, low = more severe). */
+/* Severity levels for the host log callback (see VtpHostApi.log). Lower is more
+ * severe, mirroring syslog. INFO/DEBUG are dropped unless vtplayer runs with
+ * `--debug`; ERROR/WARN always show. */
 typedef enum
 {
     VTP_LOG_ERROR = 0,
@@ -64,123 +108,183 @@ typedef enum
     VTP_LOG_DEBUG = 3,
 } VtpLogLevel;
 
-/* ---- Services the host provides to the plugin --------------------------- *
- * Passed by pointer into vtp_register(); the plugin may copy the struct.
- * Returned strings are owned by the host and valid for the process lifetime.
- * Function pointers may be NULL on older hosts — always null-check against
- * `struct_size` before calling a field added after v1.                       */
+/* ---- Services the host provides TO the plugin --------------------------- *
+ * A pointer to this table is passed into vtp_register(). You may copy the
+ * struct if you want to keep it. Any `const char*` the host returns is owned by
+ * the host and valid for the whole process lifetime — do not free it.
+ *
+ * Forward-compatibility: a future host may append fields. Before calling a
+ * function pointer added after the version you built against, gate it on
+ * `struct_size` (and a NULL check). For every field below — all part of the
+ * current ABI — a plain `host->log != NULL` style null-check is sufficient.   */
 typedef struct
 {
     uint32_t struct_size;  /* sizeof(VtpHostApi) at host build time */
-    uint32_t host_version; /* vtplayer version, packed as MMmmpp (decimal) */
+    uint32_t host_version; /* vtplayer version packed as decimal MMmmpp,
+                            * e.g. 0.15.0 -> 1500. 0 if the host didn't set it. */
 
-    /* "~/.config/vtplayer" — persistent state. NULL if $HOME is unset. */
+    /* Returns "~/.config/vtplayer" — your persistent state / settings dir.
+     * Returns NULL if $HOME is unset. The directory may not exist yet. */
     const char *(*config_dir)(void);
-    /* "~/.cache/vtplayer" — created on first call. For downloaded media /
-     * scratch. NULL if no cache base could be resolved. */
+
+    /* Returns "~/.cache/vtplayer" (honoring $XDG_CACHE_HOME), CREATED on first
+     * call. Use it for downloaded media or decode scratch. NULL if no cache
+     * base could be resolved. */
     const char *(*cache_dir)(void);
-    /* Route a message into the host log. Safe to call from any thread. */
+
+    /* Routes a UTF-8 message into the host log at the given VtpLogLevel. This
+     * is the ONLY correct way for a plugin to emit diagnostics — writing to
+     * stdout/stderr yourself corrupts the terminal UI. Safe to call from ANY
+     * thread. `msg` is copied/consumed synchronously; you keep ownership. */
     void (*log)(int level, const char *msg);
 } VtpHostApi;
 
-/* ---- Shared tag payload ------------------------------------------------- */
+/* ---- Shared tag payload ------------------------------------------------- *
+ * Filled by your optional read_tags() so the library scanner can index your
+ * files with real metadata. The host zeroes this struct and sets struct_size
+ * before calling you; you fill what you know and leave the rest zero. Char
+ * fields are fixed-size, NUL-terminated UTF-8 buffers — write fewer bytes than
+ * the capacity and NUL-terminate (e.g. via strncpy/snprintf). An empty string
+ * field is treated as "unknown" and the host keeps its own fallback.          */
 typedef struct
 {
     uint32_t struct_size;
     char     title[256];
     char     artist[256];
     char     album[256];
-    char     grouping[128];
-    int32_t  track_number;
-    int32_t  year;
-    double   duration; /* seconds; <= 0 means unknown */
+    char     grouping[128]; /* top-level library tree axis (genre-like bucket) */
+    int32_t  track_number;  /* 0 = unknown */
+    int32_t  year;          /* 0 = unknown */
+    double   duration;      /* seconds; <= 0 means unknown */
+    /* Appended in a later revision (append-only, see STABILITY RULES) — the
+     * depth-1 library axis in AlbumArtist mode. An older plugin built before
+     * this field leaves it zeroed, which the host reads as "unknown". */
+    char     album_artist[256];
 } VtpTagOut;
 
 /* ---- (A) Input plugin: a new decode backend ----------------------------- *
- * read() is called on the AUDIO thread and MUST NOT block on I/O. Pure
- * synthesis (chip emulation) is fine; anything that can stall on the network
- * or disk must be wrapped behind its own buffering and exposed as a stream by
- * the plugin author instead.                                                 */
+ * This is the heart of a plugin: it claims file extensions and turns a file
+ * into a stream of PCM frames.
+ *
+ * THREADING & LIFETIME — the host guarantees, and you must rely on, the
+ * following. Get this right and the rest is easy:
+ *
+ *   - read() runs on the REALTIME AUDIO THREAD and MUST NOT BLOCK. No disk or
+ *     network I/O, no locks held against slow work, ideally no heap allocation.
+ *     Do blocking work in open() (or on a background thread you own) and feed
+ *     read() from a buffer. Pure synthesis (chip emulation) has nothing to
+ *     worry about. A read() that blocks stutters or freezes playback.
+ *
+ *   - All calls on ONE handle are serialized by the host. open/read/seek/
+ *     duration/seekable/close for a given handle never run concurrently with
+ *     each other, so a handle's own state needs NO internal locking. (read()
+ *     is still the audio thread — the realtime rule above still applies.)
+ *
+ *   - The host NEVER unloads (dlclose) your module while a handle from it is
+ *     open. Your code pages and static data outlive every handle.
+ *
+ *   - This whole struct, the `exts` array, its strings, and everything reached
+ *     from the manifest MUST have STATIC LIFETIME (valid for the whole
+ *     process). Returning stack/temporary data is undefined behavior — the host
+ *     keeps the pointers.                                                      */
 typedef struct VtpInputPlugin
 {
-    uint32_t            struct_size;
-    const char *const  *exts;   /* owned extensions, lowercase, no dot: {"vgm","vgz",...} */
+    uint32_t            struct_size; /* sizeof(VtpInputPlugin) */
+
+    /* The file extensions this backend claims: lowercase, NO leading dot,
+     * e.g. {"vgm","vgz"}. Static array of `n_exts` UTF-8 strings, static
+     * lifetime. The host lowercases/strips-dot defensively, but provide them
+     * already normalized. NOTE: a plugin claim WINS over libav's built-in
+     * formats, and across plugins the first to claim an extension keeps it. */
+    const char *const  *exts;
     size_t              n_exts;
 
-    void     *(*open)(const char *path);                     /* NULL = failure */
-    uint32_t  (*read)(void *h, float *out, uint32_t frames); /* frames written (< frames => short/EOF) */
-    int       (*seek)(void *h, double seconds);              /* 0 = ok */
-    double    (*duration)(void *h);                          /* <= 0 = unknown */
-    int       (*seekable)(void *h);                          /* 0 / 1 */
+    /* Open `path` (a filesystem path, UTF-8) and return an opaque handle that
+     * is passed to every other call below. Return NULL on failure — the host
+     * treats that as "cannot play this file". Called on the UI thread; this is
+     * where blocking I/O / format probing belongs. */
+    void     *(*open)(const char *path);
+
+    /* Fill up to `frames` STEREO frames into `out` and return how many you
+     * actually wrote. `out` has room for `frames * VTP_CHANNELS` floats laid
+     * out interleaved: out[2*i+0]=left, out[2*i+1]=right, samples in [-1,1].
+     *
+     * EOF SEMANTICS (important): returning FEWER frames than requested means
+     * PERMANENT end-of-stream — the host flags track-end and advances to the
+     * next track. There is no "short read, try again later". So: return full
+     * blocks until the source is genuinely spent, then one final short (or
+     * zero) block. If your data isn't ready yet (slow I/O), you must have
+     * buffered ahead — never return a short block just to wait, and never block.
+     * May be called with frames == 0; return 0. Runs on the AUDIO thread. */
+    uint32_t  (*read)(void *h, float *out, uint32_t frames);
+
+    /* Seek so the next read() starts at `seconds` from the beginning. Return 0
+     * on success, non-zero on failure. Clamp negative input to 0. UI thread. */
+    int       (*seek)(void *h, double seconds);
+
+    /* Total length of the open source in seconds, or <= 0 if unknown. The host
+     * reads this once right after open() to size the transport bar. UI thread. */
+    double    (*duration)(void *h);
+
+    /* Return 1 if seek() is meaningful for this handle, else 0. Read once after
+     * open(). UI thread. */
+    int       (*seekable)(void *h);
+
+    /* Release everything associated with `h`. Called exactly once per
+     * successful open(); after it returns the host never touches `h` again.
+     * UI thread. */
     void      (*close)(void *h);
 
-    /* Optional metadata probe for the library scanner. NULL => the host falls
-     * back to the filename stem. Return 0 on success. */
+    /* OPTIONAL (may be NULL): a handle-free metadata probe for the library
+     * scanner. Takes a PATH, not a handle — it is independent of open() and may
+     * be called without one. Fill `out` (see VtpTagOut) and return 0 on
+     * success, non-zero on failure. If NULL or it fails, the host falls back to
+     * the filename stem as the title. Runs on a BACKGROUND scanner thread,
+     * possibly while a different file plays — so keep it self-contained and free
+     * of unsynchronized global state. (For plugin-claimed files the host asks
+     * you here and never runs TagLib on them.) */
     int       (*read_tags)(const char *path, VtpTagOut *out);
 } VtpInputPlugin;
 
-/* ---- (B) Provider plugin: search / fetch feature (e.g. "Yoo") ------------ *
- * The host owns all UI; the plugin only answers two questions on a worker
- * thread. Phase 3 wires this up — declared here so the ABI is complete.      */
-typedef struct
-{
-    uint32_t struct_size;
-    char     title[256];    /* list display */
-    char     subtitle[256];
-    char     id[256];       /* opaque key handed back to resolve() */
-    double   duration;      /* <= 0 = unknown */
-} VtpResult;
-
-typedef struct
-{
-    uint32_t  struct_size;
-    char      path[1024];       /* cached file path (this OR stream_url) */
-    char      stream_url[1024]; /* or a stream URL */
-    VtpTagOut tags;
-} VtpTrackOut;
-
-typedef void (*VtpProgressCb)(void *user, double fraction, const char *note);
-
-typedef struct
-{
-    uint32_t    struct_size;
-    const char *menu_label; /* "Search YouTube" */
-
-    /* Worker thread. out_results is plugin-owned; returned via free_results. */
-    int   (*search)(void *h, const char *query, VtpResult **out_results, size_t *out_count);
-    /* Worker thread. Resolve a result id to a playable track (downloading if
-     * needed). 0 = ok. cb may be NULL. */
-    int   (*resolve)(void *h, const char *id, VtpTrackOut *out, VtpProgressCb cb, void *cb_user);
-    void  (*free_results)(void *h, VtpResult *results, size_t count);
-
-    void *(*open_session)(void);  /* optional session handle h; may be NULL */
-    void  (*close_session)(void *h);
-} VtpProviderPlugin;
-
-/* ---- Manifest + entry point --------------------------------------------- */
+/* ---- Manifest + entry point --------------------------------------------- *
+ * The single object you hand back from vtp_register(). Allocate it statically
+ * (e.g. a file-scope `static const`) so it outlives the call.                 */
 typedef struct VtpPluginManifest
 {
-    uint32_t      struct_size;
-    uint32_t      abi_version; /* ABI the plugin was built against */
-    VtpPluginKind kind;
-    const char   *name;        /* "libvgm", "Yoo", ... */
-    const char   *version;     /* "0.1.0" */
-    union
-    {
-        const VtpInputPlugin    *input;
-        const VtpProviderPlugin *provider;
-    } iface;
+    uint32_t              struct_size; /* sizeof(VtpPluginManifest) */
+    uint32_t              abi_version; /* set to VTP_PLUGIN_ABI_VERSION */
+    const char           *name;        /* "libvgm", ... shown in Help->Plugins;
+                                        * NULL -> host uses the file name */
+    const char           *version;     /* "0.1.0", free-form; NULL -> "0.0.0" */
+    const VtpInputPlugin *input;        /* the decode backend; MUST be non-NULL,
+                                         * MUST point to static storage */
 } VtpPluginManifest;
 
 /*
- * The single symbol the host resolves via dlsym. The host passes the ABI
- * version it speaks and its service table. The plugin returns a manifest with
- * static lifetime, or NULL to decline (e.g. host_abi it cannot support). The
- * host independently re-checks manifest->abi_version and skips on mismatch.
+ * The single symbol the host resolves via dlsym — your plugin's entry point.
+ *
+ *   host_abi : the ABI version the host speaks. If it is not one you support,
+ *              return NULL to decline cleanly. (The host ALSO re-checks
+ *              manifest->abi_version itself and skips you on mismatch, so a
+ *              stale plugin can never crash a newer host — it just won't load.)
+ *   host     : the host service table (VtpHostApi). Valid for the process
+ *              lifetime; you may copy it.
+ *
+ * Return a manifest with STATIC lifetime, or NULL to decline. Called once, on
+ * a single thread, during startup before the UI and audio device come up.
+ *
+ * Minimal shape:
+ *     VTP_EXPORT const VtpPluginManifest *
+ *     vtp_register(uint32_t host_abi, const VtpHostApi *host) {
+ *         (void) host;
+ *         if (host_abi != VTP_PLUGIN_ABI_VERSION) return NULL;
+ *         return &kManifest;   // file-scope `static const`
+ *     }
  */
 VTP_EXPORT const VtpPluginManifest *vtp_register(uint32_t host_abi, const VtpHostApi *host);
 
-/* Convenience signature for dlsym casts on the host side. */
+/* Convenience function-pointer typedef the host uses for its dlsym cast. Plugin
+ * authors can ignore this. */
 typedef const VtpPluginManifest *(*VtpRegisterFn)(uint32_t, const VtpHostApi *);
 
 #ifdef __cplusplus

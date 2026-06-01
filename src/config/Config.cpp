@@ -189,60 +189,6 @@ namespace vtplayer
             {
             }
         }
-        if (auto *v = get("formats.extensions"))
-        {
-            // Merge rather than replace: keep the user's saved order/additions
-            // but always include every built-in default, so users upgrading
-            // from an older release automatically pick up newly supported
-            // formats without hand-editing config.ini.
-            auto split = [](std::string const &s)
-            {
-                std::vector<std::string> out;
-                std::string cur;
-                auto flush = [&]()
-                {
-                    while (!cur.empty() && (cur.front() == ' ' || cur.front() == '\t'))
-                        cur.erase(cur.begin());
-                    while (!cur.empty() && (cur.back() == ' ' || cur.back() == '\t'))
-                        cur.pop_back();
-                    if (cur.empty()) return;
-                    if (cur.front() == '.') cur.erase(0, 1);
-                    for (auto &c : cur)
-                        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                    if (!cur.empty()) out.push_back(std::move(cur));
-                    cur.clear();
-                };
-                for (char c : s)
-                {
-                    if (c == ',') flush();
-                    else cur.push_back(c);
-                }
-                flush();
-                return out;
-            };
-
-            std::vector<std::string> userExts = split(*v);
-            std::vector<std::string> builtin = split(extensions);
-
-            std::unordered_map<std::string, bool> have;
-            for (auto const &e : userExts) have[e] = true;
-            for (auto const &e : builtin)
-            {
-                if (!have[e])
-                {
-                    userExts.push_back(e);
-                    have[e] = true;
-                }
-            }
-
-            std::string merged;
-            for (auto const &e : userExts)
-            {
-                if (!merged.empty()) merged.push_back(',');
-                merged += e;
-            }
-            extensions = std::move(merged);
-        }
         if (auto *v = get("library.root"))
         {
             std::string dir = *v;
@@ -327,9 +273,6 @@ namespace vtplayer
         out << "bar_count = " << barCount << "\n";
         out << "index = " << visualizerIndex << "\n";
         out << "fps = " << visualizerFps << "\n\n";
-
-        out << "[formats]\n";
-        out << "extensions = " << extensions << "\n\n";
 
         out << "[library]\n";
         out << "root = " << libraryRoot.string() << "\n";

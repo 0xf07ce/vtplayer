@@ -9,7 +9,8 @@ name: Release Bottles
 #
 # Requires the `TAP_PUSH_TOKEN` secret: a PAT with Contents:write on
 # 0xf07ce/homebrew-tap (the default GITHUB_TOKEN cannot push cross-repo).
-# See packaging/homebrew/README.md.
+# The formula and its maintenance docs live in the tap repo:
+# https://github.com/0xf07ce/homebrew-tap
 
 on:
   push:

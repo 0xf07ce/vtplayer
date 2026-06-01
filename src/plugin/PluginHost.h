@@ -16,9 +16,9 @@ namespace vtplayer
 ///
 /// A plugin is loaded by `dlopen`, resolving the single entry symbol
 /// `vtp_register`, calling it with the host ABI version and the host service
-/// table, then validating the returned manifest's ABI version and kind. Input
-/// plugins register their extensions into `DecoderRegistry`. Any failure logs
-/// and skips — a bad plugin never crashes the host.
+/// table, then validating the returned manifest's ABI version. The input
+/// plugin it carries registers its extensions into `DecoderRegistry`. Any
+/// failure logs and skips — a bad plugin never crashes the host.
 ///
 /// Lifetime: modules stay loaded until `shutdown()`. Because an active audio
 /// source may hold pointers into a plugin's code pages, `shutdown()` MUST run

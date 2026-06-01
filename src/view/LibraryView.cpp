@@ -305,25 +305,25 @@ namespace vtplayer
             {
                 std::string plsStem = trimAscii(toNfc(t.album));
                 if (plsStem.empty())
-                    plsStem = "(unknown stream)";
+                    plsStem = "#unknown_stream";
                 streamTree[plsStem].push_back(&t);
                 continue;
             }
             std::string grouping = trimAscii(toNfc(t.grouping));
             if (grouping.empty())
-                grouping = "(ungrouped)";
+                grouping = "#ungrouped";
             std::string artist = trimAscii(toNfc(t.*artistKeyField));
             if (artist.empty())
-                artist = "(null)";
+                artist = "#unknown_artist";
             std::string albumRaw = trimAscii(toNfc(t.album));
-            std::string album = albumRaw.empty() ? "(null)" : std::move(albumRaw);
+            std::string album = albumRaw.empty() ? "#unknown_album" : std::move(albumRaw);
             tree[grouping][artist][album].push_back(&t);
         }
 
         // Stream branch (mixed depth: tracks land at depth 2).
         if (!streamTree.empty())
         {
-            std::size_t const streamIdx = createGroup(kNoIdx, "(stream)", 0);
+            std::size_t const streamIdx = createGroup(kNoIdx, "#stream", 0);
             for (auto const &[plsStem, tracks] : streamTree)
             {
                 std::size_t const plsIdx = createGroup(streamIdx, plsStem, 1);
@@ -394,21 +394,22 @@ namespace vtplayer
 
         // Pin synthetic labels to the top in a fixed order, ahead of the
         // alphabetical run. Pinning is depth-aware: groupings (depth 0)
-        // pin `(stream)` then `(null)`; artists inside a grouping (depth
-        // 1) pin `(null)` then, in AlbumArtistTree mode, `Various Artists`.
-        // Directory mode keeps pure alphabetical ordering at every depth.
+        // pin `#stream` then `#ungrouped`; artists inside a grouping
+        // (depth 1) pin `#unknown_artist` then, in AlbumArtistTree mode,
+        // `Various Artists`. Directory mode keeps pure alphabetical
+        // ordering at every depth.
         auto groupingPriority = [&](std::string const &label) -> int {
             if (_mode == Mode::Directory) return 3;
-            if (label == "(stream)")    return 0;
-            if (label == "(ungrouped)") return 1;
+            if (label == "#stream")    return 0;
+            if (label == "#ungrouped") return 1;
             return 3;
         };
         auto artistPriority = [&](std::string const &label) -> int {
             if (_mode == Mode::Directory) return 3;
-            // `(stream)` appears at this depth only as the sole child of
-            // the `(stream)` grouping — pinning is harmless either way.
-            if (label == "(stream)") return 0;
-            if (label == "(null)")   return 1;
+            // `#stream` appears at this depth only as the sole child of
+            // the `#stream` grouping — pinning is harmless either way.
+            if (label == "#stream")          return 0;
+            if (label == "#unknown_artist")  return 1;
             if (_mode == Mode::AlbumArtistTree && label == "Various Artists")
                 return 2;
             return 3;
@@ -703,19 +704,22 @@ namespace vtplayer
             // tint. Directory mode has no artist/album concept — groups
             // are just folders, so use the neutral file-browser directory
             // color and only the track tint. The synthetic labels —
-            // `(ungrouped)` at depth 0, `(null)` at depth 1, and
-            // `(stream)` wherever it appears — each get the "missing
-            // tag" tint to set them apart from real values.
+            // `#ungrouped` at depth 0, `#unknown_artist` at depth 1,
+            // `#unknown_album` at depth 2, and `#stream` wherever it
+            // appears — each get the "missing tag" tint to set them apart
+            // from real values.
             Color levelFg;
             if (n.kind == Node::Kind::Track)
                 levelFg = _theme.libraryTrackFg;
             else if (_mode == Mode::Directory)
                 levelFg = _theme.playQueueFg;
-            else if (n.label == "(stream)")
+            else if (n.label == "#stream")
                 levelFg = _theme.libraryStreamFg;
-            else if (n.depth == 0 && n.label == "(ungrouped)")
+            else if (n.depth == 0 && n.label == "#ungrouped")
                 levelFg = _theme.libraryNullFg;
-            else if (n.depth == 1 && n.label == "(null)")
+            else if (n.depth == 1 && n.label == "#unknown_artist")
+                levelFg = _theme.libraryNullFg;
+            else if (n.depth == 2 && n.label == "#unknown_album")
                 levelFg = _theme.libraryNullFg;
             else if (n.depth == 0)
                 levelFg = _theme.libraryGroupingFg;
