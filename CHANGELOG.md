@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 0.16.1 (2026-06-02)
+
+- Renamed the internal missing-artist sentinel in the library tree from
+  `#unknown_artist` to `#unattributed`, for naming consistency with the
+  other `#`-prefixed sentinels (`#ungrouped`, `#unknown_album`,
+  `#stream`). Pure internal sort-key rename — no display-label change.
+
 ## 0.16.0 (2026-06-02)
 
 - Plugin ABI cleanup ahead of any external consumers: dropped the

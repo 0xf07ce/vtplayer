@@ -314,7 +314,7 @@ namespace vtplayer
                 grouping = "#ungrouped";
             std::string artist = trimAscii(toNfc(t.*artistKeyField));
             if (artist.empty())
-                artist = "#unknown_artist";
+                artist = "#unattributed";
             std::string albumRaw = trimAscii(toNfc(t.album));
             std::string album = albumRaw.empty() ? "#unknown_album" : std::move(albumRaw);
             tree[grouping][artist][album].push_back(&t);
@@ -395,7 +395,7 @@ namespace vtplayer
         // Pin synthetic labels to the top in a fixed order, ahead of the
         // alphabetical run. Pinning is depth-aware: groupings (depth 0)
         // pin `#stream` then `#ungrouped`; artists inside a grouping
-        // (depth 1) pin `#unknown_artist` then, in AlbumArtistTree mode,
+        // (depth 1) pin `#unattributed` then, in AlbumArtistTree mode,
         // `Various Artists`. Directory mode keeps pure alphabetical
         // ordering at every depth.
         auto groupingPriority = [&](std::string const &label) -> int {
@@ -409,7 +409,7 @@ namespace vtplayer
             // `#stream` appears at this depth only as the sole child of
             // the `#stream` grouping — pinning is harmless either way.
             if (label == "#stream")          return 0;
-            if (label == "#unknown_artist")  return 1;
+            if (label == "#unattributed")  return 1;
             if (_mode == Mode::AlbumArtistTree && label == "Various Artists")
                 return 2;
             return 3;
@@ -704,7 +704,7 @@ namespace vtplayer
             // tint. Directory mode has no artist/album concept — groups
             // are just folders, so use the neutral file-browser directory
             // color and only the track tint. The synthetic labels —
-            // `#ungrouped` at depth 0, `#unknown_artist` at depth 1,
+            // `#ungrouped` at depth 0, `#unattributed` at depth 1,
             // `#unknown_album` at depth 2, and `#stream` wherever it
             // appears — each get the "missing tag" tint to set them apart
             // from real values.
@@ -717,7 +717,7 @@ namespace vtplayer
                 levelFg = _theme.libraryStreamFg;
             else if (n.depth == 0 && n.label == "#ungrouped")
                 levelFg = _theme.libraryNullFg;
-            else if (n.depth == 1 && n.label == "#unknown_artist")
+            else if (n.depth == 1 && n.label == "#unattributed")
                 levelFg = _theme.libraryNullFg;
             else if (n.depth == 2 && n.label == "#unknown_album")
                 levelFg = _theme.libraryNullFg;
