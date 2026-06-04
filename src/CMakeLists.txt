@@ -47,6 +47,12 @@ add_executable(vtplayer
     view/VisualizerView.cpp
     view/ContextMenu.h
     view/ContextMenu.cpp
+    view/PlaylistsView.h
+    view/PlaylistsView.cpp
+    view/TextInputDialog.h
+    view/TextInputDialog.cpp
+    view/ConfirmDialog.h
+    view/ConfirmDialog.cpp
 
     # visualizer
     visualizer/Visualizer.h
@@ -86,6 +92,8 @@ add_executable(vtplayer
     util/M3uReader.cpp
     util/PlsReader.h
     util/PlsReader.cpp
+    util/PlaylistStore.h
+    util/PlaylistStore.cpp
     util/UnicodeNormalize.h
     util/UnicodeNormalize.cpp
     util/TagLibSilencer.h

@@ -214,7 +214,10 @@ void PlayQueueView::draw(ventty::Window & window)
     ventty::Style headerStyle{_theme.playQueueHeaderFg, _theme.playQueueBg, ventty::Attr::Bold};
     window.fill(r.x, r.y, r.width - 1, 1, U' ', headerStyle);
 
-    std::string header = " Play Queue";
+    // Two leading spaces: the inter-panel separator overwrites this column's
+    // first cell, so the second space is what actually shows before the text —
+    // matching the " <text>" gap the left panel renders after its border.
+    std::string header = "  Play Queue";
     if (!tracks.empty())
     {
         header += " (" + std::to_string(tracks.size()) + ")";

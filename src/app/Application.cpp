@@ -94,6 +94,8 @@ namespace vtplayer
                 return LeftMode::ArtistTree;
             if (s == "directory")
                 return LeftMode::Directory;
+            if (s == "playlists")
+                return LeftMode::Playlists;
             // Legacy "radio" mode (v0.9.x and earlier) falls back to album —
             // RadioView was removed in v0.10.0 when streaming moved into the
             // unified library.
@@ -108,6 +110,8 @@ namespace vtplayer
                 return "artist";
             case LeftMode::Directory:
                 return "directory";
+            case LeftMode::Playlists:
+                return "playlists";
             case LeftMode::AlbumArtistTree:
                 return "album";
             // FileBrowser is transient — normalize so a fresh run starts
@@ -221,6 +225,12 @@ namespace vtplayer
             {
                 _terminal->setCursorPos(_searchDialog->cursorScreenX(),
                                         _searchDialog->cursorScreenY());
+                _terminal->setCursorVisible(true);
+            }
+            else if (_textInputDialog && _textInputDialog->wantsCursor())
+            {
+                _terminal->setCursorPos(_textInputDialog->cursorScreenX(),
+                                        _textInputDialog->cursorScreenY());
                 _terminal->setCursorVisible(true);
             }
             else
@@ -482,6 +492,16 @@ namespace vtplayer
         _contextMenu->setOnSelect([this](int idx)
                                   { onContextMenuSelect(idx); });
 
+        _playlistsView = std::make_unique<PlaylistsView>();
+        _playlistsView->setTheme(_theme);
+
+        // Create/Delete are driven from the ESC menu; the per-action OnConfirm
+        // callbacks are bound at open time in onContextMenuSelect().
+        _textInputDialog = std::make_unique<TextInputDialog>();
+        _textInputDialog->setTheme(_theme);
+        _confirmDialog = std::make_unique<ConfirmDialog>();
+        _confirmDialog->setTheme(_theme);
+
         resize();
 
         // Open the media library index. Failure is non-fatal — the player
@@ -527,6 +547,11 @@ namespace vtplayer
                                         || initMode == LeftMode::Directory);
             if (!_libraryAnchor.empty() && _libraryView && initIsLibrary)
                 _libraryView->locateForMode(_libraryAnchor);
+
+            // Populate the playlist panel before first draw when the restored
+            // mode is Playlists; setLeftMode() doesn't list from disk.
+            if (initMode == LeftMode::Playlists)
+                refreshPlaylists();
         }
 
         if (!_initialFile.empty())
@@ -567,7 +592,7 @@ namespace vtplayer
         _config.leftMode = leftModeToConfig(_leftMode);
         // Capture the live cursor (the session may have stayed in one library
         // mode without ever switching) so focus survives the next launch.
-        if (_leftMode != LeftMode::FileBrowser && _libraryView)
+        if (leftIsLibrary() && _libraryView)
         {
             auto cur = _libraryView->selectedTrackPath();
             if (!cur.empty())
@@ -627,12 +652,16 @@ namespace vtplayer
             int playQueueW = w - browserW;
             _fileBrowser->setRect(0, contentY, browserW, contentH);
             _libraryView->setRect(0, contentY, browserW, contentH);
+            if (_playlistsView)
+                _playlistsView->setRect(0, contentY, browserW, contentH);
             _playQueueView->setRect(browserW, contentY, playQueueW, contentH);
         }
         else
         {
             _fileBrowser->setRect(0, contentY, 0, contentH);
             _libraryView->setRect(0, contentY, 0, contentH);
+            if (_playlistsView)
+                _playlistsView->setRect(0, contentY, 0, contentH);
             _playQueueView->setRect(0, contentY, w, contentH);
         }
 
@@ -746,6 +775,16 @@ namespace vtplayer
             _tagEditDialog->draw(*_rootWindow);
         }
 
+        // Playlist create / delete dialogs (overlays).
+        if (_textInputDialog && _textInputDialog->isOpen())
+        {
+            _textInputDialog->draw(*_rootWindow);
+        }
+        if (_confirmDialog && _confirmDialog->isOpen())
+        {
+            _confirmDialog->draw(*_rootWindow);
+        }
+
         // Context menu overlay (drawn last so it sits on top)
         if (_contextMenu)
         {
@@ -760,13 +799,18 @@ namespace vtplayer
     {
         if (_libraryPanelVisible)
         {
-            if (leftIsLibrary())
+            switch (activeLeftWidget())
             {
+            case LeftSlot::Library:
                 _libraryView->draw(*_rootWindow);
-            }
-            else
-            {
+                break;
+            case LeftSlot::Playlists:
+                if (_playlistsView)
+                    _playlistsView->draw(*_rootWindow);
+                break;
+            case LeftSlot::FileBrowser:
                 _fileBrowser->draw(*_rootWindow);
+                break;
             }
         }
         _playQueueView->draw(*_rootWindow);
@@ -836,7 +880,7 @@ namespace vtplayer
             {"  G",                     "Toggle gain normalization (ReplayGain / auto-gain)", false},
             {"", "", false},
             {"Browser - Library", "", true},
-            {"  1 / 2 / 3 / 4",         "Left panel: Album / Artist / Directory / Files", false},
+            {"  1 / 2 / 3 / 4 / 5",     "Left panel: Album / Artist / Directory / Files / Playlists", false},
             {"  L",                     "Toggle left panel (play queue full-width when hidden)", false},
             {"  Tab",                   "Switch focus (browser <-> play queue)", false},
             {"  Left / Right",          "Collapse / expand selected group", false},
@@ -1175,6 +1219,22 @@ namespace vtplayer
             return;
         }
 
+        if (_textInputDialog && _textInputDialog->isOpen())
+        {
+            _textInputDialog->handleKey(event);
+            if (!_textInputDialog->isOpen() && _terminal)
+                _terminal->forceRedraw();
+            return;
+        }
+
+        if (_confirmDialog && _confirmDialog->isOpen())
+        {
+            _confirmDialog->handleKey(event);
+            if (!_confirmDialog->isOpen() && _terminal)
+                _terminal->forceRedraw();
+            return;
+        }
+
         if (_contextMenu && _contextMenu->isOpen())
         {
             _contextMenu->handleKey(event);
@@ -1267,13 +1327,18 @@ namespace vtplayer
         {
             if (_focus == FocusPanel::FileBrowser)
             {
-                if (leftIsLibrary())
+                switch (activeLeftWidget())
                 {
+                case LeftSlot::Library:
                     _libraryView->handleKey(event);
-                }
-                else
-                {
+                    break;
+                case LeftSlot::Playlists:
+                    if (_playlistsView)
+                        _playlistsView->handleKey(event);
+                    break;
+                case LeftSlot::FileBrowser:
                     _fileBrowser->handleKey(event);
+                    break;
                 }
             }
             else
@@ -1316,8 +1381,7 @@ namespace vtplayer
                     if (_focus != FocusPanel::FileBrowser)
                     {
                         _focus = FocusPanel::FileBrowser;
-                        _fileBrowser->setFocused(!leftIsLibrary());
-                        _libraryView->setFocused(leftIsLibrary());
+                        setLeftFocused(true);
                         _playQueueView->setFocused(false);
                     }
                 }
@@ -1326,23 +1390,24 @@ namespace vtplayer
                     if (_focus != FocusPanel::PlayQueue)
                     {
                         _focus = FocusPanel::PlayQueue;
-                        _fileBrowser->setFocused(false);
-                        _libraryView->setFocused(false);
+                        setLeftFocused(false);
                         _playQueueView->setFocused(true);
                     }
                 }
             }
 
             // Delegate to focused panel
-            if (leftIsLibrary() && _libraryView->rect().contains(event.x, event.y))
+            LeftSlot const slot = activeLeftWidget();
+            if (slot == LeftSlot::Library && _libraryView->rect().contains(event.x, event.y))
             {
                 _libraryView->handleMouse(event);
             }
-            else if (!leftIsLibrary()
+            else if (slot == LeftSlot::FileBrowser
                      && _fileBrowser->rect().contains(event.x, event.y))
             {
                 _fileBrowser->handleMouse(event);
             }
+            // PlaylistsView has no mouse handler yet (keyboard-only this cut).
             else if (_playQueueView->rect().contains(event.x, event.y))
             {
                 _playQueueView->handleMouse(event);
@@ -1384,24 +1449,26 @@ namespace vtplayer
             return;
         }
 
-        // 1-4: pick the Browser-screen left panel directly.
+        // 1-5: pick the Browser-screen left panel directly.
         //   1 Album  (AlbumArtist > Album > Track tree)
         //   2 Artist (Artist      > Album > Track tree)
         //   3 Directory (folder tree from the library index)
         //   4 FileBrowser (live filesystem from the launch CWD)
+        //   5 Playlists (saved-playlist browser)
         // Internet radio is no longer a separate mode — PLS playlists in the
         // library surface in modes 1/2/3 like any other track.
         if (_screen == Screen::Browser && event.key == Key::Char && !event.alt && !event.ctrl
-            && (ch == '1' || ch == '2' || ch == '3' || ch == '4'))
+            && (ch == '1' || ch == '2' || ch == '3' || ch == '4' || ch == '5'))
         {
             LeftMode const target = (ch == '1')   ? LeftMode::AlbumArtistTree
                                     : (ch == '2') ? LeftMode::ArtistTree
                                     : (ch == '3') ? LeftMode::Directory
-                                                  : LeftMode::FileBrowser;
+                                    : (ch == '4') ? LeftMode::FileBrowser
+                                                  : LeftMode::Playlists;
             // Leaving a library projection (1/2/3): remember the focused
             // track so it can be restored on the next entry — including after
             // a FileBrowser (4) round-trip.
-            if (_leftMode != LeftMode::FileBrowser && _libraryView)
+            if (leftIsLibrary() && _libraryView)
             {
                 auto cur = _libraryView->selectedTrackPath();
                 if (!cur.empty())
@@ -1411,6 +1478,10 @@ namespace vtplayer
             // Picking a left mode implies the panel should be visible.
             setLibraryPanelVisible(true);
             setLeftMode(target);
+
+            // Playlists: re-list from disk so the panel is current.
+            if (target == LeftMode::Playlists)
+                refreshPlaylists();
 
             // Re-locate the anchor to its node at the new mode's grouping
             // level. This also runs when re-pressing the current mode's key:
@@ -1480,16 +1551,14 @@ namespace vtplayer
                 if (!_playQueueView->empty())
                 {
                     _focus = FocusPanel::PlayQueue;
-                    _fileBrowser->setFocused(false);
-                    _libraryView->setFocused(false);
+                    setLeftFocused(false);
                     _playQueueView->setFocused(true);
                 }
             }
             else
             {
                 _focus = FocusPanel::FileBrowser;
-                _fileBrowser->setFocused(!leftIsLibrary());
-                _libraryView->setFocused(leftIsLibrary());
+                setLeftFocused(true);
                 _playQueueView->setFocused(false);
             }
             return;
@@ -1516,12 +1585,34 @@ namespace vtplayer
             return;
         }
 
-        // x: hard stop (tear down decoder/stream and clear the ▶ marker).
+        // x: toggle hard stop / restart. While playing or paused it tears down
+        // the decoder/stream and clears the ▶ marker. Pressing it again from
+        // the stopped state restarts the queue: from the current track if one
+        // is set, otherwise from the top — and in shuffle mode from the first
+        // track of a freshly shuffled order.
         if (event.key == Key::Char && (ch == 'x' || ch == 'X') &&
             !event.alt && !event.ctrl)
         {
-            _audio.stop();
-            _playQueueView->setPlayingIndex(-1);
+            if (_audio.state() != PlayState::Stopped)
+            {
+                _audio.stop();
+                _playQueueView->setPlayingIndex(-1);
+            }
+            else if (_playQueueView->trackCount() > 0)
+            {
+                int idx = _playQueueView->playingIndex();
+                if (idx < 0)
+                {
+                    if (_shuffleMode)
+                    {
+                        rebuildShuffleOrder(/*seedIndex=*/-1);
+                        idx = currentShuffleQueueIndex();
+                    }
+                    if (idx < 0)
+                        idx = 0;
+                }
+                playTrack(idx);
+            }
             return;
         }
 
@@ -1603,6 +1694,11 @@ namespace vtplayer
         // keeping the existing queue intact.
         if (event.key == Key::Char && (ch == 'a' || ch == 'A') && !event.alt && !event.ctrl && _screen == Screen::Browser)
         {
+            // Playlists panel has no track-append action yet (no contents
+            // view this cut) — swallow `a` so it can't read stale FileBrowser
+            // state below.
+            if (leftIsPlaylists())
+                return;
             // Library panel: append the selected artist / album / track.
             if (leftIsLibrary())
             {
@@ -1661,7 +1757,19 @@ namespace vtplayer
         items.emplace_back("Focus playing track");
         _contextMenuActions.push_back(MenuAction::LocatePlaying);
 
-        if (!leftIsLibrary())
+        if (leftIsPlaylists())
+        {
+            items.emplace_back("Create playlist");
+            _contextMenuActions.push_back(MenuAction::CreatePlaylist);
+            if (_playlistsView && !_playlistsView->empty())
+            {
+                items.emplace_back("Rename playlist");
+                _contextMenuActions.push_back(MenuAction::RenamePlaylist);
+                items.emplace_back("Delete playlist");
+                _contextMenuActions.push_back(MenuAction::DeletePlaylist);
+            }
+        }
+        else if (!leftIsLibrary())
         {
             items.emplace_back("Set current directory as library root");
             _contextMenuActions.push_back(MenuAction::SetLibraryRoot);
@@ -1736,20 +1844,44 @@ namespace vtplayer
                 _libraryView->setMode(LibraryView::Mode::Directory);
                 break;
             case LeftMode::FileBrowser:
+            case LeftMode::Playlists:
                 break;
             }
         }
         // Keep keyboard focus on whichever widget now occupies the left slot.
+        // Critical for mode 5: without this, input never reaches PlaylistsView.
         if (_focus == FocusPanel::FileBrowser)
-        {
-            bool const fb = (mode == LeftMode::FileBrowser);
-            if (_fileBrowser)
-                _fileBrowser->setFocused(fb);
-            if (_libraryView)
-                _libraryView->setFocused(!fb);
-        }
+            setLeftFocused(true);
         if (_terminal)
             _terminal->forceRedraw();
+    }
+
+    void Application::refreshPlaylists()
+    {
+        if (_playlistsView)
+            _playlistsView->setItems(_playlistStore.list());
+    }
+
+    std::string Application::playlistNameError(std::string const &name) const
+    {
+        // pathFor() applies the same sanitization create()/rename() use, so an
+        // existing target file means the failure was a name collision; anything
+        // else (e.g. a name that sanitizes to empty) is an invalid name.
+        std::error_code ec;
+        if (std::filesystem::exists(_playlistStore.pathFor(name), ec))
+            return "A playlist with that name already exists";
+        return "Invalid playlist name";
+    }
+
+    void Application::setLeftFocused(bool on)
+    {
+        LeftSlot const slot = activeLeftWidget();
+        if (_fileBrowser)
+            _fileBrowser->setFocused(on && slot == LeftSlot::FileBrowser);
+        if (_libraryView)
+            _libraryView->setFocused(on && slot == LeftSlot::Library);
+        if (_playlistsView)
+            _playlistsView->setFocused(on && slot == LeftSlot::Playlists);
     }
 
     void Application::setLibraryPanelVisible(bool visible)
@@ -1762,10 +1894,7 @@ namespace vtplayer
         {
             // Nothing to focus on the left anymore: pin focus to the queue.
             _focus = FocusPanel::PlayQueue;
-            if (_fileBrowser)
-                _fileBrowser->setFocused(false);
-            if (_libraryView)
-                _libraryView->setFocused(false);
+            setLeftFocused(false);
             if (_playQueueView)
                 _playQueueView->setFocused(true);
         }
@@ -1773,11 +1902,7 @@ namespace vtplayer
         {
             // Hand focus back to whichever widget occupies the left slot.
             _focus = FocusPanel::FileBrowser;
-            bool const lib = leftIsLibrary();
-            if (_fileBrowser)
-                _fileBrowser->setFocused(!lib);
-            if (_libraryView)
-                _libraryView->setFocused(lib);
+            setLeftFocused(true);
             if (_playQueueView)
                 _playQueueView->setFocused(false);
         }
@@ -1874,7 +1999,7 @@ namespace vtplayer
                                  + "  (" + std::to_string(tracks.size()) + " tracks)";
                 }
             }
-            else if (_fileBrowser)
+            else if (activeLeftWidget() == LeftSlot::FileBrowser && _fileBrowser)
             {
                 // FileBrowser handler is single-file only: directories,
                 // playlists, and stream descriptors are ignored. Multi-
@@ -2040,6 +2165,69 @@ namespace vtplayer
             break;
         case MenuAction::LocatePlaying:
             locatePlayingInLibrary();
+            break;
+        case MenuAction::CreatePlaylist:
+            if (_textInputDialog)
+            {
+                // Bind the action fresh: the dialog is generic, so each open
+                // wires the specific callback it should run on confirm. The
+                // callback returns an error to keep the dialog open (e.g. on a
+                // name collision) or nullopt on success.
+                _textInputDialog->setOnConfirm(
+                    [this](std::string const &name) -> std::optional<std::string>
+                    {
+                        if (!_playlistStore.create(name))
+                            return playlistNameError(name);
+                        refreshPlaylists();
+                        if (_terminal)
+                            _terminal->forceRedraw();
+                        return std::nullopt;
+                    });
+                _textInputDialog->open("New Playlist", "Name:");
+            }
+            break;
+        case MenuAction::RenamePlaylist:
+            if (_textInputDialog && _playlistsView)
+            {
+                std::string const sel = _playlistsView->selectedName();
+                if (!sel.empty())
+                {
+                    _textInputDialog->setOnConfirm(
+                        [this, sel](std::string const &name) -> std::optional<std::string>
+                        {
+                            // rename() rejects a name collision (and empty /
+                            // invalid names); keep the dialog open with a hint
+                            // so the user can edit and retry.
+                            if (!_playlistStore.rename(sel, name))
+                                return playlistNameError(name);
+                            refreshPlaylists();
+                            if (_terminal)
+                                _terminal->forceRedraw();
+                            return std::nullopt;
+                        });
+                    // Prefill with the current name so the user edits in place.
+                    _textInputDialog->open("Rename Playlist", "Name:", sel);
+                }
+            }
+            break;
+        case MenuAction::DeletePlaylist:
+            if (_confirmDialog && _playlistsView)
+            {
+                std::string const sel = _playlistsView->selectedName();
+                if (!sel.empty())
+                {
+                    _confirmDialog->setOnConfirm([this, sel](bool yes)
+                                                 {
+                                                     if (yes)
+                                                         _playlistStore.remove(sel);
+                                                     refreshPlaylists();
+                                                     if (_terminal)
+                                                         _terminal->forceRedraw(); });
+                    _confirmDialog->open("Delete Playlist",
+                                         "Delete playlist \"" + sel + "\"?",
+                                         /*defaultYes=*/false);
+                }
+            }
             break;
         case MenuAction::Exit:
             quit();

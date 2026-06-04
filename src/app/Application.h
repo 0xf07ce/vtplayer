@@ -7,13 +7,17 @@
 #include "../config/Config.h"
 #include "../library/MediaLibrary.h"
 #include "../plugin/PluginHost.h"
+#include "../util/PlaylistStore.h"
+#include "../view/ConfirmDialog.h"
 #include "../view/ContextMenu.h"
 #include "../view/FileBrowser.h"
 #include "../view/HeaderBar.h"
 #include "../view/LibraryView.h"
 #include "../view/LibrarySearchDialog.h"
+#include "../view/PlaylistsView.h"
 #include "../view/PlayQueueView.h"
 #include "../view/TagEditDialog.h"
+#include "../view/TextInputDialog.h"
 #include "../view/Theme.h"
 #include "../view/TransportBar.h"
 #include "../view/VisualizerView.h"
@@ -70,6 +74,18 @@ namespace vtplayer
         ArtistTree,
         Directory,
         FileBrowser,
+        Playlists,  // 5 — saved-playlist browser (PlaylistsView)
+    };
+
+    /// Which widget currently occupies the Browser-screen left slot. The slot
+    /// used to be a binary (library vs filebrowser); Playlists adds a third
+    /// occupant, so draw/input/mouse/focus routing switches on this instead of
+    /// the `leftIsLibrary()` bool.
+    enum class LeftSlot
+    {
+        Library,
+        FileBrowser,
+        Playlists,
     };
 
     /// Actions in the ESC context menu. The visible item set is built
@@ -80,6 +96,9 @@ namespace vtplayer
         SetLibraryRoot,
         RescanLibrary,
         LocatePlaying,
+        CreatePlaylist,
+        RenamePlaylist,
+        DeletePlaylist,
         Exit,
     };
 
@@ -167,6 +186,31 @@ namespace vtplayer
                     || _leftMode == LeftMode::Directory)
                    && !_collectActive.load() && !_ingestActive.load();
         }
+
+        /// True when the left panel is the saved-playlist browser (mode 5).
+        bool leftIsPlaylists() const { return _leftMode == LeftMode::Playlists; }
+
+        /// Which widget currently fills the left slot. Keeps the existing
+        /// `leftIsLibrary()` semantics intact: Playlists is its own slot, and
+        /// anything that isn't Library or Playlists falls back to FileBrowser
+        /// (including during a scan, as before).
+        LeftSlot activeLeftWidget() const
+        {
+            if (_leftMode == LeftMode::Playlists) return LeftSlot::Playlists;
+            return leftIsLibrary() ? LeftSlot::Library : LeftSlot::FileBrowser;
+        }
+
+        /// Re-list playlists from disk into PlaylistsView.
+        void refreshPlaylists();
+
+        /// Map a failed create()/rename() to a user-facing hint for the name
+        /// dialog: a collision with an existing playlist vs an invalid name.
+        std::string playlistNameError(std::string const & name) const;
+
+        /// Focus whichever of the three left widgets is currently active (per
+        /// activeLeftWidget()) and unfocus the others. Replaces the old
+        /// two-widget focus sync.
+        void setLeftFocused(bool on);
 
         /// Show/hide the Browser-screen left panel (Library / FileBrowser).
         /// When hidden, PlayQueueView takes the full content width and focus
@@ -357,6 +401,7 @@ namespace vtplayer
         std::unique_ptr<HeaderBar> _headerBar;
         std::unique_ptr<FileBrowser> _fileBrowser;
         std::unique_ptr<LibraryView> _libraryView;
+        std::unique_ptr<PlaylistsView> _playlistsView;
         std::unique_ptr<PlayQueueView> _playQueueView;
         std::unique_ptr<TransportBar> _transportBar;
         std::unique_ptr<VisualizerView> _visualizerView;
@@ -366,6 +411,11 @@ namespace vtplayer
         std::vector<MenuAction> _contextMenuActions;
         std::unique_ptr<LibrarySearchDialog> _searchDialog;
         std::unique_ptr<TagEditDialog> _tagEditDialog;
+        std::unique_ptr<TextInputDialog> _textInputDialog;
+        std::unique_ptr<ConfirmDialog> _confirmDialog;
+
+        // Saved-playlist storage (~/.config/vtplayer/playlists/). Fixed dir.
+        PlaylistStore _playlistStore;
 
         // Startup positional argument. At most one is set: _initialFile is a
         // single track to queue+play; _initialDir is a folder to open in the
