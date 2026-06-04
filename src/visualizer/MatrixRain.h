@@ -27,6 +27,7 @@ namespace vtplayer
         void update(AudioEngine const &engine) override;
         void draw(ventty::Window &window, int x, int y, int w, int h) override;
         void setTheme(Theme const &theme) override;
+        int preferredFps() const override { return 20; }
 
     private:
         // Color quantization levels. Adjacent cells that fall into the same

@@ -27,6 +27,7 @@ public:
     void draw(ventty::Window & window, int x, int y, int w, int h) override;
     void setTheme(Theme const & theme) override { _theme = theme; }
     bool scrollBy(int delta) override;
+    int preferredFps() const override { return kStaticFps; }
 
 private:
     void refresh(std::filesystem::path const & path);

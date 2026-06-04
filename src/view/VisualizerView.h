@@ -34,6 +34,10 @@ namespace vtplayer
         /// Returns true if the visualizer consumed the input.
         bool scrollBy(int delta) { return _vis && _vis->scrollBy(delta); }
 
+        /// Preferred wake cadence of the active visualizer (see
+        /// Visualizer::preferredFps). 0 when no visualizer is set.
+        int preferredFps() const { return _vis ? _vis->preferredFps() : 0; }
+
         void draw(ventty::Window &window) override;
 
     private:

@@ -21,6 +21,7 @@ namespace vtplayer
         void update(AudioEngine const &engine) override;
         void draw(ventty::Window &window, int x, int y, int w, int h) override;
         void setTheme(Theme const &theme) override { _theme = theme; }
+        int preferredFps() const override { return 30; }
 
     private:
         Theme _theme;

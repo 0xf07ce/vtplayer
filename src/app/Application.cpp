@@ -253,11 +253,17 @@ namespace vtplayer
     int Application::computeIdleTimeoutMs() const
     {
         // Visualizer is animated — pace it at the configured FPS regardless
-        // of input. AudioSpectrum/MatrixRain/VinylVis are all designed
-        // around that frame rate.
-        if (_screen == Screen::Visualizer)
+        // of input. Each visualizer can request a lower cadence via
+        // preferredFps(): a positive value caps the rate (the global setting
+        // stays the ceiling), while kStaticFps marks a static view (e.g.
+        // TagInfoView) that wants no periodic wake at all — fall through to
+        // the input-driven idle pacing below so its idle CPU drops to ~0.
+        if (_screen == Screen::Visualizer && _visualizerView &&
+            _visualizerView->preferredFps() != Visualizer::kStaticFps)
         {
-            int const fps = std::clamp(_config.visualizerFps, 15, 60);
+            int fps = std::clamp(_config.visualizerFps, 15, 60);
+            if (int const pref = _visualizerView->preferredFps(); pref > 0)
+                fps = std::min(fps, pref);
             return std::max(1, 1000 / fps);
         }
 
