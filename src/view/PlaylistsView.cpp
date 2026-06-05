@@ -62,8 +62,11 @@ bool PlaylistsView::handleKey(ventty::KeyEvent const & event)
     }
     if (event.key == Key::Enter)
     {
-        // TODO: load the selected playlist's tracks into the play queue.
-        // Intentionally a no-op for now; the OnActivate seam stays unwired.
+        // Load the selected playlist's tracks into the play queue (the host
+        // wires OnActivate to loadPlaylistIntoQueue).
+        std::string const name = selectedName();
+        if (_onActivate && !name.empty())
+            _onActivate(name);
         return true;
     }
     return false;

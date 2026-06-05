@@ -19,6 +19,7 @@ using Key = ventty::KeyEvent::Key;
 void PlayQueueView::addTrack(TrackInfo const & track)
 {
     _queue.addTrack(track);
+    notifyContentsChanged();
 }
 
 void PlayQueueView::insertTrack(int idx, TrackInfo const & track)
@@ -30,6 +31,7 @@ void PlayQueueView::insertTrack(int idx, TrackInfo const & track)
     if (_playingIndex >= idx) _playingIndex++;
     if (_selectedIndex >= idx) _selectedIndex++;
     clearMultiSelection();
+    notifyContentsChanged();
 }
 
 void PlayQueueView::removeSelected()
@@ -68,6 +70,7 @@ void PlayQueueView::removeSelected()
 
     clearMultiSelection();
     scrollToSelected();
+    notifyContentsChanged();
 
     if (removingPlaying && _onPlayingRemoved)
     {
@@ -89,6 +92,7 @@ void PlayQueueView::moveSelectedUp()
 
     _selectedIndex--;
     scrollToSelected();
+    notifyContentsChanged();
 }
 
 void PlayQueueView::moveSelectedDown()
@@ -105,6 +109,7 @@ void PlayQueueView::moveSelectedDown()
 
     _selectedIndex++;
     scrollToSelected();
+    notifyContentsChanged();
 }
 
 void PlayQueueView::clear()
@@ -115,6 +120,7 @@ void PlayQueueView::clear()
     _scrollOffset = 0;
     _playingIndex = -1;
     clearMultiSelection();
+    notifyContentsChanged();
     if (hadPlaying && _onPlayingRemoved)
     {
         _onPlayingRemoved();
@@ -129,6 +135,7 @@ void PlayQueueView::setTracks(std::vector<TrackInfo> tracks)
     _scrollOffset = 0;
     _playingIndex = -1;
     clearMultiSelection();
+    notifyContentsChanged();
     if (hadPlaying && _onPlayingRemoved)
     {
         _onPlayingRemoved();
@@ -217,7 +224,7 @@ void PlayQueueView::draw(ventty::Window & window)
     // Two leading spaces: the inter-panel separator overwrites this column's
     // first cell, so the second space is what actually shows before the text —
     // matching the " <text>" gap the left panel renders after its border.
-    std::string header = "  Play Queue";
+    std::string header = "  " + _title;
     if (!tracks.empty())
     {
         header += " (" + std::to_string(tracks.size()) + ")";

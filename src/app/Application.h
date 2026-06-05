@@ -94,6 +94,7 @@ namespace vtplayer
     enum class MenuAction
     {
         SetLibraryRoot,
+        GoToLibraryRoot,
         RescanLibrary,
         LocatePlaying,
         CreatePlaylist,
@@ -158,6 +159,27 @@ namespace vtplayer
         void openContextMenu();
         void onContextMenuSelect(int index);
 
+        /// Snapshot of "where focus is and what is selected" at the moment the
+        /// ESC menu opens. classifyMenuContext() fills it from current state;
+        /// buildContextMenu() turns it into the prepared item set. This replaces
+        /// the old inline if/else chain so per-context menus extend cleanly.
+        struct MenuContext
+        {
+            bool     queueFocused = false;            ///< right (PlayQueue) panel focused
+            LeftSlot leftSlot = LeftSlot::Library;    ///< active left widget otherwise
+            bool     playlistsEmpty = true;
+            bool     libraryRootConfigured = false;
+            // Extension point: per-selection menus can branch on the focused
+            // widget's selection kind, already queryable via
+            // LibraryView::currentSelection().kind and
+            // FileBrowser::selectedEntry()->isDirectory. Not needed for the
+            // current item sets, so deliberately not snapshotted here yet.
+        };
+        MenuContext classifyMenuContext() const;
+        void buildContextMenu(MenuContext const & ctx,
+                              std::vector<std::string> & items,
+                              std::vector<MenuAction> & actions) const;
+
         /// 't' handler: figure out what the user is pointing at in the
         /// focused panel and open the tag editor with the right scope.
         void openTagEditor();
@@ -202,6 +224,16 @@ namespace vtplayer
 
         /// Re-list playlists from disk into PlaylistsView.
         void refreshPlaylists();
+
+        /// Replace the play queue with the named playlist's tracks and start
+        /// playback (Enter on a PlaylistsView row). One-way copy: the queue may
+        /// later diverge from the file. Stamps `_currentPlaylistName` so the
+        /// queue header shows the playlist's name.
+        void loadPlaylistIntoQueue(std::string const & name);
+
+        /// Push the play queue header title: the active playlist's name, or the
+        /// default "Play Queue" when `_currentPlaylistName` is empty.
+        void applyQueueTitle();
 
         /// Map a failed create()/rename() to a user-facing hint for the name
         /// dialog: a collision with an existing playlist vs an invalid name.
@@ -396,6 +428,12 @@ namespace vtplayer
         bool _shuffleMode = false;
         std::vector<std::filesystem::path> _shuffleOrder;
         int _shufflePos = -1;
+
+        // Name of the playlist whose tracks currently fill the play queue, or
+        // empty when the queue holds an ad-hoc selection (default "Play Queue"
+        // title). Session-only — set by loadPlaylistIntoQueue(), cleared by any
+        // queue mutation via PlayQueueView::OnContentsChanged.
+        std::string _currentPlaylistName;
 
         // Views
         std::unique_ptr<HeaderBar> _headerBar;

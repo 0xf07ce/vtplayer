@@ -424,6 +424,14 @@ namespace vtplayer
                                             {
                                                _audio.stop();
                                                _playQueueView->setPlayingIndex(-1); });
+        // Any queue mutation (add / remove / reorder / clear / replace) drops
+        // the header back to the default title. loadPlaylistIntoQueue() runs
+        // setTracks() first, then re-stamps the name, so it survives the load
+        // while later edits revert it.
+        _playQueueView->setOnContentsChanged([this]
+                                             {
+                                                 _currentPlaylistName.clear();
+                                                 applyQueueTitle(); });
 
         auto const sendToQueue = [this](std::vector<TrackInfo> tracks, bool replace)
         {
@@ -494,6 +502,8 @@ namespace vtplayer
 
         _playlistsView = std::make_unique<PlaylistsView>();
         _playlistsView->setTheme(_theme);
+        _playlistsView->setOnActivate([this](std::string const &name)
+                                      { loadPlaylistIntoQueue(name); });
 
         // Create/Delete are driven from the ESC menu; the per-action OnConfirm
         // callbacks are bound at open time in onContextMenuSelect().
@@ -1743,45 +1753,74 @@ namespace vtplayer
         }
     }
 
+    Application::MenuContext Application::classifyMenuContext() const
+    {
+        MenuContext ctx;
+        ctx.queueFocused = (_focus == FocusPanel::PlayQueue);
+        ctx.leftSlot = activeLeftWidget();
+        ctx.playlistsEmpty = !_playlistsView || _playlistsView->empty();
+        ctx.libraryRootConfigured = !_config.libraryRoot.empty();
+        return ctx;
+    }
+
+    void Application::buildContextMenu(MenuContext const &ctx,
+                                       std::vector<std::string> &items,
+                                       std::vector<MenuAction> &actions) const
+    {
+        auto const add = [&](std::string label, MenuAction action)
+        {
+            items.emplace_back(std::move(label));
+            actions.push_back(action);
+        };
+
+        // FileBrowser is the only context that omits "Focus playing track" (it
+        // would jump into the library tree, out of place here) and leads with
+        // the library-root items instead. Keyed on the active left mode, not on
+        // which panel holds focus.
+        if (ctx.leftSlot == LeftSlot::FileBrowser)
+        {
+            if (ctx.libraryRootConfigured)
+                add("Go to library root", MenuAction::GoToLibraryRoot);
+            add("Set current directory as library root", MenuAction::SetLibraryRoot);
+            add("Exit", MenuAction::Exit);
+            return;
+        }
+
+        // Every other context keeps "Focus playing track" first; its action
+        // already adapts to queue-vs-library focus in locatePlayingInLibrary().
+        add("Focus playing track", MenuAction::LocatePlaying);
+
+        switch (ctx.leftSlot)
+        {
+        case LeftSlot::Playlists:
+            add("Create playlist", MenuAction::CreatePlaylist);
+            if (!ctx.playlistsEmpty)
+            {
+                add("Rename playlist", MenuAction::RenamePlaylist);
+                add("Delete playlist", MenuAction::DeletePlaylist);
+            }
+            break;
+        case LeftSlot::Library:
+            add("Rescan library", MenuAction::RescanLibrary);
+            break;
+        case LeftSlot::FileBrowser:
+            break; // handled above
+        }
+
+        add("Exit", MenuAction::Exit);
+    }
+
     void Application::openContextMenu()
     {
         if (!_contextMenu)
             return;
 
-        // Build the item set for the current left-panel mode:
-        //   FileBrowser → "Set current directory as library root"
-        //   library     → "Rescan library"
+        // Classify the current focus/selection context, then build the prepared
+        // menu for it. Adding a per-context menu later means extending
+        // MenuContext + buildContextMenu(), not touching this entry point.
         std::vector<std::string> items;
         _contextMenuActions.clear();
-
-        items.emplace_back("Focus playing track");
-        _contextMenuActions.push_back(MenuAction::LocatePlaying);
-
-        if (leftIsPlaylists())
-        {
-            items.emplace_back("Create playlist");
-            _contextMenuActions.push_back(MenuAction::CreatePlaylist);
-            if (_playlistsView && !_playlistsView->empty())
-            {
-                items.emplace_back("Rename playlist");
-                _contextMenuActions.push_back(MenuAction::RenamePlaylist);
-                items.emplace_back("Delete playlist");
-                _contextMenuActions.push_back(MenuAction::DeletePlaylist);
-            }
-        }
-        else if (!leftIsLibrary())
-        {
-            items.emplace_back("Set current directory as library root");
-            _contextMenuActions.push_back(MenuAction::SetLibraryRoot);
-        }
-        else
-        {
-            items.emplace_back("Rescan library");
-            _contextMenuActions.push_back(MenuAction::RescanLibrary);
-        }
-
-        items.emplace_back("Exit");
-        _contextMenuActions.push_back(MenuAction::Exit);
+        buildContextMenu(classifyMenuContext(), items, _contextMenuActions);
 
         _contextMenu->setItems(std::move(items));
         _contextMenu->open();
@@ -1860,6 +1899,63 @@ namespace vtplayer
     {
         if (_playlistsView)
             _playlistsView->setItems(_playlistStore.list());
+    }
+
+    void Application::applyQueueTitle()
+    {
+        if (_playQueueView)
+            _playQueueView->setTitle(_currentPlaylistName.empty() ? "Play Queue"
+                                                                  : _currentPlaylistName);
+    }
+
+    void Application::loadPlaylistIntoQueue(std::string const &name)
+    {
+        if (!_playQueueView)
+            return;
+
+        auto parsed = M3uReader::read(_playlistStore.pathFor(name));
+        if (!parsed) // unreadable / missing — leave the queue untouched
+            return;
+
+        // Re-resolve each entry against the library so the queue carries the
+        // richer indexed metadata (album / grouping / ReplayGain) that the bare
+        // M3U parse lacks; fall back to the parsed entry for external paths.
+        // Mirrors PlayQueueCache::restore().
+        std::vector<TrackInfo> resolved;
+        resolved.reserve(parsed->size());
+        for (auto const &t : *parsed)
+        {
+            if (auto const *indexed = _library.find(t.path))
+                resolved.push_back(*indexed);
+            else
+                resolved.push_back(t);
+        }
+
+        // setTracks() fires OnContentsChanged → clears _currentPlaylistName;
+        // stamp the name afterwards so the header shows this playlist.
+        _playQueueView->setTracks(std::move(resolved));
+        _currentPlaylistName = name;
+        applyQueueTitle();
+
+        if (_playQueueView->trackCount() == 0)
+        {
+            // An empty playlist replaces the queue with nothing and stops.
+            _audio.stop();
+            _playQueueView->setPlayingIndex(-1);
+            return;
+        }
+
+        int startIdx = 0;
+        if (_shuffleMode)
+        {
+            // Fresh shuffle pass, then start from its first entry — same as the
+            // `x`-key restart UX.
+            rebuildShuffleOrder(/*seedIndex=*/-1);
+            int const sidx = currentShuffleQueueIndex();
+            if (sidx >= 0)
+                startIdx = sidx;
+        }
+        playTrack(startIdx);
     }
 
     std::string Application::playlistNameError(std::string const &name) const
@@ -2158,6 +2254,14 @@ namespace vtplayer
             if (_fileBrowser)
             {
                 setLibraryRoot(_fileBrowser->currentDirectory());
+            }
+            break;
+        case MenuAction::GoToLibraryRoot:
+            if (_fileBrowser && !_config.libraryRoot.empty())
+            {
+                std::error_code ec;
+                if (std::filesystem::is_directory(_config.libraryRoot, ec))
+                    _fileBrowser->setDirectory(_config.libraryRoot);
             }
             break;
         case MenuAction::RescanLibrary:

@@ -21,6 +21,10 @@ class PlayQueueView : public ventty::Widget
 public:
     void setTheme(Theme const & theme) { _theme = theme; }
 
+    /// Title shown in the header (defaults to "Play Queue"). Application points
+    /// it at the active playlist's name while a playlist fills the queue.
+    void setTitle(std::string title) { _title = std::move(title); }
+
     void addTrack(TrackInfo const & track);
 
     /// Insert a track at `idx` (clamped to [0, tracks.size()]). Shifts the
@@ -62,6 +66,14 @@ public:
     using OnPlayingRemovedCallback = std::function<void()>;
     void setOnPlayingRemoved(OnPlayingRemovedCallback cb) { _onPlayingRemoved = std::move(cb); }
 
+    /// Fired whenever the queue's *contents* change by any path — add, insert,
+    /// remove, reorder, clear, or full replace. Application uses it to reset the
+    /// header title back to the default (the loaded playlist's name is only
+    /// re-stamped by the playlist-load path). Distinct from OnPlayingRemoved,
+    /// which fires only when a *playing* track is lost.
+    using OnContentsChangedCallback = std::function<void()>;
+    void setOnContentsChanged(OnContentsChangedCallback cb) { _onContentsChanged = std::move(cb); }
+
     /// Multi-selection state (visual prep — bulk actions are a future feature).
     bool isMultiSelected(int idx) const { return _multiSelected.count(idx) > 0; }
     void clearMultiSelection();
@@ -77,8 +89,10 @@ protected:
 private:
     void scrollToSelected();
     void extendSelectionTo(int newIndex);
+    void notifyContentsChanged() { if (_onContentsChanged) _onContentsChanged(); }
 
     Theme _theme;
+    std::string _title = "Play Queue";
     PlayQueue _queue;
     int _selectedIndex = 0;
     int _scrollOffset = 0;
@@ -87,6 +101,7 @@ private:
     int _selectionAnchor = -1;
     OnPlayCallback _onPlay;
     OnPlayingRemovedCallback _onPlayingRemoved;
+    OnContentsChangedCallback _onContentsChanged;
 };
 
 } // namespace vtplayer
