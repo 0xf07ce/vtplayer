@@ -1,5 +1,40 @@
 # CHANGELOG
 
+## 0.16.2 (2026-06-06)
+
+- Added a **Playlists** left-panel browser (mode `5`): playlists are
+  individual `.m3u8` files under a fixed `~/.config/vtplayer/playlists/`
+  directory. Create / rename / delete are driven from the ESC menu, with
+  name-collision rejection and a yes/no confirm on delete.
+- Enter on a playlist replaces the play queue with its tracks and starts
+  playback; entries are re-resolved against the library for richer
+  metadata (album / grouping / ReplayGain), falling back to the bare M3U
+  parse for paths outside the library. An empty playlist clears the queue.
+- The right-panel header now shows the active playlist's name while a
+  playlist fills the queue, reverting to the default "Play Queue" on any
+  queue edit (add / remove / reorder / replace). Session-only.
+- `b` opens an "Add to Playlist" picker for the currently-playing track,
+  appending it as the last entry of the chosen `.m3u8`. The list follows
+  the mode-`5` order, except the playlist most recently used by the
+  picker this session floats to the top. No-op when nothing is playing or
+  no playlists exist.
+- `x` is now a stop/play toggle: pressing it while stopped restarts
+  playback from the current track, or the queue start (in shuffle mode,
+  the first track of a freshly shuffled order).
+- Frame pacing is now per-visualizer: each visualizer can cap its own
+  fps, and fully static views (TagInfo) wait on input instead of waking
+  periodically.
+- Refactored the ESC context menu into a classify-then-build form
+  (snapshot focus / left-slot / selection state, then emit the prepared
+  menu). The FileBrowser context drops "Focus playing track" and leads
+  with "Go to library root" (when a root is configured) followed by
+  "Set current directory as library root".
+- In the Album tree (mode `1`), album-artist nodes whose label was
+  *derived* from the `artist` tag (because `albumArtist` was empty) now
+  render a shade darker, distinguishing a real album-artist from an
+  artist-only fallback. The album axis is keyed on `(album, derived)` so
+  the two never merge under a shared name.
+
 ## 0.16.1 (2026-06-02)
 
 - Renamed the internal missing-artist sentinel in the library tree from

@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "../audio/TrackInfo.h"
+
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -47,6 +49,14 @@ public:
 
     /// Delete `<name>.m3u8`. Returns true if a file was removed.
     bool remove(std::string const & name);
+
+    /// Append a single track to `<name>.m3u8` as the last entry, written as a
+    /// `#EXTINF:<duration>,<artist> - <title>` line followed by the track's
+    /// location (the stream URL for stream tracks, the absolute file path
+    /// otherwise). A missing target file is (re)created with an `#EXTM3U`
+    /// header first, so a hand-deleted playlist still works. Returns true on a
+    /// successful write.
+    bool append(std::string const & name, TrackInfo const & track) const;
 
     /// Absolute path of the file backing the given playlist name.
     std::filesystem::path pathFor(std::string const & name) const;

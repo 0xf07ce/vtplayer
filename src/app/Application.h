@@ -239,6 +239,19 @@ namespace vtplayer
         /// dialog: a collision with an existing playlist vs an invalid name.
         std::string playlistNameError(std::string const & name) const;
 
+        /// `b` handler: open a modal picker listing the saved playlists so the
+        /// currently-playing track can be appended to one. No-op (silently
+        /// swallowed) when nothing is playing or no playlists exist. The list
+        /// order mirrors the mode-5 PlaylistsView (PlaylistStore::list), except
+        /// the playlist most recently used by this picker in the current
+        /// session is floated to the top (`_lastAddedPlaylist`).
+        void openAddToPlaylistMenu();
+
+        /// Selection callback for the add-to-playlist picker: append the
+        /// playing track to `_addToPlaylistNames[index]` and remember it as the
+        /// session's most-recently-used playlist.
+        void onAddToPlaylistSelect(int index);
+
         /// Focus whichever of the three left widgets is currently active (per
         /// activeLeftWidget()) and unfocus the others. Replaces the old
         /// two-widget focus sync.
@@ -435,6 +448,17 @@ namespace vtplayer
         // queue mutation via PlayQueueView::OnContentsChanged.
         std::string _currentPlaylistName;
 
+        // Saved playlist most recently used by the `b` (add-to-playlist) picker
+        // this session. Floated to the top of the picker on the next open so a
+        // run of additions to the same playlist needs no re-navigation. Empty
+        // until the first successful append; session-only (not persisted).
+        std::string _lastAddedPlaylist;
+
+        // Names backing the add-to-playlist picker's visible rows, in display
+        // order. Parallel to the menu items so onAddToPlaylistSelect() can map
+        // the selected index back to a playlist name.
+        std::vector<std::string> _addToPlaylistNames;
+
         // Views
         std::unique_ptr<HeaderBar> _headerBar;
         std::unique_ptr<FileBrowser> _fileBrowser;
@@ -444,6 +468,10 @@ namespace vtplayer
         std::unique_ptr<TransportBar> _transportBar;
         std::unique_ptr<VisualizerView> _visualizerView;
         std::unique_ptr<ContextMenu> _contextMenu;
+        /// Separate modal picker for the `b` add-to-playlist flow, kept distinct
+        /// from `_contextMenu` so the ESC menu's title / items / callback are
+        /// never clobbered.
+        std::unique_ptr<ContextMenu> _addToPlaylistMenu;
         /// Parallel to the menu's visible items: maps the selected index
         /// back to an action (the item set varies with `_leftMode`).
         std::vector<MenuAction> _contextMenuActions;

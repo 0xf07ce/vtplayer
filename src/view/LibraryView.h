@@ -123,6 +123,11 @@ private:
         std::string label;
         int  depth     = 0;
         bool expanded  = false;
+        /// AlbumArtistTree only: the album-artist label was *derived* from the
+        /// `artist` tag because `albumArtist` was empty. Depth-1 nodes set it
+        /// when every track under them derived; depth-2 album nodes set it per
+        /// (album, derived) bucket. Rendered a shade darker than normal.
+        bool derived   = false;
         std::vector<std::size_t> children;   ///< indices into _nodes
         TrackInfo const * track = nullptr;   ///< Track only
         std::size_t parent = static_cast<std::size_t>(-1);

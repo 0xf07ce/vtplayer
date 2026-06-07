@@ -159,4 +159,38 @@ bool PlaylistStore::remove(std::string const & name)
     return std::filesystem::remove(_dir / (clean + kExt), ec);
 }
 
+bool PlaylistStore::append(std::string const & name, TrackInfo const & track) const
+{
+    if (_dir.empty()) return false;
+    std::string const clean = sanitizeName(name);
+    if (clean.empty()) return false;
+
+    std::filesystem::path const file = _dir / (clean + kExt);
+
+    std::error_code ec;
+    bool const existed = std::filesystem::exists(file, ec);
+
+    // Ensure the directory exists so a never-created store still works.
+    std::filesystem::create_directories(_dir, ec);
+
+    std::ofstream out(file, std::ios::app);
+    if (!out) return false;
+
+    // create() normally seeds the header, but append tolerates a missing file
+    // (hand-deleted between sessions) by re-seeding it here.
+    if (!existed)
+        out << "#EXTM3U\n";
+
+    int const dur = (track.duration > 0.0f) ? static_cast<int>(track.duration) : 0;
+    std::string meta = track.artist.empty() ? track.title
+                                             : track.artist + " - " + track.title;
+    out << "#EXTINF:" << dur << ',' << meta << '\n';
+
+    std::string const location =
+        track.isStream() ? track.streamUrl : track.path.string();
+    out << location << '\n';
+
+    return static_cast<bool>(out);
+}
+
 } // namespace vtplayer

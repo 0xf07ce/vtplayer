@@ -500,6 +500,14 @@ namespace vtplayer
         _contextMenu->setOnSelect([this](int idx)
                                   { onContextMenuSelect(idx); });
 
+        _addToPlaylistMenu = std::make_unique<ContextMenu>();
+        _addToPlaylistMenu->setTheme(_theme);
+        _addToPlaylistMenu->setTitle("Add to Playlist");
+        // Items are rebuilt per-open in openAddToPlaylistMenu() from the current
+        // playlist set (and the session MRU order).
+        _addToPlaylistMenu->setOnSelect([this](int idx)
+                                        { onAddToPlaylistSelect(idx); });
+
         _playlistsView = std::make_unique<PlaylistsView>();
         _playlistsView->setTheme(_theme);
         _playlistsView->setOnActivate([this](std::string const &name)
@@ -800,6 +808,10 @@ namespace vtplayer
         {
             _contextMenu->draw(*_rootWindow);
         }
+        if (_addToPlaylistMenu)
+        {
+            _addToPlaylistMenu->draw(*_rootWindow);
+        }
 
         // Unobtrusive scan status, bottom-right, above everything.
         drawScanStatus();
@@ -888,6 +900,7 @@ namespace vtplayer
             {"  R",                     "Cycle repeat: none -> all -> one", false},
             {"  S",                     "Toggle shuffle mode (next/prev follow a random order)", false},
             {"  G",                     "Toggle gain normalization (ReplayGain / auto-gain)", false},
+            {"  B",                     "Add the playing track to a saved playlist", false},
             {"", "", false},
             {"Browser - Library", "", true},
             {"  1 / 2 / 3 / 4 / 5",     "Left panel: Album / Artist / Directory / Files / Playlists", false},
@@ -1249,6 +1262,14 @@ namespace vtplayer
         {
             _contextMenu->handleKey(event);
             if (!_contextMenu->isOpen() && _terminal)
+                _terminal->forceRedraw();
+            return;
+        }
+
+        if (_addToPlaylistMenu && _addToPlaylistMenu->isOpen())
+        {
+            _addToPlaylistMenu->handleKey(event);
+            if (!_addToPlaylistMenu->isOpen() && _terminal)
                 _terminal->forceRedraw();
             return;
         }
@@ -1732,6 +1753,15 @@ namespace vtplayer
             return;
         }
 
+        // b: add the currently-playing track to a saved playlist via a modal
+        // picker. Active whenever a track is playing (i.e. the play queue has a
+        // playing index), on any screen.
+        if (event.key == Key::Char && (ch == 'b' || ch == 'B') && !event.alt && !event.ctrl)
+        {
+            openAddToPlaylistMenu();
+            return;
+        }
+
         // Ctrl+Up/Down: move play-queue item
         if (event.ctrl && event.key == Key::Up)
         {
@@ -1956,6 +1986,54 @@ namespace vtplayer
                 startIdx = sidx;
         }
         playTrack(startIdx);
+    }
+
+    void Application::openAddToPlaylistMenu()
+    {
+        if (!_addToPlaylistMenu || !_playQueueView)
+            return;
+
+        // Only meaningful while a track is playing — nothing to add otherwise.
+        if (!_playQueueView->track(_playQueueView->playingIndex()))
+            return;
+
+        // Mode-5 order is exactly PlaylistStore::list(); the session's most
+        // recently used playlist (if still present) floats to the top.
+        std::vector<std::string> names = _playlistStore.list();
+        if (names.empty())
+            return;
+
+        if (!_lastAddedPlaylist.empty())
+        {
+            auto it = std::find(names.begin(), names.end(), _lastAddedPlaylist);
+            if (it != names.end())
+                std::rotate(names.begin(), it, it + 1);
+        }
+
+        _addToPlaylistNames = names;
+        _addToPlaylistMenu->setItems(std::move(names));
+        _addToPlaylistMenu->open();
+        if (_terminal)
+            _terminal->forceRedraw();
+    }
+
+    void Application::onAddToPlaylistSelect(int index)
+    {
+        if (index < 0 || index >= static_cast<int>(_addToPlaylistNames.size()))
+            return;
+        if (!_playQueueView)
+            return;
+
+        // Re-read the playing track at selection time: the picker is modal, but
+        // re-resolving keeps us robust against any state change between open and
+        // confirm (and guards the playingIndex bounds via track()).
+        TrackInfo const *track = _playQueueView->track(_playQueueView->playingIndex());
+        if (!track)
+            return;
+
+        std::string const &name = _addToPlaylistNames[index];
+        if (_playlistStore.append(name, *track))
+            _lastAddedPlaylist = name; // float to the top on the next open
     }
 
     std::string Application::playlistNameError(std::string const &name) const
