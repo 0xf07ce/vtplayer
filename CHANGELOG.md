@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## 0.17.0 (2026-06-09)
+
+- Play queue: Left / Right now mirror Up / Down for cursor movement,
+  and Shift+Left / Shift+Right (like Ctrl+Up / Ctrl+Down) move the whole
+  contiguous selection — multi-select block included — one row at a time,
+  carrying the playing-track highlight with it. Home / End keep their
+  jump-to-ends behavior.
+- Playlist contents view is now editable behind a Ctrl+E edit mode
+  (shown as `[edit]` in the header): Shift+Up / Shift+Down extend a track
+  multi-selection, Shift+Left / Shift+Right reorder it, and `d` / `Del`
+  remove it. Ctrl+S saves the reordered / trimmed list back to the
+  `.m3u8` and leaves edit mode; exiting via `..` discards unsaved edits.
+  Backspace keeps its "go up to the list" meaning. Track rows render as
+  `<artist> - <title>` (just `<title>` when the artist is empty).
+- `b` now adds the focused / selected track(s) to a playlist rather than
+  always the playing track: the play-queue selection, a Library group's
+  tracks (disabled at the top-level Grouping axis), or the FileBrowser
+  selection (file or every audio file in a folder). It is disabled while
+  the Playlists panel is focused, and falls back to the playing track on
+  the Visualizer screen. The picker carries an "Add to playlist" title.
+- Fixed an off-by-one in the modal menu's title rendering that hid the
+  title whenever it was wider than the longest item.
+
 ## 0.16.2 (2026-06-06)
 
 - Added a **Playlists** left-panel browser (mode `5`): playlists are

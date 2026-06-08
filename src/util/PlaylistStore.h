@@ -58,6 +58,19 @@ public:
     /// successful write.
     bool append(std::string const & name, TrackInfo const & track) const;
 
+    /// Append several tracks in one pass, opening the file once. Equivalent to
+    /// calling the single-track append() for each entry but without reopening.
+    /// A missing file is (re)created with an `#EXTM3U` header. An empty list is
+    /// a successful no-op. Returns true on a successful write.
+    bool append(std::string const & name, std::vector<TrackInfo> const & tracks) const;
+
+    /// Overwrite `<name>.m3u8` with exactly `tracks` (an `#EXTM3U` header
+    /// followed by one `#EXTINF` + location block per track), truncating any
+    /// previous contents. Used to persist in-place edits (reorder / delete)
+    /// from the playlist contents view. The directory is created if missing.
+    /// Returns true on a successful write.
+    bool write(std::string const & name, std::vector<TrackInfo> const & tracks) const;
+
     /// Absolute path of the file backing the given playlist name.
     std::filesystem::path pathFor(std::string const & name) const;
 

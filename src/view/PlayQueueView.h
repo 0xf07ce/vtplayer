@@ -32,8 +32,6 @@ public:
     void insertTrack(int idx, TrackInfo const & track);
 
     void removeSelected();
-    void moveSelectedUp();
-    void moveSelectedDown();
     void clear();
 
     /// Replace the full track list (used when switching play queues). Resets scroll and selection.
@@ -53,6 +51,9 @@ public:
     void focusPlayingTrack();
 
     TrackInfo const * selectedTrack() const;
+    /// The multi-selection unioned with the cursor row, in ascending index
+    /// order. Used by the "add to playlist" action.
+    std::vector<TrackInfo> selectedTracks() const;
     TrackInfo const * track(int idx) const;
     int trackCount() const { return _queue.size(); }
     bool empty() const { return _queue.empty(); }
@@ -79,6 +80,11 @@ public:
     void clearMultiSelection();
     void selectAll();
 
+    /// Move the whole contiguous selection (multi-select ∪ cursor) one row up /
+    /// down, carrying the playing-track highlight with it.
+    void moveSelectionUp();
+    void moveSelectionDown();
+
     void draw(ventty::Window & window) override;
     bool handleKey(ventty::KeyEvent const & event) override;
     bool handleMouse(ventty::MouseEvent const & event);
@@ -89,6 +95,7 @@ protected:
 private:
     void scrollToSelected();
     void extendSelectionTo(int newIndex);
+    void shiftSelection(int delta);
     void notifyContentsChanged() { if (_onContentsChanged) _onContentsChanged(); }
 
     Theme _theme;

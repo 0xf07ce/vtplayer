@@ -425,9 +425,9 @@ namespace vtplayer
                                                _audio.stop();
                                                _playQueueView->setPlayingIndex(-1); });
         // Any queue mutation (add / remove / reorder / clear / replace) drops
-        // the header back to the default title. loadPlaylistIntoQueue() runs
-        // setTracks() first, then re-stamps the name, so it survives the load
-        // while later edits revert it.
+        // the header back to the default title. A future caller that wants the
+        // header to name a source can re-stamp _currentPlaylistName after the
+        // mutation.
         _playQueueView->setOnContentsChanged([this]
                                              {
                                                  _currentPlaylistName.clear();
@@ -510,8 +510,18 @@ namespace vtplayer
 
         _playlistsView = std::make_unique<PlaylistsView>();
         _playlistsView->setTheme(_theme);
-        _playlistsView->setOnActivate([this](std::string const &name)
-                                      { loadPlaylistIntoQueue(name); });
+        // Enter on a playlist row drills into its tracks (FileBrowser-style),
+        // it no longer replaces the queue. Enter on a track inside then plays
+        // it just like the library / file browser do (replace + play).
+        _playlistsView->setOnOpen([this](std::string const &name)
+                                  { openPlaylistContents(name); });
+        _playlistsView->setOnPlayTrack([this, sendToQueue](TrackInfo const &track)
+                                       { sendToQueue({track}, /*replace=*/true); });
+        // Ctrl+S in the contents-view edit mode persists the reordered / trimmed
+        // track list back to the .m3u8 file.
+        _playlistsView->setOnSaveTracks(
+            [this](std::string const &name, std::vector<TrackInfo> const &tracks)
+            { return _playlistStore.write(name, tracks); });
 
         // Create/Delete are driven from the ESC menu; the per-action OnConfirm
         // callbacks are bound at open time in onContextMenuSelect().
@@ -900,7 +910,7 @@ namespace vtplayer
             {"  R",                     "Cycle repeat: none -> all -> one", false},
             {"  S",                     "Toggle shuffle mode (next/prev follow a random order)", false},
             {"  G",                     "Toggle gain normalization (ReplayGain / auto-gain)", false},
-            {"  B",                     "Add the playing track to a saved playlist", false},
+            {"  B",                     "Add the focused/selected track(s) to a saved playlist", false},
             {"", "", false},
             {"Browser - Library", "", true},
             {"  1 / 2 / 3 / 4 / 5",     "Left panel: Album / Artist / Directory / Files / Playlists", false},
@@ -920,11 +930,23 @@ namespace vtplayer
             {"  Backspace",             "Go up to parent directory", false},
             {"", "", false},
             {"Play Queue", "", true},
+            {"  Up/Down or Left/Right", "Move cursor (Left=Up, Right=Down)", false},
+            {"  Shift+Up / Shift+Down", "Extend multi-selection", false},
             {"  Enter",                 "Play selected track", false},
             {"  Del / D / Backspace",   "Remove selection", false},
-            {"  Ctrl+Up / Ctrl+Down",   "Move selected track", false},
+            {"  Shift+Left / Shift+Right", "Move selection up / down", false},
+            {"  Ctrl+Up / Ctrl+Down",   "Move selection up / down", false},
             {"  Ctrl+A",                "Select all", false},
             {"  T",                     "Edit tags (multi-selection if any, else cursor track)", false},
+            {"", "", false},
+            {"Browser - Playlists (tracks)", "", true},
+            {"  Enter",                 "Play selected track ( '..' returns to list )", false},
+            {"  Ctrl+E",                "Toggle edit mode", false},
+            {"  Shift+Up / Shift+Down", "Extend multi-selection (edit mode)", false},
+            {"  Shift+Left / Shift+Right", "Move selection up / down (edit mode)", false},
+            {"  Del / D",               "Remove selection (edit mode)", false},
+            {"  Ctrl+S",                "Save edits and leave edit mode ( '..' discards )", false},
+            {"  Backspace",             "Go up to the playlist list", false},
             {"", "", false},
             {"Visualizer", "", true},
             {"  V",                     "Toggle visualizer screen", false},
@@ -1438,7 +1460,11 @@ namespace vtplayer
             {
                 _fileBrowser->handleMouse(event);
             }
-            // PlaylistsView has no mouse handler yet (keyboard-only this cut).
+            else if (slot == LeftSlot::Playlists && _playlistsView
+                     && _playlistsView->rect().contains(event.x, event.y))
+            {
+                _playlistsView->handleMouse(event);
+            }
             else if (_playQueueView->rect().contains(event.x, event.y))
             {
                 _playQueueView->handleMouse(event);
@@ -1725,11 +1751,19 @@ namespace vtplayer
         // keeping the existing queue intact.
         if (event.key == Key::Char && (ch == 'a' || ch == 'A') && !event.alt && !event.ctrl && _screen == Screen::Browser)
         {
-            // Playlists panel has no track-append action yet (no contents
-            // view this cut) — swallow `a` so it can't read stale FileBrowser
-            // state below.
+            // Playlists panel: in the contents view, append the selected track
+            // (keeping the queue intact) just like the library / file browser.
+            // In the list view there's no track to append — swallow `a` so it
+            // can't read stale FileBrowser state below.
             if (leftIsPlaylists())
+            {
+                if (_playlistsView && _playlistsView->inContents())
+                {
+                    if (auto const *track = _playlistsView->selectedTrack())
+                        _playQueueView->addTrack(*track);
+                }
                 return;
+            }
             // Library panel: append the selected artist / album / track.
             if (leftIsLibrary())
             {
@@ -1753,9 +1787,9 @@ namespace vtplayer
             return;
         }
 
-        // b: add the currently-playing track to a saved playlist via a modal
-        // picker. Active whenever a track is playing (i.e. the play queue has a
-        // playing index), on any screen.
+        // b: add the focused/selected track(s) to a saved playlist via a modal
+        // picker. The track set depends on screen/focus (see
+        // collectAddToPlaylistTracks); the picker self-suppresses when empty.
         if (event.key == Key::Char && (ch == 'b' || ch == 'B') && !event.alt && !event.ctrl)
         {
             openAddToPlaylistMenu();
@@ -1765,12 +1799,12 @@ namespace vtplayer
         // Ctrl+Up/Down: move play-queue item
         if (event.ctrl && event.key == Key::Up)
         {
-            _playQueueView->moveSelectedUp();
+            _playQueueView->moveSelectionUp();
             return;
         }
         if (event.ctrl && event.key == Key::Down)
         {
-            _playQueueView->moveSelectedDown();
+            _playQueueView->moveSelectionDown();
             return;
         }
 
@@ -1789,6 +1823,7 @@ namespace vtplayer
         ctx.queueFocused = (_focus == FocusPanel::PlayQueue);
         ctx.leftSlot = activeLeftWidget();
         ctx.playlistsEmpty = !_playlistsView || _playlistsView->empty();
+        ctx.playlistsInContents = _playlistsView && _playlistsView->inContents();
         ctx.libraryRootConfigured = !_config.libraryRoot.empty();
         return ctx;
     }
@@ -1823,11 +1858,18 @@ namespace vtplayer
         switch (ctx.leftSlot)
         {
         case LeftSlot::Playlists:
-            add("Create playlist", MenuAction::CreatePlaylist);
-            if (!ctx.playlistsEmpty)
+            // The list view manages the playlist collection (create / rename /
+            // delete). The contents view (drilled into one playlist's tracks)
+            // is just a track picker, so it offers none of those actions —
+            // only "Focus playing track" + "Exit" remain.
+            if (!ctx.playlistsInContents)
             {
-                add("Rename playlist", MenuAction::RenamePlaylist);
-                add("Delete playlist", MenuAction::DeletePlaylist);
+                add("Create playlist", MenuAction::CreatePlaylist);
+                if (!ctx.playlistsEmpty)
+                {
+                    add("Rename playlist", MenuAction::RenamePlaylist);
+                    add("Delete playlist", MenuAction::DeletePlaylist);
+                }
             }
             break;
         case LeftSlot::Library:
@@ -1927,8 +1969,13 @@ namespace vtplayer
 
     void Application::refreshPlaylists()
     {
-        if (_playlistsView)
-            _playlistsView->setItems(_playlistStore.list());
+        if (!_playlistsView)
+            return;
+        // Re-listing implies the list view: drop any drilled-in contents so a
+        // renamed / deleted playlist can't leave a stale track list on screen,
+        // and re-pressing `5` returns to the top-level list.
+        _playlistsView->closeContents();
+        _playlistsView->setItems(_playlistStore.list());
     }
 
     void Application::applyQueueTitle()
@@ -1938,19 +1985,19 @@ namespace vtplayer
                                                                   : _currentPlaylistName);
     }
 
-    void Application::loadPlaylistIntoQueue(std::string const &name)
+    void Application::openPlaylistContents(std::string const &name)
     {
-        if (!_playQueueView)
+        if (!_playlistsView)
             return;
 
         auto parsed = M3uReader::read(_playlistStore.pathFor(name));
-        if (!parsed) // unreadable / missing — leave the queue untouched
+        if (!parsed) // unreadable / missing — stay on the playlist list
             return;
 
-        // Re-resolve each entry against the library so the queue carries the
-        // richer indexed metadata (album / grouping / ReplayGain) that the bare
-        // M3U parse lacks; fall back to the parsed entry for external paths.
-        // Mirrors PlayQueueCache::restore().
+        // Re-resolve each entry against the library so the drilled-in tracks
+        // carry the richer indexed metadata (album / grouping / ReplayGain)
+        // that the bare M3U parse lacks; fall back to the parsed entry for
+        // external paths. Mirrors PlayQueueCache::restore().
         std::vector<TrackInfo> resolved;
         resolved.reserve(parsed->size());
         for (auto const &t : *parsed)
@@ -1961,40 +2008,20 @@ namespace vtplayer
                 resolved.push_back(t);
         }
 
-        // setTracks() fires OnContentsChanged → clears _currentPlaylistName;
-        // stamp the name afterwards so the header shows this playlist.
-        _playQueueView->setTracks(std::move(resolved));
-        _currentPlaylistName = name;
-        applyQueueTitle();
-
-        if (_playQueueView->trackCount() == 0)
-        {
-            // An empty playlist replaces the queue with nothing and stops.
-            _audio.stop();
-            _playQueueView->setPlayingIndex(-1);
-            return;
-        }
-
-        int startIdx = 0;
-        if (_shuffleMode)
-        {
-            // Fresh shuffle pass, then start from its first entry — same as the
-            // `x`-key restart UX.
-            rebuildShuffleOrder(/*seedIndex=*/-1);
-            int const sidx = currentShuffleQueueIndex();
-            if (sidx >= 0)
-                startIdx = sidx;
-        }
-        playTrack(startIdx);
+        _playlistsView->showContents(name, std::move(resolved));
     }
 
     void Application::openAddToPlaylistMenu()
     {
-        if (!_addToPlaylistMenu || !_playQueueView)
+        if (!_addToPlaylistMenu)
             return;
 
-        // Only meaningful while a track is playing — nothing to add otherwise.
-        if (!_playQueueView->track(_playQueueView->playingIndex()))
+        // What gets added depends on the current screen/focus. An empty set
+        // means the action is disabled here (e.g. Playlists focus, the
+        // top-level Grouping axis, or nothing playing on the Visualizer).
+        std::string title;
+        std::vector<TrackInfo> tracks = collectAddToPlaylistTracks(title);
+        if (tracks.empty())
             return;
 
         // Mode-5 order is exactly PlaylistStore::list(); the session's most
@@ -2010,7 +2037,9 @@ namespace vtplayer
                 std::rotate(names.begin(), it, it + 1);
         }
 
+        _addToPlaylistTracks = std::move(tracks);
         _addToPlaylistNames = names;
+        _addToPlaylistMenu->setTitle(std::move(title));
         _addToPlaylistMenu->setItems(std::move(names));
         _addToPlaylistMenu->open();
         if (_terminal)
@@ -2021,18 +2050,11 @@ namespace vtplayer
     {
         if (index < 0 || index >= static_cast<int>(_addToPlaylistNames.size()))
             return;
-        if (!_playQueueView)
-            return;
-
-        // Re-read the playing track at selection time: the picker is modal, but
-        // re-resolving keeps us robust against any state change between open and
-        // confirm (and guards the playingIndex bounds via track()).
-        TrackInfo const *track = _playQueueView->track(_playQueueView->playingIndex());
-        if (!track)
+        if (_addToPlaylistTracks.empty())
             return;
 
         std::string const &name = _addToPlaylistNames[index];
-        if (_playlistStore.append(name, *track))
+        if (_playlistStore.append(name, _addToPlaylistTracks))
             _lastAddedPlaylist = name; // float to the top on the next open
     }
 
@@ -2602,6 +2624,92 @@ namespace vtplayer
     void Application::addToPlayQueue(std::filesystem::path const &path)
     {
         _playQueueView->addTrack(trackInfoFromBrowserPath(path));
+    }
+
+    std::vector<TrackInfo> Application::collectAddToPlaylistTracks(std::string &outTitle) const
+    {
+        // A non-empty set means the action is enabled; the picker gets a short,
+        // constant heading (drawn centered in the dialog's top border).
+        auto heading = [&outTitle](std::vector<TrackInfo> tracks,
+                                   std::string const & /*label*/) -> std::vector<TrackInfo> {
+            if (tracks.empty())
+                return {};
+            outTitle = "Add to playlist";
+            return tracks;
+        };
+
+        // Visualizer screen keeps the legacy behavior: add the playing track.
+        if (_screen == Screen::Visualizer)
+        {
+            if (!_playQueueView)
+                return {};
+            TrackInfo const *t = _playQueueView->track(_playQueueView->playingIndex());
+            if (!t)
+                return {};
+            return heading({*t}, {});
+        }
+
+        // Browser screen: act on whatever is focused.
+        if (_focus == FocusPanel::PlayQueue)
+        {
+            if (!_playQueueView)
+                return {};
+            return heading(_playQueueView->selectedTracks(), {});
+        }
+
+        switch (activeLeftWidget())
+        {
+        case LeftSlot::Library:
+        {
+            if (!_libraryView)
+                return {};
+            auto sel = _libraryView->currentSelection();
+            using SK = LibraryView::SelectionKind;
+            // Disabled with no selection and at the top-level Grouping axis.
+            if (sel.kind == SK::None || sel.kind == SK::Grouping)
+                return {};
+            return heading(std::move(sel.tracks), sel.label);
+        }
+        case LeftSlot::Playlists:
+            return {}; // disabled while the playlist browser is focused
+        case LeftSlot::FileBrowser:
+        {
+            if (!_fileBrowser)
+                return {};
+            auto const *entry = _fileBrowser->selectedEntry();
+            if (!entry)
+                return {};
+
+            std::vector<std::filesystem::path> paths;
+            std::string label;
+            if (entry->isAudio)
+            {
+                paths.push_back(entry->path);
+                label = entry->path.filename().string();
+            }
+            else if (entry->isDirectory)
+            {
+                paths = _fileBrowser->collectAudioFiles(entry->path);
+                label = entry->path.filename().string();
+            }
+            if (paths.empty())
+                return {};
+
+            // Prefer the indexed metadata, falling back to a minimal record for
+            // files outside the library root (mirrors openPlaylistContents).
+            std::vector<TrackInfo> tracks;
+            tracks.reserve(paths.size());
+            for (auto const &p : paths)
+            {
+                if (auto const *indexed = _library.find(p))
+                    tracks.push_back(*indexed);
+                else
+                    tracks.push_back(trackInfoFromBrowserPath(p));
+            }
+            return heading(std::move(tracks), label);
+        }
+        }
+        return {};
     }
 
     void Application::activateFromBrowser(std::vector<std::filesystem::path> const &paths)

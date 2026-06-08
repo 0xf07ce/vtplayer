@@ -168,6 +168,7 @@ namespace vtplayer
             bool     queueFocused = false;            ///< right (PlayQueue) panel focused
             LeftSlot leftSlot = LeftSlot::Library;    ///< active left widget otherwise
             bool     playlistsEmpty = true;
+            bool     playlistsInContents = false;     ///< PlaylistsView drilled into a playlist
             bool     libraryRootConfigured = false;
             // Extension point: per-selection menus can branch on the focused
             // widget's selection kind, already queryable via
@@ -225,11 +226,13 @@ namespace vtplayer
         /// Re-list playlists from disk into PlaylistsView.
         void refreshPlaylists();
 
-        /// Replace the play queue with the named playlist's tracks and start
-        /// playback (Enter on a PlaylistsView row). One-way copy: the queue may
-        /// later diverge from the file. Stamps `_currentPlaylistName` so the
-        /// queue header shows the playlist's name.
-        void loadPlaylistIntoQueue(std::string const & name);
+        /// Drill into a playlist (Enter on a PlaylistsView list row): read the
+        /// named playlist, resolve each entry against the library for richer
+        /// metadata, and hand the tracks to PlaylistsView::showContents() so the
+        /// panel switches to its FileBrowser-style contents view. Does not touch
+        /// the play queue — that happens later from the contents view (Enter on
+        /// a track = replace + play, `a` = append).
+        void openPlaylistContents(std::string const & name);
 
         /// Push the play queue header title: the active playlist's name, or the
         /// default "Play Queue" when `_currentPlaylistName` is empty.
@@ -240,16 +243,24 @@ namespace vtplayer
         std::string playlistNameError(std::string const & name) const;
 
         /// `b` handler: open a modal picker listing the saved playlists so the
-        /// currently-playing track can be appended to one. No-op (silently
-        /// swallowed) when nothing is playing or no playlists exist. The list
-        /// order mirrors the mode-5 PlaylistsView (PlaylistStore::list), except
-        /// the playlist most recently used by this picker in the current
+        /// focused/selected track(s) can be appended to one. The track set
+        /// depends on context (collectAddToPlaylistTracks): the playing track on
+        /// the Visualizer screen, the play-queue selection, a Library group's
+        /// tracks (disabled at the top-level Grouping axis), or the FileBrowser
+        /// selection. No-op when the set is empty or no playlists exist. The
+        /// list order mirrors the mode-5 PlaylistsView (PlaylistStore::list),
+        /// except the playlist most recently used by this picker in the current
         /// session is floated to the top (`_lastAddedPlaylist`).
         void openAddToPlaylistMenu();
 
+        /// Gather the tracks the add-to-playlist picker should append, given the
+        /// current screen/focus, and fill `outTitle` with a picker heading. An
+        /// empty result means the action is disabled in the current context.
+        std::vector<TrackInfo> collectAddToPlaylistTracks(std::string & outTitle) const;
+
         /// Selection callback for the add-to-playlist picker: append the
-        /// playing track to `_addToPlaylistNames[index]` and remember it as the
-        /// session's most-recently-used playlist.
+        /// captured `_addToPlaylistTracks` to `_addToPlaylistNames[index]` and
+        /// remember it as the session's most-recently-used playlist.
         void onAddToPlaylistSelect(int index);
 
         /// Focus whichever of the three left widgets is currently active (per
@@ -442,10 +453,10 @@ namespace vtplayer
         std::vector<std::filesystem::path> _shuffleOrder;
         int _shufflePos = -1;
 
-        // Name of the playlist whose tracks currently fill the play queue, or
-        // empty when the queue holds an ad-hoc selection (default "Play Queue"
-        // title). Session-only — set by loadPlaylistIntoQueue(), cleared by any
-        // queue mutation via PlayQueueView::OnContentsChanged.
+        // Optional source name shown as the play-queue header title, or empty
+        // for the default "Play Queue". Session-only — currently always empty
+        // (any queue mutation clears it via PlayQueueView::OnContentsChanged);
+        // kept as an extension point for a future "queue names its source" UX.
         std::string _currentPlaylistName;
 
         // Saved playlist most recently used by the `b` (add-to-playlist) picker
@@ -458,6 +469,11 @@ namespace vtplayer
         // order. Parallel to the menu items so onAddToPlaylistSelect() can map
         // the selected index back to a playlist name.
         std::vector<std::string> _addToPlaylistNames;
+
+        // Tracks captured when the add-to-playlist picker opened; appended to
+        // the chosen playlist on confirm. Snapshotting at open time keeps the
+        // modal robust against selection changes (it can't change while modal).
+        std::vector<TrackInfo> _addToPlaylistTracks;
 
         // Views
         std::unique_ptr<HeaderBar> _headerBar;

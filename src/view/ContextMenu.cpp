@@ -119,8 +119,10 @@ void ContextMenu::draw(ventty::Window & window)
     // Border
     window.drawBox(x, y, boxW, boxH, borderStyle, /*doubleLine=*/true);
 
-    // Title centered in top border
-    if (!_title.empty() && boxW > titleW + 4)
+    // Title centered in top border. The padded title needs titleW + 2 columns
+    // and must fit between the two corner glyphs (boxW - 2), i.e.
+    // boxW >= titleW + 4 — matching the innerW = max(titleW + 2, …) sizing above.
+    if (!_title.empty() && boxW >= titleW + 4)
     {
         std::string padded = " " + _title + " ";
         int tx = x + (boxW - static_cast<int>(ventty::stringWidth(padded))) / 2;

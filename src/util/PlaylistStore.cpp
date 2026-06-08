@@ -59,6 +59,20 @@ std::string sanitizeName(std::string const & raw)
     return name;
 }
 
+/// Write one Extended-M3U entry (an `#EXTINF` metadata line followed by the
+/// track's location). Shared by append() and write().
+void writeEntry(std::ostream & out, TrackInfo const & track)
+{
+    int const dur = (track.duration > 0.0f) ? static_cast<int>(track.duration) : 0;
+    std::string meta = track.artist.empty() ? track.title
+                                             : track.artist + " - " + track.title;
+    out << "#EXTINF:" << dur << ',' << meta << '\n';
+
+    std::string const location =
+        track.isStream() ? track.streamUrl : track.path.string();
+    out << location << '\n';
+}
+
 } // namespace
 
 std::filesystem::path PlaylistStore::defaultDir()
@@ -181,14 +195,53 @@ bool PlaylistStore::append(std::string const & name, TrackInfo const & track) co
     if (!existed)
         out << "#EXTM3U\n";
 
-    int const dur = (track.duration > 0.0f) ? static_cast<int>(track.duration) : 0;
-    std::string meta = track.artist.empty() ? track.title
-                                             : track.artist + " - " + track.title;
-    out << "#EXTINF:" << dur << ',' << meta << '\n';
+    writeEntry(out, track);
 
-    std::string const location =
-        track.isStream() ? track.streamUrl : track.path.string();
-    out << location << '\n';
+    return static_cast<bool>(out);
+}
+
+bool PlaylistStore::append(std::string const & name,
+                           std::vector<TrackInfo> const & tracks) const
+{
+    if (_dir.empty()) return false;
+    if (tracks.empty()) return true; // nothing to do
+    std::string const clean = sanitizeName(name);
+    if (clean.empty()) return false;
+
+    std::filesystem::path const file = _dir / (clean + kExt);
+
+    std::error_code ec;
+    bool const existed = std::filesystem::exists(file, ec);
+    std::filesystem::create_directories(_dir, ec);
+
+    std::ofstream out(file, std::ios::app);
+    if (!out) return false;
+
+    if (!existed)
+        out << "#EXTM3U\n";
+
+    for (auto const & track : tracks)
+        writeEntry(out, track);
+
+    return static_cast<bool>(out);
+}
+
+bool PlaylistStore::write(std::string const & name,
+                          std::vector<TrackInfo> const & tracks) const
+{
+    if (_dir.empty()) return false;
+    std::string const clean = sanitizeName(name);
+    if (clean.empty()) return false;
+
+    std::error_code ec;
+    std::filesystem::create_directories(_dir, ec);
+
+    std::ofstream out(_dir / (clean + kExt), std::ios::trunc);
+    if (!out) return false;
+
+    out << "#EXTM3U\n";
+    for (auto const & track : tracks)
+        writeEntry(out, track);
 
     return static_cast<bool>(out);
 }

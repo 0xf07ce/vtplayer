@@ -78,38 +78,65 @@ void PlayQueueView::removeSelected()
     }
 }
 
-void PlayQueueView::moveSelectedUp()
+void PlayQueueView::moveSelectionUp()
 {
-    if (_selectedIndex <= 0 || _selectedIndex >= _queue.size())
+    if (_selectedIndex < 0 || _selectedIndex >= _queue.size()) return;
+
+    // Contiguous block = multi-selection span unioned with the cursor.
+    int lo = _selectedIndex;
+    int hi = _selectedIndex;
+    if (!_multiSelected.empty())
     {
-        return;
+        lo = std::min(lo, *_multiSelected.begin());
+        hi = std::max(hi, *_multiSelected.rbegin());
     }
+    if (lo <= 0) return;
 
-    _queue.swap(_selectedIndex, _selectedIndex - 1);
+    // Slide the row above the block down to the block's tail.
+    for (int i = lo - 1; i < hi; ++i) _queue.swap(i, i + 1);
 
-    if (_playingIndex == _selectedIndex) _playingIndex--;
-    else if (_playingIndex == _selectedIndex - 1) _playingIndex++;
+    if (_playingIndex == lo - 1) _playingIndex = hi;
+    else if (_playingIndex >= lo && _playingIndex <= hi) _playingIndex--;
 
-    _selectedIndex--;
+    shiftSelection(-1);
     scrollToSelected();
     notifyContentsChanged();
 }
 
-void PlayQueueView::moveSelectedDown()
+void PlayQueueView::moveSelectionDown()
 {
-    if (_selectedIndex < 0 || _selectedIndex >= _queue.size() - 1)
+    if (_selectedIndex < 0 || _selectedIndex >= _queue.size()) return;
+
+    int lo = _selectedIndex;
+    int hi = _selectedIndex;
+    if (!_multiSelected.empty())
     {
-        return;
+        lo = std::min(lo, *_multiSelected.begin());
+        hi = std::max(hi, *_multiSelected.rbegin());
     }
+    if (hi >= _queue.size() - 1) return;
 
-    _queue.swap(_selectedIndex, _selectedIndex + 1);
+    // Slide the row below the block up to the block's head.
+    for (int i = hi + 1; i > lo; --i) _queue.swap(i, i - 1);
 
-    if (_playingIndex == _selectedIndex) _playingIndex++;
-    else if (_playingIndex == _selectedIndex + 1) _playingIndex--;
+    if (_playingIndex == hi + 1) _playingIndex = lo;
+    else if (_playingIndex >= lo && _playingIndex <= hi) _playingIndex++;
 
-    _selectedIndex++;
+    shiftSelection(+1);
     scrollToSelected();
     notifyContentsChanged();
+}
+
+void PlayQueueView::shiftSelection(int delta)
+{
+    _selectedIndex += delta;
+    if (!_multiSelected.empty())
+    {
+        std::set<int> moved;
+        for (int idx : _multiSelected) moved.insert(idx + delta);
+        _multiSelected = std::move(moved);
+    }
+    if (_selectionAnchor >= 0) _selectionAnchor += delta;
 }
 
 void PlayQueueView::clear()
@@ -189,6 +216,19 @@ TrackInfo const * PlayQueueView::selectedTrack() const
 TrackInfo const * PlayQueueView::track(int idx) const
 {
     return _queue.at(idx);
+}
+
+std::vector<TrackInfo> PlayQueueView::selectedTracks() const
+{
+    std::set<int> idxs = _multiSelected;
+    if (_selectedIndex >= 0 && _selectedIndex < _queue.size())
+        idxs.insert(_selectedIndex);
+
+    std::vector<TrackInfo> out;
+    out.reserve(idxs.size());
+    for (int i : idxs)
+        if (auto const * t = _queue.at(i)) out.push_back(*t);
+    return out;
 }
 
 static std::string formatDuration(float seconds)
@@ -347,7 +387,25 @@ bool PlayQueueView::handleKey(ventty::KeyEvent const & event)
         return true;
     }
 
-    if (event.key == Key::Up)
+    // Ctrl+Up / Ctrl+Down are reorder shortcuts handled by Application's global
+    // key path; swallow them here so they don't also move the cursor.
+    if (event.ctrl && (event.key == Key::Up || event.key == Key::Down))
+        return true;
+
+    // Shift+Left / Shift+Right reorder the selected block (Left=up, Right=down).
+    if (event.key == Key::Left && event.shift)
+    {
+        moveSelectionUp();
+        return true;
+    }
+    if (event.key == Key::Right && event.shift)
+    {
+        moveSelectionDown();
+        return true;
+    }
+
+    // Left mirrors Up, Right mirrors Down for plain cursor movement.
+    if (event.key == Key::Up || (event.key == Key::Left && !event.shift))
     {
         if (_selectedIndex > 0)
         {
@@ -372,7 +430,7 @@ bool PlayQueueView::handleKey(ventty::KeyEvent const & event)
         return true;
     }
 
-    if (event.key == Key::Down)
+    if (event.key == Key::Down || (event.key == Key::Right && !event.shift))
     {
         if (_selectedIndex < _queue.size() - 1)
         {
@@ -415,7 +473,7 @@ bool PlayQueueView::handleKey(ventty::KeyEvent const & event)
         return true;
     }
 
-    if (event.key == Key::Home || event.key == Key::Left)
+    if (event.key == Key::Home)
     {
         clearMultiSelection();
         _selectedIndex = 0;
@@ -423,7 +481,7 @@ bool PlayQueueView::handleKey(ventty::KeyEvent const & event)
         return true;
     }
 
-    if (event.key == Key::End || event.key == Key::Right)
+    if (event.key == Key::End)
     {
         clearMultiSelection();
         if (!_queue.empty())

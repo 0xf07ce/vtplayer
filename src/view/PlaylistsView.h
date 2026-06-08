@@ -3,51 +3,107 @@
 
 #pragma once
 
+#include "../audio/TrackInfo.h"
 #include "Theme.h"
 
 #include <ventty/widget/Widget.h>
 
 #include <functional>
+#include <set>
 #include <string>
 #include <vector>
 
 namespace vtplayer
 {
 
-/// Left-panel browser listing saved playlists by name (mode 5). It holds no
-/// disk logic: the host feeds it names via setItems() after querying
-/// PlaylistStore. Selection / scroll live here. Creating and deleting
-/// playlists is driven from the host's ESC menu, not from this widget.
+/// Left-panel browser for saved playlists (mode 5). It has two views:
+///   - List view: the saved playlists by name (the host feeds names via
+///     setItems() after querying PlaylistStore).
+///   - Contents view: the tracks of one opened playlist, with a ".." row on
+///     top to return to the list — mirroring FileBrowser's folder drill-in.
+/// It holds no disk logic: Enter on a playlist row fires OnOpen, and the host
+/// reads the file and feeds the tracks back via showContents(). Selection /
+/// scroll for both views live here. Creating, renaming and deleting playlists
+/// is driven from the host's ESC menu, not from this widget.
 class PlaylistsView : public ventty::Widget
 {
 public:
-    /// Fired when the user activates a playlist (Enter). Unused in the first
-    /// cut — wired later to load the playlist into the play queue.
-    using OnActivate = std::function<void(std::string const & name)>;
+    /// Fired when the user opens a playlist row (Enter in list view). The host
+    /// reads the playlist and calls showContents() with the resolved tracks.
+    using OnOpen = std::function<void(std::string const & name)>;
+    /// Fired when the user activates a track row (Enter in contents view):
+    /// replace the play queue with this track and play, matching the Enter
+    /// semantics of LibraryView / FileBrowser.
+    using OnPlayTrack = std::function<void(TrackInfo const & track)>;
+    /// Fired on Ctrl+S in the contents view's edit mode: persist the current
+    /// (possibly reordered / trimmed) track list. The host writes the file and
+    /// returns true on success, which leaves edit mode.
+    using OnSaveTracks =
+        std::function<bool(std::string const & name, std::vector<TrackInfo> const & tracks)>;
 
     void setTheme(Theme const & theme) { _theme = theme; }
-    void setOnActivate(OnActivate cb) { _onActivate = std::move(cb); }
+    void setOnOpen(OnOpen cb) { _onOpen = std::move(cb); }
+    void setOnPlayTrack(OnPlayTrack cb) { _onPlayTrack = std::move(cb); }
+    void setOnSaveTracks(OnSaveTracks cb) { _onSaveTracks = std::move(cb); }
 
     /// Replace the displayed names (caller supplies them already sorted).
     /// Clamps selection / scroll so deleting the last row stays valid.
     void setItems(std::vector<std::string> names);
 
-    /// Name under the cursor, or "" when the list is empty.
+    /// Enter the contents view for `name`, showing `tracks` under a ".." row.
+    /// Called by the host after it reads the playlist file.
+    void showContents(std::string name, std::vector<TrackInfo> tracks);
+    /// Leave the contents view, returning to the playlist list.
+    void closeContents();
+    /// True while one playlist's tracks are shown.
+    bool inContents() const { return _inContents; }
+
+    /// Name under the cursor in list view, or the open playlist's name in
+    /// contents view. "" when the list is empty.
     std::string selectedName() const;
+    /// Track under the cursor in contents view, or nullptr (when on the ".."
+    /// row, or in list view). Used by the host's `a`-append handler.
+    TrackInfo const * selectedTrack() const;
     bool empty() const { return _names.empty(); }
 
     void draw(ventty::Window & window) override;
     bool handleKey(ventty::KeyEvent const & event) override;
+    bool handleMouse(ventty::MouseEvent const & event);
 
 private:
     void moveCursor(int delta);
     void ensureVisible(int listH);
+    void drawList(ventty::Window & window);
+    void drawContents(ventty::Window & window);
+
+    // Contents-view editing (gated behind Ctrl+E edit mode). Selection lives in
+    // row-index space (row 0 = ".."), which is never selectable — mirrors
+    // FileBrowser's parent-row exclusion.
+    void extendTrackSelectionTo(int newRow);
+    void clearTrackSelection();
+    void removeSelectedTracks();
+    void moveTrackSelectionUp();
+    void moveTrackSelectionDown();
 
     Theme _theme;
     std::vector<std::string> _names;
     int _selectedIndex = 0;
     int _scrollOffset = 0;
-    OnActivate _onActivate;
+
+    // Contents view: the tracks of one opened playlist. Row 0 is the ".."
+    // back-row; tracks occupy rows 1..N, so _trackSel == 0 means "..".
+    bool _inContents = false;
+    std::string _openName;
+    std::vector<TrackInfo> _tracks;
+    int _trackSel = 0;
+    int _trackScroll = 0;
+    bool _editMode = false;          // toggled by Ctrl+E; gates all edit ops
+    std::set<int> _trackMultiSel;    // row indices (never includes row 0)
+    int _trackAnchor = -1;           // shift-range anchor; -1 when none
+
+    OnOpen _onOpen;
+    OnPlayTrack _onPlayTrack;
+    OnSaveTracks _onSaveTracks;
 };
 
 } // namespace vtplayer
