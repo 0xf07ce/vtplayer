@@ -945,11 +945,12 @@ namespace vtplayer
             {"  A",                     "Append selection to play queue", false},
             {"  Shift+Up / Shift+Down", "Extend multi-selection", false},
             {"  Ctrl+A",                "Select all", false},
-            {"  Ctrl+E",                "Toggle edit mode", false},
+            {"  Ctrl+E",                "Enter edit mode", false},
             {"  Shift+Left / Shift+Right", "Move selection up / down (edit mode)", false},
             {"  Del / D",               "Remove selection (edit mode)", false},
             {"  Backspace",             "Edit mode: remove selection; else go up to the list", false},
             {"  Ctrl+S",                "Save edits and leave edit mode ( '..' discards )", false},
+            {"  ESC menu",              "Save playlist / Discard changes (edit mode)", false},
             {"", "", false},
             {"Visualizer", "", true},
             {"  V",                     "Toggle visualizer screen", false},
@@ -1879,11 +1880,16 @@ namespace vtplayer
         case LeftSlot::Playlists:
             if (ctx.playlistsInContents)
             {
-                // Track view: the edit-mode toggle leads, mirroring Ctrl+E /
-                // Ctrl+S — "Edit playlist" arms editing, "Save playlist"
-                // persists and leaves it.
+                // Track view: the edit-mode entry leads. "Edit playlist" arms
+                // editing (mirrors Ctrl+E); while editing, "Save playlist"
+                // persists (Ctrl+S) and "Discard changes" rolls back to the
+                // on-disk version. Ctrl+E is not a toggle, so the menu is the
+                // way out without saving (besides exiting via `..`).
                 if (ctx.playlistsEditMode)
+                {
                     add("Save playlist", MenuAction::SavePlaylist);
+                    add("Discard changes", MenuAction::CancelPlaylistEdit);
+                }
                 else
                     add("Edit playlist", MenuAction::EditPlaylist);
             }
@@ -2492,6 +2498,15 @@ namespace vtplayer
         case MenuAction::SavePlaylist:
             if (_playlistsView)
                 _playlistsView->saveEdits();
+            break;
+        case MenuAction::CancelPlaylistEdit:
+            // Roll back: re-read the playlist file and leave edit mode,
+            // dropping the unsaved reorder / trim.
+            if (_playlistsView && _playlistsView->inEditMode())
+            {
+                if (auto reloaded = resolvePlaylistTracks(_playlistsView->selectedName()))
+                    _playlistsView->discardEdits(std::move(*reloaded));
+            }
             break;
         case MenuAction::Exit:
             quit();

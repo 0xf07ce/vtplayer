@@ -74,6 +74,10 @@ public:
     /// leave edit mode on success. Returns whether the save succeeded; a failed
     /// write keeps edit mode on so the user can retry.
     bool saveEdits();
+    /// Discard unsaved edits: replace the tracks with the host's freshly-read
+    /// on-disk version and leave edit mode (a rollback). The host supplies the
+    /// reloaded tracks since it owns the file I/O.
+    void discardEdits(std::vector<TrackInfo> tracks);
 
     /// Name under the cursor in list view, or the open playlist's name in
     /// contents view. "" when the list is empty.

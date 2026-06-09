@@ -226,6 +226,13 @@ bool PlaylistsView::saveEdits()
     return saved;
 }
 
+void PlaylistsView::discardEdits(std::vector<TrackInfo> tracks)
+{
+    if (!_inContents) return;
+    reloadContents(std::move(tracks)); // swap in the on-disk tracks, clamp cursor
+    _editMode = false;                 // rollback complete — leave edit mode
+}
+
 void PlaylistsView::moveCursor(int delta)
 {
     if (_inContents)
@@ -252,15 +259,17 @@ void PlaylistsView::ensureVisible(int listH)
 
 bool PlaylistsView::handleKey(ventty::KeyEvent const & event)
 {
-    // Contents-view editing: Ctrl+E toggles edit mode, Ctrl+S saves, and the
+    // Contents-view editing: Ctrl+E enters edit mode, Ctrl+S saves, and the
     // reorder / multi-select / delete keys are active only while editing.
     if (_inContents)
     {
         if (event.key == Key::Char && event.ctrl &&
             (event.ch == 'e' || event.ch == 'E' || event.ch == 5))
         {
-            _editMode = !_editMode;
-            if (!_editMode) clearTrackSelection();
+            // Ctrl+E only *enters* edit mode — it is not a toggle. Once editing,
+            // it is ignored; leaving happens via Ctrl+S (save) or the ESC menu's
+            // "Discard changes" (rollback). Swallow it either way.
+            if (!_editMode) enterEditMode();
             return true;
         }
         if (event.key == Key::Char && event.ctrl &&

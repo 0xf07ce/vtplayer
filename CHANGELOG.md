@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 0.17.2 (2026-06-09)
+
+- Playlist contents view: Ctrl+E now only *enters* edit mode rather than
+  toggling it — once editing, Ctrl+E is ignored. Leaving edit mode
+  happens via Ctrl+S (save) or the ESC menu's new "Discard changes",
+  which rolls back to the on-disk playlist by re-reading the file and
+  dropping the unsaved reorder / trim. The menu lists "Save playlist"
+  then "Discard changes" while editing.
+
 ## 0.17.1 (2026-06-09)
 
 - Playlist contents view: multi-selection (Shift+Up / Shift+Down) and

@@ -103,6 +103,7 @@ namespace vtplayer
         DeletePlaylist,
         EditPlaylist,
         SavePlaylist,
+        CancelPlaylistEdit,
         Exit,
     };
 
