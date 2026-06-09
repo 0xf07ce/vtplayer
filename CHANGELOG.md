@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## 0.17.1 (2026-06-09)
+
+- Playlist contents view: multi-selection (Shift+Up / Shift+Down) and
+  Ctrl+A select-all now work outside edit mode, so a selection can be
+  sent straight to the play queue — Enter replaces the queue with the
+  whole selection and plays, `a` appends it. Reorder / delete stay gated
+  behind edit mode, where Backspace now removes the selection (an alias
+  for `d`) instead of leaving the view.
+- Ctrl+A no longer highlights the `..` back-row when the cursor sits on
+  it: the cursor parks on the first selectable entry so `..` (and, in the
+  FileBrowser, directories) are never part of a select-all.
+- The track multi-selection is cleared when the panel loses focus,
+  matching the FileBrowser / play-queue behavior.
+- ESC menu is now focus-aware: the play queue shows its own items
+  instead of borrowing the left panel's, the Playlists panel drops
+  "Focus playing track", and the playlist contents view leads with an
+  "Edit playlist" / "Save playlist" toggle mirroring Ctrl+E / Ctrl+S.
+- `b` (add to playlist) stays available on the play queue even while the
+  Playlists panel occupies the left side, and appending to a playlist
+  that is currently open in the track view refreshes its list in place.
+
 ## 0.17.0 (2026-06-09)
 
 - Play queue: Left / Right now mirror Up / Down for cursor movement,

@@ -29,6 +29,7 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -100,6 +101,8 @@ namespace vtplayer
         CreatePlaylist,
         RenamePlaylist,
         DeletePlaylist,
+        EditPlaylist,
+        SavePlaylist,
         Exit,
     };
 
@@ -169,6 +172,7 @@ namespace vtplayer
             LeftSlot leftSlot = LeftSlot::Library;    ///< active left widget otherwise
             bool     playlistsEmpty = true;
             bool     playlistsInContents = false;     ///< PlaylistsView drilled into a playlist
+            bool     playlistsEditMode = false;        ///< contents view armed for editing
             bool     libraryRootConfigured = false;
             // Extension point: per-selection menus can branch on the focused
             // widget's selection kind, already queryable via
@@ -233,6 +237,14 @@ namespace vtplayer
         /// the play queue — that happens later from the contents view (Enter on
         /// a track = replace + play, `a` = append).
         void openPlaylistContents(std::string const & name);
+
+        /// Read a playlist file and resolve each entry against the library for
+        /// richer metadata (album / grouping / ReplayGain), falling back to the
+        /// bare M3U entry for external paths. nullopt when the file is
+        /// unreadable. Shared by openPlaylistContents() and the add-to-playlist
+        /// refresh path.
+        std::optional<std::vector<TrackInfo>>
+        resolvePlaylistTracks(std::string const & name) const;
 
         /// Push the play queue header title: the active playlist's name, or the
         /// default "Play Queue" when `_currentPlaylistName` is empty.

@@ -35,6 +35,17 @@ void PlaylistsView::showContents(std::string name, std::vector<TrackInfo> tracks
     clearTrackSelection();
 }
 
+void PlaylistsView::reloadContents(std::vector<TrackInfo> tracks)
+{
+    if (!_inContents) return;
+    _tracks = std::move(tracks);
+    clearTrackSelection();
+    // Row 0 is "..", so the row count is tracks + 1. ensureVisible() re-clamps
+    // the scroll on the next draw, so only the cursor needs clamping here.
+    int const rowCount = static_cast<int>(_tracks.size()) + 1;
+    _trackSel = std::clamp(_trackSel, 0, rowCount - 1);
+}
+
 void PlaylistsView::closeContents()
 {
     // Leaving the contents view drops any unsaved edits (the discard path).
@@ -64,10 +75,36 @@ TrackInfo const * PlaylistsView::selectedTrack() const
     return &_tracks[ti];
 }
 
+std::vector<TrackInfo> PlaylistsView::selectedTracks() const
+{
+    if (!_inContents) return {};
+
+    // Rows are 1-based over _tracks; union the multi-selection with the cursor
+    // row, drop the ".." row (row 0), and emit in row order.
+    std::set<int> rows = _trackMultiSel;
+    if (_trackSel >= 1) rows.insert(_trackSel);
+
+    std::vector<TrackInfo> out;
+    out.reserve(rows.size());
+    for (int row : rows)
+    {
+        int const ti = row - 1;
+        if (ti >= 0 && ti < static_cast<int>(_tracks.size()))
+            out.push_back(_tracks[ti]);
+    }
+    return out;
+}
+
 void PlaylistsView::clearTrackSelection()
 {
     _trackMultiSel.clear();
     _trackAnchor = -1;
+}
+
+void PlaylistsView::onFocusChanged()
+{
+    if (!isFocused())
+        clearTrackSelection();
 }
 
 void PlaylistsView::extendTrackSelectionTo(int newRow)
@@ -82,6 +119,24 @@ void PlaylistsView::extendTrackSelectionTo(int newRow)
         if (row >= 1 && row <= n) // skip row 0 (the ".." back-row)
             _trackMultiSel.insert(row);
     }
+}
+
+void PlaylistsView::selectAllTracks()
+{
+    // Select every track row (1..N); row 0 (the ".." back-row) is never
+    // selectable. Anchor the shift-range at the cursor so a later Shift+arrow
+    // extends from where the user is, mirroring FileBrowser / PlayQueueView.
+    _trackMultiSel.clear();
+    int const n = static_cast<int>(_tracks.size());
+    for (int row = 1; row <= n; ++row)
+        _trackMultiSel.insert(row);
+    // Never leave the cursor on the ".." back-row here: it would be highlighted
+    // as the cursor alongside every track, reading as if ".." were part of the
+    // "select all". Park it on the first real track so ".." is excluded from
+    // both the visual highlight and the logical selection.
+    if (n > 0 && _trackSel == 0)
+        _trackSel = 1;
+    _trackAnchor = _trackSel;
 }
 
 void PlaylistsView::removeSelectedTracks()
@@ -158,6 +213,19 @@ void PlaylistsView::moveTrackSelectionDown()
     if (_trackAnchor >= 0) _trackAnchor += 1;
 }
 
+bool PlaylistsView::saveEdits()
+{
+    if (!_inContents || !_editMode) return false;
+    // A failed write keeps edit mode on so the user can retry.
+    bool const saved = !_onSaveTracks || _onSaveTracks(_openName, _tracks);
+    if (saved)
+    {
+        _editMode = false;
+        clearTrackSelection();
+    }
+    return saved;
+}
+
 void PlaylistsView::moveCursor(int delta)
 {
     if (_inContents)
@@ -198,44 +266,47 @@ bool PlaylistsView::handleKey(ventty::KeyEvent const & event)
         if (event.key == Key::Char && event.ctrl &&
             (event.ch == 's' || event.ch == 'S' || event.ch == 19))
         {
-            if (_editMode)
+            saveEdits(); // save + leave edit mode (no-op when not editing)
+            return true;
+        }
+
+        // Multi-selection and select-all work outside edit mode too: a
+        // selection here can be sent to the play queue (Enter / `a`) without
+        // entering the file-mutating edit mode. Row 0 (the ".." back-row) is
+        // never selectable.
+        // Ctrl+A selects every track row, matching FileBrowser / PlayQueue.
+        if (event.key == Key::Char && event.ctrl &&
+            (event.ch == 'a' || event.ch == 'A' || event.ch == 1))
+        {
+            selectAllTracks();
+            return true;
+        }
+        // Shift+Up / Shift+Down extend the track multi-selection.
+        if (event.key == Key::Up && event.shift)
+        {
+            if (_trackSel > 1)
             {
-                // Save, then leave edit mode. A failed write keeps edit mode on
-                // so the user can retry.
-                bool const saved = !_onSaveTracks || _onSaveTracks(_openName, _tracks);
-                if (saved)
-                {
-                    _editMode = false;
-                    clearTrackSelection();
-                }
+                if (_trackAnchor < 0) _trackAnchor = _trackSel;
+                _trackSel -= 1;
+                extendTrackSelectionTo(_trackSel);
+            }
+            return true;
+        }
+        if (event.key == Key::Down && event.shift)
+        {
+            if (_trackSel < static_cast<int>(_tracks.size()))
+            {
+                if (_trackAnchor < 0) _trackAnchor = _trackSel;
+                _trackSel += 1;
+                extendTrackSelectionTo(_trackSel);
             }
             return true;
         }
 
+        // Reorder / delete mutate the saved playlist, so they stay gated behind
+        // edit mode (toggled by Ctrl+E, persisted by Ctrl+S).
         if (_editMode)
         {
-            // Shift+Up / Shift+Down extend the track multi-selection (row 0,
-            // the ".." back-row, is never selectable).
-            if (event.key == Key::Up && event.shift)
-            {
-                if (_trackSel > 1)
-                {
-                    if (_trackAnchor < 0) _trackAnchor = _trackSel;
-                    _trackSel -= 1;
-                    extendTrackSelectionTo(_trackSel);
-                }
-                return true;
-            }
-            if (event.key == Key::Down && event.shift)
-            {
-                if (_trackSel < static_cast<int>(_tracks.size()))
-                {
-                    if (_trackAnchor < 0) _trackAnchor = _trackSel;
-                    _trackSel += 1;
-                    extendTrackSelectionTo(_trackSel);
-                }
-                return true;
-            }
             // Shift+Left / Shift+Right reorder the selected block (Left=up).
             if (event.key == Key::Left && event.shift) { moveTrackSelectionUp(); return true; }
             if (event.key == Key::Right && event.shift) { moveTrackSelectionDown(); return true; }
@@ -274,13 +345,25 @@ bool PlaylistsView::handleKey(ventty::KeyEvent const & event)
 
     if (_inContents)
     {
-        // Backspace mirrors FileBrowser's "go up a level".
-        if (event.key == Key::Backspace) { closeContents(); return true; }
+        // Backspace: in edit mode it removes the selection (an alias for `d`),
+        // since destructive edits are the focus there; otherwise it mirrors
+        // FileBrowser's "go up a level".
+        if (event.key == Key::Backspace)
+        {
+            if (_editMode) removeSelectedTracks();
+            else closeContents();
+            return true;
+        }
         if (event.key == Key::Enter)
         {
             if (_trackSel == 0) { closeContents(); return true; } // ".." row
-            if (auto const * track = selectedTrack(); track && _onPlayTrack)
-                _onPlayTrack(*track);
+            // Replace the queue with the whole selection (multi-selection ∪
+            // cursor); a bare cursor yields just that one track.
+            if (_onPlayTracks)
+            {
+                if (auto tracks = selectedTracks(); !tracks.empty())
+                    _onPlayTracks(tracks);
+            }
             return true;
         }
         return false;
@@ -332,8 +415,11 @@ bool PlaylistsView::handleMouse(ventty::MouseEvent const & event)
                 // FileBrowser double-click effect).
                 if (idx == 0)
                     closeContents(); // ".." row
-                else if (auto const * track = selectedTrack(); track && _onPlayTrack)
-                    _onPlayTrack(*track);
+                else if (_onPlayTracks)
+                {
+                    if (auto tracks = selectedTracks(); !tracks.empty())
+                        _onPlayTracks(tracks);
+                }
             }
             else
             {

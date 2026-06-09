@@ -193,9 +193,27 @@ void FileBrowser::clearMultiSelection()
 void FileBrowser::selectAllFiles()
 {
     _multiSelected.clear();
+    int firstSel = -1;
     for (int i = 0; i < static_cast<int>(_entries.size()); ++i)
     {
-        if (_entries[i].isSelectable()) _multiSelected.insert(i);
+        if (_entries[i].isSelectable())
+        {
+            _multiSelected.insert(i);
+            if (firstSel < 0) firstSel = i;
+        }
+    }
+    // Never leave the cursor on a non-selectable row (the ".." parent or a
+    // directory): it would be highlighted as the cursor alongside every file,
+    // reading as if it were part of the "select all". Park it on the first
+    // selectable entry so those rows are excluded from both the visual
+    // highlight and the logical selection.
+    bool const cursorSelectable =
+        _selectedIndex >= 0 && _selectedIndex < static_cast<int>(_entries.size()) &&
+        _entries[_selectedIndex].isSelectable();
+    if (firstSel >= 0 && !cursorSelectable)
+    {
+        _selectedIndex = firstSel;
+        scrollToSelected();
     }
     _selectionAnchor = _selectedIndex;
 }
