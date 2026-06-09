@@ -19,7 +19,7 @@ option(VTPLAYER_USE_SYSTEM_DEPS
 # transparently (no network during the build).
 FetchContent_Declare(ventty
     GIT_REPOSITORY https://github.com/0xf07ce/ventty.git
-    GIT_TAG        v0.3.1   # 2cad6bcc74c5be88ba92190e4f07ded5c7541269
+    GIT_TAG        v0.4.1   # 056d7448f35b1e47896f08ae768a9009c8637ec4
     GIT_SHALLOW    TRUE
 )
 set(VENTTY_BUILD_TESTS    OFF CACHE BOOL "" FORCE)

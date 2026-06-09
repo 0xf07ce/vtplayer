@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## 1.0.0 (2026-06-09)
+
+- **Configurable keybindings.** Keys are now driven by a preset file under
+  `~/.config/vtplayer/keybindings/`, chosen in config.ini
+  (`[keybindings] preset`). Two presets ship and are materialized on first run
+  (and never overwritten afterward, so edits survive):
+  - `default` — the standard layout, now listed explicitly so every command
+    can be remapped. One key per command; no modes or counts.
+  - `vi` — modal, vi-style navigation: `h/j/k/l` motions, `gg`/`G`, numeric
+    repeat counts (`3j`, `5dd`), chord commands, `<C-w>` window/panel movement,
+    and a Visual mode (`v`) that extends the selection (built on the existing
+    multi-select). A vim-style *showcmd* hint shows a pending count/chord and
+    the Visual indicator in the bottom-right.
+  The active preset is loaded once at startup and never switches at runtime, so
+  a default session stays non-modal and a vi session stays modal.
+- The Help screen (`H`) is now generated from the active keymap, so it always
+  reflects the real bindings and names the selected preset.
+- The modal input engine (modes / counts / chord trie) lives in the ventty
+  framework (≥ 0.4.1); vtplayer supplies the action vocabulary, the
+  `dispatch()` that gives each action meaning, and the preset files.
+- Requires ventty 0.4.1, whose raw mode now also clears `ISIG` — Ctrl+C /
+  Ctrl+\ / Ctrl+Z arrive as ordinary keys instead of terminating the player.
+
 ## 0.17.2 (2026-06-09)
 
 - Playlist contents view: Ctrl+E now only *enters* edit mode rather than

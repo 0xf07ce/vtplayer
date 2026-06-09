@@ -88,3 +88,64 @@ All shortcuts work regardless of Korean IME input state.
 | Click progress bar | Seek to position |
 | Click browser / play queue | Switch focus |
 | Scroll wheel | Navigate lists |
+
+## Keybinding presets
+
+Keybindings are chosen by *preset*. Two ship built-in, materialized on first
+run into `~/.config/vtplayer/keybindings/` (and never rewritten afterwards, so
+your edits and comments survive):
+
+- **`default`** — the standard keys documented above, listed explicitly so each
+  can be remapped. Every command is a single key — no modes, chords, or counts.
+- **`vi`** — modal, vi-style navigation: motions, chord sequences, repeat
+  counts, and a Visual mode.
+
+The active preset is loaded once at startup and never switches at runtime, so a
+default-mode session stays non-modal and a vi-mode session stays modal.
+
+Select one in `~/.config/vtplayer/config.ini`:
+
+```ini
+[keybindings]
+preset = vi        ; or "default"
+```
+
+You can add your own `<name>.keys` file in that directory and point `preset` at
+it; the loader falls back to the built-ins if the named file is missing.
+
+### vi preset
+
+Keys not rebound below keep their built-in behavior, so playback, search (`/`,
+`n`, `N`), append (`a`), tags (`t`), quit (`q`) and so on still work. Because
+`h` / `l` / `v` become motions, their built-in commands move to the uppercase
+keys: **`H`** = help, **`L`** = toggle left panel, **`V`** = visualizer.
+
+| Key | Action |
+|-----|--------|
+| `h` `j` `k` `l` | Collapse / down / up / expand (`j`/`k` move the cursor) |
+| `gg` / `G` | First / last item |
+| `Ctrl+F` / `Ctrl+B` | Page down / up |
+| `{count}` + motion | Repeat, e.g. `3j` moves down 3, `5dd` removes 5 |
+| `dd` | Remove focused / selected item(s) from the play queue |
+| `Ctrl+Up` / `Ctrl+Down` | Reorder selection up / down |
+| `Ctrl+W` `w` | Cycle panel focus (like `Tab`) |
+| `Ctrl+W` `h` / `Ctrl+W` `l` | Focus left panel / play queue |
+| `Ctrl+W` `1`…`5` | Left-panel mode: Album / Artist / Directory / Files / Playlists |
+| `Ctrl+G` | Toggle gain normalization (`g` is taken by `gg`) |
+| `v` | Enter Visual mode |
+| `Esc` | Cancel a pending count/chord, or leave Visual mode |
+
+In **Visual mode**, `j`/`k` (and `Ctrl+F`/`Ctrl+B`) extend the selection and `d`
+deletes it. A pending count or chord, and the Visual indicator, show in the
+bottom-right corner (vim-style *showcmd*).
+
+The preset file format is one directive per line:
+
+```
+modes  = normal, visual      # first mode is the initial one
+counts = on                  # enable numeric repeat (3j, 5dd)
+map <mode> <lhs> <action>    # e.g. map normal <C-w>l focus-right
+```
+
+`<lhs>` uses vim key notation (`j`, `dd`, `gg`, `<C-w>l`, `<CR>`, `<Esc>`,
+`<Space>`, `<C-Up>`). See the comments in `vi.keys` for the full action list.

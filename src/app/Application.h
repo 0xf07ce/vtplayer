@@ -5,6 +5,7 @@
 
 #include "../audio/AudioEngine.h"
 #include "../config/Config.h"
+#include "../input/Actions.h"
 #include "../library/MediaLibrary.h"
 #include "../plugin/PluginHost.h"
 #include "../util/PlaylistStore.h"
@@ -23,6 +24,7 @@
 #include "../view/VisualizerView.h"
 #include "../visualizer/AudioSpectrum.h"
 
+#include <ventty/input/InputEngine.h>
 #include <ventty/terminal/TerminalBase.h>
 
 #include "../library/LibraryScanner.h"
@@ -160,6 +162,29 @@ namespace vtplayer
         void handleInput(ventty::KeyEvent const &event);
         void handleMouse(ventty::MouseEvent const &event);
         void handleGlobalKeys(ventty::KeyEvent const &event);
+
+        /// Execute a resolved keybinding action. `count` is the numeric repeat
+        /// prefix (0 = unspecified, treated as 1). Global actions run directly;
+        /// focused-view actions are forwarded to the focused list widget via
+        /// dispatchToFocusedView() (synthesizing the equivalent KeyEvent, with
+        /// Shift attached while the engine is in Visual mode so the views'
+        /// existing multi-select extension is reused).
+        void dispatch(Action action, int count);
+        /// Route a (synthetic) key event to whichever Browser-screen list widget
+        /// has focus. No-op off the Browser screen.
+        void dispatchToFocusedView(ventty::KeyEvent const &event);
+        /// Apply a left-panel mode switch with the same anchor save/restore the
+        /// `1`-`5` keys use. Shared by handleGlobalKeys and dispatch().
+        void applyLeftMode(LeftMode target);
+        /// Append the focused selection to the play queue (the `a` action),
+        /// context-aware over Playlists / Library / FileBrowser.
+        void appendSelection();
+        /// Toggle focus between the left panel and the play queue (the Tab /
+        /// focus-next action).
+        void focusNextPanel();
+        /// Focus a specific panel (the focus-left / focus-right actions).
+        void focusPanel(FocusPanel panel);
+
         void openContextMenu();
         void onContextMenuSelect(int index);
 
@@ -373,6 +398,11 @@ namespace vtplayer
         // Audio
         AudioEngine _audio;
         Config _config;
+
+        // Keybinding engine (modes / counts / chords). Configured in init()
+        // from the active preset; default preset passes every key through to
+        // the built-in handlers, so it is transparent unless "vi" is selected.
+        ventty::InputEngine _inputEngine;
 
         // Dynamically loaded plugins. Loaded early in init() (so plugin file
         // extensions are known before the browser/scanner are configured) and

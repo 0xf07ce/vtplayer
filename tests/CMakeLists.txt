@@ -23,6 +23,7 @@ add_executable(vtplayer_tests
     test_playqueue.cpp
     test_config.cpp
     test_plugin.cpp
+    test_keybindings.cpp
 
     # Modules under test, compiled directly into the test binary.
     ${CMAKE_SOURCE_DIR}/src/util/M3uReader.cpp
@@ -33,6 +34,8 @@ add_executable(vtplayer_tests
     ${CMAKE_SOURCE_DIR}/src/plugin/PluginHost.cpp
     ${CMAKE_SOURCE_DIR}/src/plugin/DecoderRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/audio/PluginSource.cpp
+    ${CMAKE_SOURCE_DIR}/src/input/Actions.cpp
+    ${CMAKE_SOURCE_DIR}/src/input/Keybindings.cpp
 )
 
 target_include_directories(vtplayer_tests PRIVATE

@@ -222,6 +222,14 @@ namespace vtplayer
         {
             scanSig = *v;
         }
+        if (auto *v = get("keybindings.preset"))
+        {
+            // Any non-empty name is accepted so users can add their own
+            // <name>.keys presets; the loader falls back to built-ins if the
+            // named file is missing.
+            if (!v->empty())
+                keymapPreset = *v;
+        }
         // Collect all theme.* keys
         for (auto const &[key, value] : values)
         {
@@ -279,7 +287,10 @@ namespace vtplayer
         out << "root = " << libraryRoot.string() << "\n";
         out << "left_mode = " << leftMode << "\n";
         out << "focus_path = " << libraryFocus.string() << "\n";
-        out << "scan_sig = " << scanSig << "\n";
+        out << "scan_sig = " << scanSig << "\n\n";
+
+        out << "[keybindings]\n";
+        out << "preset = " << keymapPreset << "\n";
 
         if (!themeColors.empty())
         {

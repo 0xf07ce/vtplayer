@@ -46,6 +46,11 @@ struct Config
     /// still matches on startup the filesystem walk is skipped entirely.
     std::string scanSig;
 
+    // [keybindings]
+    /// Active keybinding preset (file <preset>.keys under the keybindings dir).
+    /// "default" = built-in keys; "vi" = modal, vi-style navigation.
+    std::string keymapPreset = "default";
+
     // [theme] — color overrides as "#RRGGBB" hex strings
     std::unordered_map<std::string, std::string> themeColors;
 

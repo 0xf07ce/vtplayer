@@ -5,6 +5,12 @@ add_executable(vtplayer
     app/Application.h
     app/Application.cpp
 
+    # input (keybindings: Action vocabulary + preset loader)
+    input/Actions.h
+    input/Actions.cpp
+    input/Keybindings.h
+    input/Keybindings.cpp
+
     # audio
     audio/AudioEngine.h
     audio/AudioEngine.cpp

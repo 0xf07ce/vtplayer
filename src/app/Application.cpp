@@ -3,6 +3,7 @@
 
 #include "Application.h"
 
+#include "../input/Keybindings.h"
 #include "../library/LibraryRepository.h"
 #include "../library/LibraryScanner.h"
 #include "../playqueue/PlayQueueCache.h"
@@ -17,6 +18,7 @@
 #include "../visualizer/TagInfoView.h"
 #include "../visualizer/VinylVis.h"
 
+#include <ventty/input/KeyChord.h>
 #include <ventty/terminal/Terminal.h>
 
 #include <ventty/art/AsciiArt.h>
@@ -27,6 +29,7 @@
 #include <string_view>
 #include <system_error>
 #include <thread>
+#include <unordered_map>
 
 #include <poll.h>
 #include <unistd.h>
@@ -332,6 +335,14 @@ namespace vtplayer
         {
             _theme.applyColors(_config.themeColors);
         }
+
+        // Keybindings: materialize the built-in presets (first run only) and
+        // configure the input engine from the selected one. The "default"
+        // preset binds nothing, so every key passes through to the built-in
+        // handlers — only "vi" changes behavior. Warnings are non-fatal.
+        Keybindings::materializePresets();
+        std::vector<std::string> kbWarnings;
+        Keybindings::load(_config.keymapPreset, _inputEngine, kbWarnings);
 
         _audio.init();
         _audio.setVolume(1.0f);
@@ -899,75 +910,96 @@ namespace vtplayer
 #ifndef VTPLAYER_VERSION
 #define VTPLAYER_VERSION "unknown"
 #endif
-        // clang-format off
-        _helpRows = {
-            {"VT-PLAYER " VTPLAYER_VERSION " — Keyboard shortcuts", "", true},
-            {"", "", false},
-            {"Playback", "", true},
-            {"  Space",                 "Play / Pause", false},
-            {"  X",                     "Stop playback", false},
-            {"  [ / ]",                 "Previous / Next track", false},
-            {"  < / >",                 "Seek -5s / +5s", false},
-            {"  R",                     "Cycle repeat: none -> all -> one", false},
-            {"  S",                     "Toggle shuffle mode (next/prev follow a random order)", false},
-            {"  G",                     "Toggle gain normalization (ReplayGain / auto-gain)", false},
-            {"  B",                     "Add the focused/selected track(s) to a saved playlist", false},
-            {"", "", false},
-            {"Browser - Library", "", true},
-            {"  1 / 2 / 3 / 4 / 5",     "Left panel: Album / Artist / Directory / Files / Playlists", false},
-            {"  L",                     "Toggle left panel (play queue full-width when hidden)", false},
-            {"  Tab",                   "Switch focus (browser <-> play queue)", false},
-            {"  Left / Right",          "Collapse / expand selected group", false},
-            {"  Enter",                 "Replace play queue with artist/album/track and play", false},
-            {"  A",                     "Append artist/album/track to play queue", false},
-            {"  /",                     "Search library (Tab cycles filter: Any/Artist/Album/Title/Year)", false},
-            {"  N / Shift+N",           "Jump to next / previous search result", false},
-            {"  T",                     "Edit tags (artist/album/track or folder)", false},
-            {"", "", false},
-            {"Browser - Files", "", true},
-            {"  Enter",                 "Replace play queue with selection and play", false},
-            {"  A",                     "Add selected file (or every audio file in selected dir) to play queue", false},
-            {"  T",                     "Edit tags of selected audio file", false},
-            {"  Backspace",             "Go up to parent directory", false},
-            {"", "", false},
-            {"Play Queue", "", true},
-            {"  Up/Down or Left/Right", "Move cursor (Left=Up, Right=Down)", false},
-            {"  Shift+Up / Shift+Down", "Extend multi-selection", false},
-            {"  Enter",                 "Play selected track", false},
-            {"  Del / D / Backspace",   "Remove selection", false},
-            {"  Shift+Left / Shift+Right", "Move selection up / down", false},
-            {"  Ctrl+Up / Ctrl+Down",   "Move selection up / down", false},
-            {"  Ctrl+A",                "Select all", false},
-            {"  T",                     "Edit tags (multi-selection if any, else cursor track)", false},
-            {"", "", false},
-            {"Browser - Playlists (tracks)", "", true},
-            {"  Enter",                 "Play selected track ( '..' returns to list )", false},
-            {"  A",                     "Append selection to play queue", false},
-            {"  Shift+Up / Shift+Down", "Extend multi-selection", false},
-            {"  Ctrl+A",                "Select all", false},
-            {"  Ctrl+E",                "Enter edit mode", false},
-            {"  Shift+Left / Shift+Right", "Move selection up / down (edit mode)", false},
-            {"  Del / D",               "Remove selection (edit mode)", false},
-            {"  Backspace",             "Edit mode: remove selection; else go up to the list", false},
-            {"  Ctrl+S",                "Save edits and leave edit mode ( '..' discards )", false},
-            {"  ESC menu",              "Save playlist / Discard changes (edit mode)", false},
-            {"", "", false},
-            {"Visualizer", "", true},
-            {"  V",                     "Toggle visualizer screen", false},
-            {"  0",                     "Tag info", false},
-            {"  1",                     "Spectrum analyzer", false},
-            {"  2",                     "Matrix rain", false},
-            {"  3",                     "Debug bars", false},
-            {"  4",                     "Oscilloscope", false},
-            {"  5",                     "Vinyl / CD disc", false},
-            {"", "", false},
-            {"Misc", "", true},
-            {"  H / Up / Down / PgUp / PgDn", "Show / scroll this help", false},
-            {"  Tab / Left / Right",    "Switch help tab (Shortcuts / Plugins)", false},
-            {"  ESC",                   "Open menu / dismiss overlay", false},
-            {"  Q",                     "Quit", false},
+        _helpRows.clear();
+
+        // Prettify a vim-notation key token for display: plain special keys get
+        // a friendly label; chords and Ctrl-combos keep their config notation so
+        // they correlate with the .keys file.
+        auto pretty = [](std::string const & lhs) -> std::string {
+            static std::unordered_map<std::string, std::string> const m = {
+                {"<Space>", "Space"}, {"<CR>", "Enter"}, {"<Esc>", "Esc"},
+                {"<Tab>", "Tab"},     {"<BS>", "Bksp"},  {"<Del>", "Del"},
+                {"<Home>", "Home"},   {"<End>", "End"},  {"<PageUp>", "PgUp"},
+                {"<PageDown>", "PgDn"}, {"<Up>", "Up"},  {"<Down>", "Down"},
+                {"<Left>", "Left"},   {"<Right>", "Right"}, {"<lt>", "<"}, {"<gt>", ">"},
+            };
+            auto const it = m.find(lhs);
+            return it != m.end() ? it->second : lhs;
         };
-        // clang-format on
+
+        // Collect the normal-mode key(s) bound to each action in the active
+        // preset, and note whether the preset defines a Visual mode.
+        auto const bindings = Keybindings::activeBindings(_config.keymapPreset);
+        std::unordered_map<int, std::string> keysFor;
+        bool hasVisual = false;
+        for (auto const & b : bindings)
+        {
+            if (b.mode == "visual")
+            {
+                hasVisual = true;
+                continue;
+            }
+            if (b.mode != "normal")
+                continue;
+            std::string & s = keysFor[static_cast<int>(b.action)];
+            s = s.empty() ? pretty(b.keys) : s + " / " + pretty(b.keys);
+        }
+
+        _helpRows.push_back({std::string("VT-PLAYER " VTPLAYER_VERSION
+                                         " — Keyboard shortcuts (preset: ")
+                                 + _config.keymapPreset + ")",
+                             "", true});
+
+        // Keymap-derived sections: a header per category (inserted on change),
+        // then each bound action's key(s) and description. Unbound actions are
+        // skipped, so the help always matches the active preset.
+        bool started = false;
+        ActionCategory cur = ActionCategory::Playback;
+        for (auto const & e : actionHelpEntries())
+        {
+            auto const it = keysFor.find(static_cast<int>(e.action));
+            if (it == keysFor.end())
+                continue;
+            if (!started || e.category != cur)
+            {
+                _helpRows.push_back({"", "", false});
+                _helpRows.push_back({categoryTitle(e.category), "", true});
+                cur = e.category;
+                started = true;
+            }
+            _helpRows.push_back({"  " + it->second, e.description, false});
+        }
+
+        // Visual mode (only when the active preset defines one).
+        if (hasVisual)
+        {
+            auto const v = keysFor.find(static_cast<int>(Action::EnterVisual));
+            std::string const vkey = (v != keysFor.end()) ? v->second : std::string("v");
+            _helpRows.push_back({"", "", false});
+            _helpRows.push_back({"Visual mode", "", true});
+            _helpRows.push_back({"  " + vkey, "Enter Visual mode", false});
+            _helpRows.push_back({"  motions", "Extend the selection (j/k, etc.)", false});
+            _helpRows.push_back({"  d", "Delete the selection", false});
+            _helpRows.push_back({"  Esc", "Leave Visual mode", false});
+            _helpRows.push_back({"  [count]", "Repeat a motion, e.g. 3j / 5dd", false});
+        }
+
+        // Static sections — the Visualizer screen's keys and the help overlay's
+        // own navigation are not driven by the keymap.
+        _helpRows.push_back({"", "", false});
+        _helpRows.push_back({"Visualizer screen", "", true});
+        _helpRows.push_back({"  0 - 5", "Pick style: Tag info / Spectrum / Matrix / Debug / Scope / Vinyl", false});
+
+        _helpRows.push_back({"", "", false});
+        _helpRows.push_back({"Help & misc", "", true});
+        _helpRows.push_back({"  Up/Down/PgUp/PgDn/Home/End", "Scroll this help", false});
+        _helpRows.push_back({"  Tab / Left / Right", "Switch help tab (Shortcuts / Plugins)", false});
+        _helpRows.push_back({"  Esc", "Close help / open menu", false});
+        _helpRows.push_back({"  Mouse", "Click to focus, click bar to seek, wheel to scroll", false});
+
+        _helpRows.push_back({"", "", false});
+        _helpRows.push_back({"Note", "Enter / Append / Remove / Search act on the focused panel", false});
+        _helpRows.push_back({"Remap", "~/.config/vtplayer/keybindings/" + _config.keymapPreset + ".keys", false});
 
         // Force a re-flow on next draw/scroll-clamp.
         _helpLines.clear();
@@ -1305,6 +1337,12 @@ namespace vtplayer
         // ESC opens the menu. In Help mode, ESC dismisses the help overlay.
         if (event.key == Key::Escape)
         {
+            // First let the keybinding engine swallow ESC: it cancels a pending
+            // count/chord or leaves Visual mode. Only when it has nothing to
+            // cancel (and we're in the initial mode) does ESC fall through to
+            // its built-in meaning below.
+            if (_screen == Screen::Browser && _inputEngine.feedEsc())
+                return;
             if (_screen == Screen::Visualizer)
             {
                 _screen = Screen::Browser;
@@ -1376,33 +1414,36 @@ namespace vtplayer
             return;
         }
 
-        // Global keys (always active)
-        handleGlobalKeys(event);
-
-        // Screen-specific input
+        // Keybinding engine (Browser screen). Resolve the key through the
+        // active preset: an Emit dispatches its action; a count digit or live
+        // chord prefix is absorbed; a Passthrough (no binding, not mid-chord)
+        // falls through to the built-in handlers below. The Visualizer screen
+        // bypasses the engine so its 0-9 hotkeys aren't eaten by count entry.
         if (_screen == Screen::Browser)
         {
-            if (_focus == FocusPanel::FileBrowser)
+            ventty::KeyEvent norm = event;
+            if (norm.key == Key::Char)
+                norm.ch = hangulToQwerty(norm.ch);
+            ventty::InputEngine::Result const r = _inputEngine.feed(ventty::KeyChord::from(norm));
+            if (r.kind == ventty::InputEngine::ResultKind::Emit)
             {
-                switch (activeLeftWidget())
-                {
-                case LeftSlot::Library:
-                    _libraryView->handleKey(event);
-                    break;
-                case LeftSlot::Playlists:
-                    if (_playlistsView)
-                        _playlistsView->handleKey(event);
-                    break;
-                case LeftSlot::FileBrowser:
-                    _fileBrowser->handleKey(event);
-                    break;
-                }
+                dispatch(actionFromToken(r.token), r.count);
+                return;
             }
-            else
+            if (r.kind == ventty::InputEngine::ResultKind::None)
             {
-                _playQueueView->handleKey(event);
+                // Absorbed (count digit / chord prefix). The run loop repaints
+                // every iteration, so the pending-keys hint updates via the
+                // normal diff render — no forced full redraw needed.
+                return;
             }
+            // Passthrough: fall through to the built-in handlers.
         }
+
+        // Built-in handlers: the Browser-screen passthrough, and every key on
+        // the Visualizer screen (dispatchToFocusedView is a no-op off Browser).
+        handleGlobalKeys(event);
+        dispatchToFocusedView(event);
     }
 
     void Application::handleMouse(ventty::MouseEvent const &event)
@@ -1526,37 +1567,7 @@ namespace vtplayer
                                     : (ch == '3') ? LeftMode::Directory
                                     : (ch == '4') ? LeftMode::FileBrowser
                                                   : LeftMode::Playlists;
-            // Leaving a library projection (1/2/3): remember the focused
-            // track so it can be restored on the next entry — including after
-            // a FileBrowser (4) round-trip.
-            if (leftIsLibrary() && _libraryView)
-            {
-                auto cur = _libraryView->selectedTrackPath();
-                if (!cur.empty())
-                    _libraryAnchor = cur;
-            }
-
-            // Picking a left mode implies the panel should be visible.
-            setLibraryPanelVisible(true);
-            setLeftMode(target);
-
-            // Playlists: re-list from disk so the panel is current.
-            if (target == LeftMode::Playlists)
-                refreshPlaylists();
-
-            // Re-locate the anchor to its node at the new mode's grouping
-            // level. This also runs when re-pressing the current mode's key:
-            // setLeftMode() reset the fold to the mode default, and the user
-            // expects the cursor to land on the focused item's group (e.g.
-            // pressing 2 on a track jumps to that track's album), not reset
-            // to the top.
-            bool const targetIsLibrary = (target == LeftMode::AlbumArtistTree
-                                          || target == LeftMode::ArtistTree
-                                          || target == LeftMode::Directory);
-            if (targetIsLibrary && !_libraryAnchor.empty() && _libraryView)
-            {
-                _libraryView->locateForMode(_libraryAnchor);
-            }
+            applyLeftMode(target);
             return;
         }
 
@@ -1604,24 +1615,9 @@ namespace vtplayer
 
         // Tab: switch focus between panels (browser screen only). No-op when
         // the left panel is hidden — there's only PlayQueue to focus.
-        if (event.key == Key::Tab && _screen == Screen::Browser && _libraryPanelVisible)
+        if (event.key == Key::Tab && _screen == Screen::Browser)
         {
-            if (_focus == FocusPanel::FileBrowser)
-            {
-                // Only switch to play queue if it's not empty
-                if (!_playQueueView->empty())
-                {
-                    _focus = FocusPanel::PlayQueue;
-                    setLeftFocused(false);
-                    _playQueueView->setFocused(true);
-                }
-            }
-            else
-            {
-                _focus = FocusPanel::FileBrowser;
-                setLeftFocused(true);
-                _playQueueView->setFocused(false);
-            }
+            focusNextPanel();
             return;
         }
 
@@ -1755,39 +1751,7 @@ namespace vtplayer
         // keeping the existing queue intact.
         if (event.key == Key::Char && (ch == 'a' || ch == 'A') && !event.alt && !event.ctrl && _screen == Screen::Browser)
         {
-            // Playlists panel: in the contents view, append the selection
-            // (multi-selection unioned with the cursor) to the queue, keeping
-            // the existing queue intact. In the list view there's no track to
-            // append — swallow `a` so it can't read stale FileBrowser state.
-            if (leftIsPlaylists())
-            {
-                if (_playlistsView && _playlistsView->inContents())
-                {
-                    for (auto const &track : _playlistsView->selectedTracks())
-                        _playQueueView->addTrack(track);
-                }
-                return;
-            }
-            // Library panel: append the selected artist / album / track.
-            if (leftIsLibrary())
-            {
-                _libraryView->sendSelectionToQueue(/*replace=*/false);
-                return;
-            }
-            // File browser: append the selected file (or every audio file in
-            // the selected directory).
-            auto const *entry = _fileBrowser->selectedEntry();
-            if (entry && entry->isAudio)
-            {
-                addToPlayQueue(entry->path);
-            }
-            else if (entry && entry->isDirectory)
-            {
-                for (auto const &p : _fileBrowser->collectAudioFiles(entry->path))
-                {
-                    addToPlayQueue(p);
-                }
-            }
+            appendSelection();
             return;
         }
 
@@ -1818,6 +1782,374 @@ namespace vtplayer
         {
             openTagEditor();
             return;
+        }
+    }
+
+    void Application::applyLeftMode(LeftMode target)
+    {
+        // Leaving a library projection (1/2/3): remember the focused track so
+        // it can be restored on the next entry — including after a FileBrowser
+        // (4) round-trip.
+        if (leftIsLibrary() && _libraryView)
+        {
+            auto cur = _libraryView->selectedTrackPath();
+            if (!cur.empty())
+                _libraryAnchor = cur;
+        }
+
+        // Picking a left mode implies the panel should be visible.
+        setLibraryPanelVisible(true);
+        setLeftMode(target);
+
+        // Playlists: re-list from disk so the panel is current.
+        if (target == LeftMode::Playlists)
+            refreshPlaylists();
+
+        // Re-locate the anchor to its node at the new mode's grouping level.
+        bool const targetIsLibrary = (target == LeftMode::AlbumArtistTree
+                                      || target == LeftMode::ArtistTree
+                                      || target == LeftMode::Directory);
+        if (targetIsLibrary && !_libraryAnchor.empty() && _libraryView)
+            _libraryView->locateForMode(_libraryAnchor);
+    }
+
+    void Application::appendSelection()
+    {
+        // Playlists panel: in the contents view, append the selection
+        // (multi-selection unioned with the cursor) to the queue. In the list
+        // view there's no track to append.
+        if (leftIsPlaylists())
+        {
+            if (_playlistsView && _playlistsView->inContents())
+            {
+                for (auto const &track : _playlistsView->selectedTracks())
+                    _playQueueView->addTrack(track);
+            }
+            return;
+        }
+        // Library panel: append the selected artist / album / track.
+        if (leftIsLibrary())
+        {
+            _libraryView->sendSelectionToQueue(/*replace=*/false);
+            return;
+        }
+        // File browser: append the selected file (or every audio file in the
+        // selected directory).
+        auto const *entry = _fileBrowser->selectedEntry();
+        if (entry && entry->isAudio)
+        {
+            addToPlayQueue(entry->path);
+        }
+        else if (entry && entry->isDirectory)
+        {
+            for (auto const &p : _fileBrowser->collectAudioFiles(entry->path))
+                addToPlayQueue(p);
+        }
+    }
+
+    void Application::focusNextPanel()
+    {
+        // No-op when the left panel is hidden — only PlayQueue is focusable.
+        if (!_libraryPanelVisible)
+            return;
+        focusPanel(_focus == FocusPanel::FileBrowser ? FocusPanel::PlayQueue
+                                                     : FocusPanel::FileBrowser);
+    }
+
+    void Application::focusPanel(FocusPanel panel)
+    {
+        if (panel == FocusPanel::PlayQueue)
+        {
+            // Only switch to the play queue if it isn't empty.
+            if (_playQueueView->empty())
+                return;
+            _focus = FocusPanel::PlayQueue;
+            setLeftFocused(false);
+            _playQueueView->setFocused(true);
+        }
+        else
+        {
+            if (!_libraryPanelVisible)
+                return;
+            _focus = FocusPanel::FileBrowser;
+            setLeftFocused(true);
+            _playQueueView->setFocused(false);
+        }
+    }
+
+    void Application::dispatchToFocusedView(ventty::KeyEvent const &event)
+    {
+        if (_screen != Screen::Browser)
+            return;
+        if (_focus == FocusPanel::FileBrowser)
+        {
+            switch (activeLeftWidget())
+            {
+            case LeftSlot::Library:
+                _libraryView->handleKey(event);
+                break;
+            case LeftSlot::Playlists:
+                if (_playlistsView)
+                    _playlistsView->handleKey(event);
+                break;
+            case LeftSlot::FileBrowser:
+                _fileBrowser->handleKey(event);
+                break;
+            }
+        }
+        else
+        {
+            _playQueueView->handleKey(event);
+        }
+    }
+
+    void Application::dispatch(Action action, int count)
+    {
+        int const reps = (count > 0) ? count : 1;
+        // In Visual mode, cursor motions extend the selection: synthesize the
+        // Shift-modified arrow the views already interpret as "extend".
+        bool const visual = (_inputEngine.mode() == "visual");
+
+        auto sendView = [&](Key key, bool shift)
+        {
+            ventty::KeyEvent ev;
+            ev.key = key;
+            ev.shift = shift;
+            for (int i = 0; i < reps; ++i)
+                dispatchToFocusedView(ev);
+        };
+        auto sendOnce = [&](Key key)
+        {
+            ventty::KeyEvent ev;
+            ev.key = key;
+            dispatchToFocusedView(ev);
+        };
+
+        switch (action)
+        {
+        // -- global --
+        case Action::Quit:
+            quit();
+            break;
+        case Action::ToggleVisualizer:
+            _screen = (_screen == Screen::Browser) ? Screen::Visualizer : Screen::Browser;
+            resize();
+            if (_terminal)
+                _terminal->forceRedraw();
+            break;
+        case Action::ToggleHelp:
+            toggleHelp();
+            break;
+        case Action::ToggleLeftPanel:
+            setLibraryPanelVisible(!_libraryPanelVisible);
+            break;
+        case Action::PlayPause:
+        {
+            auto state = _audio.state();
+            if (state == PlayState::Playing)
+                _audio.pause();
+            else if (state == PlayState::Paused)
+                _audio.play();
+            else if (!_playQueueView->empty())
+                playTrack(_playQueueView->selectedIndex());
+            break;
+        }
+        case Action::Stop:
+            if (_audio.state() != PlayState::Stopped)
+            {
+                _audio.stop();
+                _playQueueView->setPlayingIndex(-1);
+            }
+            else if (_playQueueView->trackCount() > 0)
+            {
+                int idx = _playQueueView->playingIndex();
+                if (idx < 0)
+                {
+                    if (_shuffleMode)
+                    {
+                        rebuildShuffleOrder(/*seedIndex=*/-1);
+                        idx = currentShuffleQueueIndex();
+                    }
+                    if (idx < 0)
+                        idx = 0;
+                }
+                playTrack(idx);
+            }
+            break;
+        case Action::NextTrack:
+            for (int i = 0; i < reps; ++i)
+                playNext();
+            break;
+        case Action::PrevTrack:
+            for (int i = 0; i < reps; ++i)
+                playPrev();
+            break;
+        case Action::SeekForward:
+            _audio.seek(_audio.position() + 5.0f * static_cast<float>(reps));
+            break;
+        case Action::SeekBack:
+            _audio.seek(_audio.position() - 5.0f * static_cast<float>(reps));
+            break;
+        case Action::CycleRepeat:
+            switch (_repeatMode)
+            {
+            case RepeatMode::None: _repeatMode = RepeatMode::All; break;
+            case RepeatMode::All: _repeatMode = RepeatMode::One; break;
+            case RepeatMode::One: _repeatMode = RepeatMode::None; break;
+            }
+            break;
+        case Action::ToggleShuffle:
+            toggleShuffleMode();
+            break;
+        case Action::ToggleGain:
+            _audio.setGainNorm(!_audio.gainNormEnabled());
+            break;
+        case Action::FocusNext:
+            focusNextPanel();
+            break;
+        case Action::FocusLeft:
+            focusPanel(FocusPanel::FileBrowser);
+            break;
+        case Action::FocusRight:
+            focusPanel(FocusPanel::PlayQueue);
+            break;
+        case Action::LeftModeAlbum:
+            applyLeftMode(LeftMode::AlbumArtistTree);
+            break;
+        case Action::LeftModeArtist:
+            applyLeftMode(LeftMode::ArtistTree);
+            break;
+        case Action::LeftModeDirectory:
+            applyLeftMode(LeftMode::Directory);
+            break;
+        case Action::LeftModeFiles:
+            applyLeftMode(LeftMode::FileBrowser);
+            break;
+        case Action::LeftModePlaylists:
+            applyLeftMode(LeftMode::Playlists);
+            break;
+        case Action::Append:
+            if (_screen == Screen::Browser)
+                appendSelection();
+            break;
+        case Action::AddToPlaylist:
+            openAddToPlaylistMenu();
+            break;
+        case Action::TagEdit:
+            if (_screen == Screen::Browser)
+                openTagEditor();
+            break;
+        case Action::Search:
+        {
+            // `/` is handled by the focused list view (LibraryView opens the
+            // search dialog); other views ignore it, matching the built-in.
+            ventty::KeyEvent ev;
+            ev.key = Key::Char;
+            ev.ch = U'/';
+            dispatchToFocusedView(ev);
+            break;
+        }
+        case Action::SearchNext:
+            if (_searchDialog && _searchDialog->hasNav())
+                _searchDialog->navigateNext();
+            break;
+        case Action::SearchPrev:
+            if (_searchDialog && _searchDialog->hasNav())
+                _searchDialog->navigatePrev();
+            break;
+
+        // -- focused-view (synthesized key events) --
+        case Action::CursorDown:
+            sendView(Key::Down, visual);
+            break;
+        case Action::CursorUp:
+            sendView(Key::Up, visual);
+            break;
+        case Action::CursorPageDown:
+            sendView(Key::PageDown, false);
+            break;
+        case Action::CursorPageUp:
+            sendView(Key::PageUp, false);
+            break;
+        case Action::CursorHome:
+            sendOnce(Key::Home);
+            break;
+        case Action::CursorEnd:
+            sendOnce(Key::End);
+            break;
+        case Action::Expand:
+            sendOnce(Key::Right);
+            break;
+        case Action::Collapse:
+            sendOnce(Key::Left);
+            break;
+        case Action::Activate:
+            sendOnce(Key::Enter);
+            break;
+        case Action::Remove:
+            if (visual)
+            {
+                // Delete the whole Visual selection in one shot, then leave
+                // Visual mode (vim's `d` on a selection).
+                sendOnce(Key::Delete);
+                _inputEngine.setMode("normal");
+            }
+            else
+            {
+                // `Ndd` removes N items, one per Delete.
+                for (int i = 0; i < reps; ++i)
+                    sendOnce(Key::Delete);
+            }
+            break;
+        case Action::MoveUp:
+            for (int i = 0; i < reps; ++i)
+                _playQueueView->moveSelectionUp();
+            break;
+        case Action::MoveDown:
+            for (int i = 0; i < reps; ++i)
+                _playQueueView->moveSelectionDown();
+            break;
+        case Action::SelectAll:
+        {
+            ventty::KeyEvent ev;
+            ev.key = Key::Char;
+            ev.ch = U'a';
+            ev.ctrl = true;
+            dispatchToFocusedView(ev);
+            break;
+        }
+        case Action::Refresh:
+            sendOnce(Key::F5);
+            break;
+        case Action::GoBack:
+            sendOnce(Key::Backspace);
+            break;
+        case Action::PlaylistEdit:
+        {
+            ventty::KeyEvent ev;
+            ev.key = Key::Char;
+            ev.ch = U'e';
+            ev.ctrl = true;
+            dispatchToFocusedView(ev);
+            break;
+        }
+        case Action::PlaylistSave:
+        {
+            ventty::KeyEvent ev;
+            ev.key = Key::Char;
+            ev.ch = U's';
+            ev.ctrl = true;
+            dispatchToFocusedView(ev);
+            break;
+        }
+        case Action::EnterVisual:
+            _inputEngine.setMode("visual");
+            break;
+        case Action::ExitVisual:
+            _inputEngine.setMode("normal");
+            break;
+        case Action::None:
+            break;
         }
     }
 
@@ -2996,12 +3328,31 @@ namespace vtplayer
             return;
 
         std::string text;
+        // Scan status takes the corner while a scan is in flight (yellow);
+        // otherwise the keybinding engine's mode / pending-chord hint shows
+        // there (vim-style showcmd, cyan), Browser screen only.
+        ventty::Color fg{0xE6, 0xC8, 0x4A};
         if (_collectActive.load())
+        {
             text = "Collecting " + std::to_string(_collectCount.load()) + "\xE2\x80\xA6";
+        }
         else if (_ingestActive.load())
+        {
             text = std::to_string(_ingestPercent.load()) + "%";
-        else
-            return; // idle (or 100% reached → status silently gone)
+        }
+        else if (_screen == Screen::Browser)
+        {
+            std::string const pending = _inputEngine.pendingDisplay();
+            bool const visual = (_inputEngine.mode() == "visual");
+            if (visual)
+                text = pending.empty() ? "-- VISUAL --" : ("-- VISUAL -- " + pending);
+            else
+                text = pending; // empty unless a count/chord is mid-entry
+            fg = ventty::Color{0x5A, 0xC8, 0xE6};
+        }
+
+        if (text.empty())
+            return; // idle
 
         ventty::Window &win = *_rootWindow;
         int const w = win.width();
@@ -3009,9 +3360,8 @@ namespace vtplayer
         if (w < 4 || h < 1)
             return;
 
-        // Yellow, bottom-right, one cell of right padding.
-        ventty::Style const style{ventty::Color{0xE6, 0xC8, 0x4A},
-                                   _theme.background, ventty::Attr::Bold};
+        // Bottom-right, one cell of right padding.
+        ventty::Style const style{fg, _theme.background, ventty::Attr::Bold};
         int const x = w - 1 - static_cast<int>(text.size());
         if (x < 0)
             return;
