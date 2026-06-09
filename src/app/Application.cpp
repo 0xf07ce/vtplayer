@@ -922,6 +922,9 @@ namespace vtplayer
                 {"<Home>", "Home"},   {"<End>", "End"},  {"<PageUp>", "PgUp"},
                 {"<PageDown>", "PgDn"}, {"<Up>", "Up"},  {"<Down>", "Down"},
                 {"<Left>", "Left"},   {"<Right>", "Right"}, {"<lt>", "<"}, {"<gt>", ">"},
+                {"<S-Up>", "Shift+Up"}, {"<S-Down>", "Shift+Down"},
+                {"<S-Left>", "Shift+Left"}, {"<S-Right>", "Shift+Right"},
+                {"<C-Up>", "Ctrl+Up"}, {"<C-Down>", "Ctrl+Down"},
             };
             auto const it = m.find(lhs);
             return it != m.end() ? it->second : lhs;
@@ -2102,12 +2105,16 @@ namespace vtplayer
             }
             break;
         case Action::MoveUp:
-            for (int i = 0; i < reps; ++i)
-                _playQueueView->moveSelectionUp();
+            sendView(Key::Left, /*shift=*/true); // Shift+Left reorders selection up
             break;
         case Action::MoveDown:
-            for (int i = 0; i < reps; ++i)
-                _playQueueView->moveSelectionDown();
+            sendView(Key::Right, /*shift=*/true); // Shift+Right reorders selection down
+            break;
+        case Action::ExtendSelectionUp:
+            sendView(Key::Up, /*shift=*/true); // Shift+Up extends the multi-selection
+            break;
+        case Action::ExtendSelectionDown:
+            sendView(Key::Down, /*shift=*/true);
             break;
         case Action::SelectAll:
         {

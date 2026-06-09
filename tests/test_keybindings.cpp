@@ -121,6 +121,10 @@ TEST_CASE("Built-in default preset binds standard single keys")
     CHECK_EQ(emit("<CR>"), Action::Activate);
     CHECK_EQ(emit("/"), Action::Search);
     CHECK_EQ(emit("<C-a>"), Action::SelectAll);
+    CHECK_EQ(emit("<S-Up>"), Action::ExtendSelectionUp);   // multi-select extend
+    CHECK_EQ(emit("<S-Down>"), Action::ExtendSelectionDown);
+    CHECK_EQ(emit("<S-Left>"), Action::MoveUp);            // reorder selection
+    CHECK_EQ(emit("<S-Right>"), Action::MoveDown);
     CHECK_EQ(emit("<F5>"), Action::Refresh);
     CHECK_EQ(emit("<lt>"), Action::SeekBack);    // the '<' key in vim notation
 
@@ -129,6 +133,26 @@ TEST_CASE("Built-in default preset binds standard single keys")
 
     // An unbound key still falls through to the built-in handlers.
     CHECK_EQ(eng.feed(K("z")).kind, RK::Passthrough);
+}
+
+TEST_CASE("Preset header drives update-vs-preserve")
+{
+    std::string const body = Keybindings::defaultKeysText();
+    std::string const stamped = Keybindings::stampPreset(body);
+
+    // A pristine, auto-managed file against the same built-in: no update.
+    CHECK(!Keybindings::presetNeedsUpdate(stamped, body));
+
+    // Pristine file, but the built-in changed: should update.
+    std::string const body2 = body + "map normal z quit\n";
+    CHECK(Keybindings::presetNeedsUpdate(stamped, body2));
+
+    // User-edited file (body diverged from the recorded hash): preserve it.
+    std::string const edited = stamped + "map normal z quit\n";
+    CHECK(!Keybindings::presetNeedsUpdate(edited, body2));
+
+    // Legacy file with no managed header: leave it alone.
+    CHECK(!Keybindings::presetNeedsUpdate(body, body2));
 }
 
 TEST_CASE("Config reads and defaults the keybindings preset")

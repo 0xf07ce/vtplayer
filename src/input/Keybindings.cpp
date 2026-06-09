@@ -8,19 +8,93 @@
 #include <ventty/input/KeymapFile.h>
 
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 #include <string_view>
 
+#ifndef VTPLAYER_VERSION
+#define VTPLAYER_VERSION "0.0.0"
+#endif
+
 namespace vtplayer
 {
+    namespace
+    {
+        // FNV-1a 64-bit, hex — a stable content fingerprint for change/edit
+        // detection (not cryptographic).
+        std::string fnv1aHex(std::string_view s)
+        {
+            std::uint64_t h = 1469598103934665603ull;
+            for (unsigned char const c : s)
+            {
+                h ^= c;
+                h *= 1099511628211ull;
+            }
+            char buf[17];
+            char const * const hex = "0123456789abcdef";
+            for (int i = 15; i >= 0; --i)
+            {
+                buf[i] = hex[h & 0xF];
+                h >>= 4;
+            }
+            buf[16] = '\0';
+            return std::string(buf);
+        }
+
+        constexpr std::string_view kMarkerPrefix = "#@vtplayer-preset";
+
+        // Extract the hash from a managed header line, or "" if it isn't one.
+        std::string parseMarkerHash(std::string_view firstLine)
+        {
+            if (firstLine.substr(0, kMarkerPrefix.size()) != kMarkerPrefix)
+                return {};
+            std::size_t pos = firstLine.find("hash=");
+            if (pos == std::string_view::npos)
+                return {};
+            pos += 5;
+            std::size_t end = pos;
+            while (end < firstLine.size()
+                   && std::isxdigit(static_cast<unsigned char>(firstLine[end])))
+                ++end;
+            return std::string(firstLine.substr(pos, end - pos));
+        }
+    } // namespace
+
     std::filesystem::path Keybindings::presetDir()
     {
         char const * const home = std::getenv("HOME");
         if (home == nullptr || *home == '\0')
             return {};
         return std::filesystem::path(home) / ".config" / "vtplayer" / "keybindings";
+    }
+
+    std::string Keybindings::stampPreset(std::string const & body)
+    {
+        // First line is an auto-managed marker (a '#' comment, so the keymap
+        // parser ignores it); the body follows verbatim and is what gets hashed.
+        return "#@vtplayer-preset v=" VTPLAYER_VERSION " hash=" + fnv1aHex(body)
+               + "  (auto-managed; delete this file to reset to the built-in)\n" + body;
+    }
+
+    bool Keybindings::presetNeedsUpdate(std::string const & existingContent,
+                                        std::string const & builtinBody)
+    {
+        std::string_view const all(existingContent);
+        std::size_t const nl = all.find('\n');
+        std::string_view const first = (nl == std::string_view::npos) ? all : all.substr(0, nl);
+        std::string_view const body =
+            (nl == std::string_view::npos) ? std::string_view{} : all.substr(nl + 1);
+
+        std::string const stored = parseMarkerHash(first);
+        if (stored.empty())
+            return false; // legacy / no managed header — leave it alone
+        if (fnv1aHex(body) != stored)
+            return false; // the user edited the body — preserve it
+        // Pristine, auto-managed file: refresh only if the built-in changed.
+        return stored != fnv1aHex(builtinBody);
     }
 
     void Keybindings::materializePresets()
@@ -47,11 +121,29 @@ namespace vtplayer
         for (auto const & p : presets)
         {
             std::filesystem::path const path = dir / p.file;
-            if (std::filesystem::exists(path))
-                continue; // never clobber a user-edited preset
-            std::ofstream out(path, std::ios::trunc);
-            if (out.is_open())
-                out << p.text;
+            std::string const body = p.text;
+
+            bool write = false;
+            if (!std::filesystem::exists(path))
+            {
+                write = true; // first run — create it
+            }
+            else
+            {
+                std::ifstream in(path);
+                if (!in.is_open())
+                    continue;
+                std::string const existing((std::istreambuf_iterator<char>(in)),
+                                           std::istreambuf_iterator<char>());
+                write = presetNeedsUpdate(existing, body);
+            }
+
+            if (write)
+            {
+                std::ofstream out(path, std::ios::trunc);
+                if (out.is_open())
+                    out << stampPreset(body);
+            }
         }
     }
 
@@ -202,8 +294,12 @@ namespace vtplayer
             "map normal /       search\n"
             "map normal n       search-next\n"
             "map normal N       search-prev\n"
-            "map normal <C-Up>   move-up\n"
-            "map normal <C-Down> move-down\n"
+            "map normal <S-Up>    select-up      # extend multi-selection up\n"
+            "map normal <S-Down>  select-down    # extend multi-selection down\n"
+            "map normal <S-Left>  move-up        # reorder selection up\n"
+            "map normal <S-Right> move-down      # reorder selection down\n"
+            "map normal <C-Up>    move-up        # (alternative to Shift+Left)\n"
+            "map normal <C-Down>  move-down      # (alternative to Shift+Right)\n"
             "\n"
             "# -- list navigation (whichever panel has focus) --\n"
             "map normal <Up>       cursor-up\n"
@@ -259,8 +355,12 @@ namespace vtplayer
             "# -- play queue --\n"
             "map normal dd       remove        # delete focused / selected item(s)\n"
             "map normal <Del>    remove\n"
-            "map normal <C-Up>   move-up       # reorder selection up\n"
-            "map normal <C-Down> move-down     # reorder selection down\n"
+            "map normal <S-Up>   select-up     # extend multi-selection up\n"
+            "map normal <S-Down> select-down   # extend multi-selection down\n"
+            "map normal <S-Left>  move-up      # reorder selection up\n"
+            "map normal <S-Right> move-down    # reorder selection down\n"
+            "map normal <C-Up>   move-up       # (alternative to Shift+Left)\n"
+            "map normal <C-Down> move-down     # (alternative to Shift+Right)\n"
             "map normal <C-a>    select-all\n"
             "\n"
             "# -- window / panel movement (chords) --\n"

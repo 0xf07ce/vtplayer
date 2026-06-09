@@ -35,9 +35,24 @@ namespace vtplayer
         /// ~/.config/vtplayer/keybindings/ (empty if $HOME is unset).
         static std::filesystem::path presetDir();
 
-        /// Write the built-in default.keys / vi.keys into presetDir() only when
-        /// they do not already exist. Never overwrites a user-edited file.
+        /// Materialize the built-in default.keys / vi.keys into presetDir().
+        /// Creates a missing file, and refreshes an *auto-managed, unedited*
+        /// file when the built-in content has changed (see presetNeedsUpdate).
+        /// A file the user has edited — or a legacy file with no managed
+        /// header — is left untouched.
         static void materializePresets();
+
+        /// Wrap a preset body with the auto-managed header line (records the
+        /// vtplayer version and an FNV-1a hash of the body), used to detect
+        /// later user edits.
+        static std::string stampPreset(std::string const & body);
+
+        /// Whether an existing on-disk preset should be replaced by the current
+        /// built-in: true only when the file is still auto-managed and unedited
+        /// (its recorded hash matches its body) AND the built-in body changed.
+        /// Edited or unmarked (legacy) files return false (left untouched).
+        static bool presetNeedsUpdate(std::string const & existingContent,
+                                      std::string const & builtinBody);
 
         /// Configure `engine` from preset `name`. Reads
         /// <presetDir>/<name>.keys, falling back to the built-in text when the

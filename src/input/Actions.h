@@ -64,6 +64,8 @@ namespace vtplayer
         Remove,
         MoveUp,
         MoveDown,
+        ExtendSelectionUp,
+        ExtendSelectionDown,
         SelectAll,
         Refresh,
         GoBack,

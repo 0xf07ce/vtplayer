@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 1.0.1 (2026-06-09)
+
+- Keymaps now represent the play-queue selection bindings that previously only
+  worked implicitly: `Shift+Up`/`Shift+Down` extend the multi-selection
+  (`select-up`/`select-down`), and reorder is `Shift+Left`/`Shift+Right` (with
+  `Ctrl+Up`/`Ctrl+Down` as an alias). They appear in the Help screen and are
+  remappable; reorder via the action now also works in the playlist edit view.
+- Preset files carry an auto-managed header (`#@vtplayer-preset … hash=…`).
+  On startup an *unedited* preset is refreshed to the latest built-in when it
+  changes, while a preset you have edited (its body no longer matches the
+  recorded hash) is left untouched. Delete a preset file to restore the
+  built-in.
+
 ## 1.0.0 (2026-06-09)
 
 - **Configurable keybindings.** Keys are now driven by a preset file under
