@@ -1,9 +1,10 @@
 .DS_Store
 .idea/
 .vscode/
+.agents/
 .claude/
-cmake-build-*/
 build/
+cmake-build-*/
 local/
 AGENTS.md
 CLAUDE.md

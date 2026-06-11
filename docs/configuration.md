@@ -39,7 +39,7 @@ The file browser always opens at the directory the player was launched from.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `root` | _(unset)_ | Library root directory (set via the ESC menu) |
-| `left_mode` | `album` | Left-panel mode restored on launch: `artist`, `album`, or `directory`. The transient file-browser mode (key `4`) is never persisted — it normalizes back to `album` on save. |
+| `left_mode` | `album` | Source panel mode restored on launch: `album`, `artist`, `directory`, or `playlists`. The transient file-browser mode (key `4`) is never persisted — it normalizes back to `album` on save. |
 | `focus_path` | _(unset)_ | Last focused library track path, restored on the next launch. |
 | `scan_sig` | _(unset)_ | Internal root signature used to skip unchanged startup scans. |
 

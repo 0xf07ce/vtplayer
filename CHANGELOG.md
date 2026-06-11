@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 1.0.2 (2026-06-11)
+
+- Album Artist browsing now skips the album level for tracks that do not
+  carry an album-artist tag, showing those derived tracks title-only under
+  the artist with a dimmed tint. Track labels now use unpadded numbers
+  (`1.`, `2.`, `1.2.`) instead of zero-padded forms.
+- Documentation now consistently names the left side the source panel,
+  documents the Playlists mode in configuration and keybinding references,
+  and adds a UI terminology guide for play queue, saved playlist, file
+  playlist, and PLS radio terms.
+
 ## 1.0.1 (2026-06-09)
 
 - Keymaps now represent the play-queue selection bindings that previously only

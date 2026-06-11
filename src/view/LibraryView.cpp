@@ -33,13 +33,13 @@ namespace vtplayer
         }
 
         /// Stream channels carry no meaningful disc/track numbering, so they
-        /// keep the simple "NN. title" / "title" form.
+        /// keep the simple "N. title" / "title" form.
         std::string formatStreamLabel(TrackInfo const &t)
         {
             if (t.trackNumber > 0)
             {
                 char buf[8];
-                std::snprintf(buf, sizeof(buf), "%02d. ", t.trackNumber);
+                std::snprintf(buf, sizeof(buf), "%d. ", t.trackNumber);
                 return std::string(buf) + trackTitle(t);
             }
             return trackTitle(t);
@@ -49,8 +49,8 @@ namespace vtplayer
         /// album as a whole:
         ///   - any track missing a track number  → every row shows just {title}
         ///   - else discs shown only when every track has one AND they differ:
-        ///       disc shown  → "{disc}.{track:02} {title}"
-        ///       disc hidden → "{track:02} {title}"
+        ///       disc shown  → "{disc}.{track}. {title}"
+        ///       disc hidden → "{track}. {title}"
         void formatAlbumTrackLabels(std::vector<TrackInfo const *> const &tracks,
                                     std::vector<std::string> &out)
         {
@@ -78,9 +78,9 @@ namespace vtplayer
                 }
                 char buf[16];
                 if (showDisc)
-                    std::snprintf(buf, sizeof(buf), "%d.%02d ", t->discNumber, t->trackNumber);
+                    std::snprintf(buf, sizeof(buf), "%d.%d. ", t->discNumber, t->trackNumber);
                 else
-                    std::snprintf(buf, sizeof(buf), "%02d ", t->trackNumber);
+                    std::snprintf(buf, sizeof(buf), "%d. ", t->trackNumber);
                 out.push_back(std::string(buf) + trackTitle(*t));
             }
         }
@@ -271,7 +271,7 @@ namespace vtplayer
             else
             {
                 // Directory mode is a filesystem view, so show the actual
-                // file name (matching FileBrowser) rather than "NN. Title"
+                // file name (matching FileBrowser) rather than "N. Title"
                 // — that tag-based form is reserved for the Artist/Album
                 // modes.
                 trackNode.label = toNfc(t.path.filename().string());
@@ -324,15 +324,18 @@ namespace vtplayer
         //   `#unknown_artist` sentinel.
         //   Mode 1 (AlbumArtistTree, UI "Album") reads `albumArtist`, falling
         //   back to `artist` when `albumArtist` is empty. A track grouped via
-        //   that fallback is "derived": both the album-artist node (when *every*
-        //   track under it derived) and the per-album bucket render a shade
-        //   darker, so "minor was tagged by artist only" reads distinctly from a
-        //   real album-artist. When both tags are empty → `#unknown_artist`.
+        //   that fallback is "derived".
         //
-        // Because the same album-artist label can arise both from a real
-        // `albumArtist` and from the `artist` fallback, the album axis is keyed
-        // on `(album, derived)` — two tracks sharing an album name split into a
-        // real node and a derived node so each carries the right tint.
+        // Depth-2 (album axis) only exists for tracks that carry a *real*
+        // `albumArtist`. A derived track (no album-artist, grouped under the
+        // `artist` fallback) skips the album axis entirely: it renders as a
+        // title-only leaf directly under the artist node (depth 2, where an
+        // album would sit), a shade darker so "minor was tagged by artist
+        // only" reads distinctly from a real album-artist's tracks. The
+        // artist node itself renders dark only when it has *no* real
+        // album-artist album under it (every track derived). When both tags
+        // are empty the track is *not* derived (no fallback happened) → it
+        // stays in the album structure under `#unknown_artist`.
         //
         // Tag values are treated as opaque strings ("거미,휘성", "거미, 휘성",
         // "휘성,거미" → three distinct groups; no comma-splitting), but
@@ -355,12 +358,18 @@ namespace vtplayer
         // sortNodeChildren() to pin `#stream`, `#ungrouped`/`#unknown_artist`
         // to the top.
         bool const albumArtistMode = (_mode == Mode::AlbumArtistTree);
-        // grouping → artist label → (album, derived) → tracks.
-        using AlbumKey = std::pair<std::string, bool>; // (album, derived); real(false) < derived(true)
-        std::map<std::string,
-                 std::map<std::string,
-                          std::map<AlbumKey,
-                                   std::vector<TrackInfo const *>>>> tree;
+        // One bucket per (grouping, artist). Real album-artist tracks group by
+        // album name; derived tracks (album_artist empty → artist fallback)
+        // skip the album axis and become title-only leaves directly under the
+        // artist. In ArtistTree mode nothing is derived, so `directTracks`
+        // stays empty and every track lands in `albums` as before.
+        struct ArtistBucket
+        {
+            std::map<std::string, std::vector<TrackInfo const *>> albums;
+            std::vector<TrackInfo const *> directTracks;
+        };
+        // grouping → artist label → bucket.
+        std::map<std::string, std::map<std::string, ArtistBucket>> tree;
         std::map<std::string, std::vector<TrackInfo const *>> streamTree;
         for (auto const &t : _library->tracks())
         {
@@ -399,9 +408,18 @@ namespace vtplayer
             if (artist.empty())
                 artist = "#unknown_artist";
 
-            std::string albumRaw = trimAscii(toNfc(t.album));
-            std::string album = albumRaw.empty() ? "#unknown_album" : std::move(albumRaw);
-            tree[grouping][artist][AlbumKey{std::move(album), derived}].push_back(&t);
+            ArtistBucket &bucket = tree[grouping][artist];
+            if (derived)
+            {
+                // album_artist absent → album axis skipped; title-only leaf.
+                bucket.directTracks.push_back(&t);
+            }
+            else
+            {
+                std::string albumRaw = trimAscii(toNfc(t.album));
+                std::string album = albumRaw.empty() ? "#unknown_album" : std::move(albumRaw);
+                bucket.albums[std::move(album)].push_back(&t);
+            }
         }
 
         // Stream branch (mixed depth: tracks land at depth 2).
@@ -426,27 +444,23 @@ namespace vtplayer
             }
         }
 
-        // Local-file branch (depth 3 leaves).
+        // Local-file branch: real-album tracks at depth 3, derived (album-
+        // artist-less) tracks as depth-2 leaves directly under the artist.
         std::vector<std::string> leafLabels;
         for (auto const &[groupKey, artists] : tree)
         {
             std::size_t const groupIdx = createGroup(kNoIdx, groupKey, 0);
-            for (auto const &[artistKey, albums] : artists)
+            for (auto const &[artistKey, bucket] : artists)
             {
                 std::size_t const artistIdx = createGroup(groupIdx, artistKey, 1);
-                // The artist node is derived-dark only when no track under it
-                // carries a real album-artist (every album bucket derived).
-                bool artistDerived = true;
-                for (auto const &[albumKey, tracks] : albums)
-                    if (!albumKey.second)
-                        artistDerived = false;
-                _nodes[artistIdx].derived = artistDerived;
+                // Derived-dark only when the artist has no real album-artist
+                // album at all (every track under it came via the fallback).
+                _nodes[artistIdx].derived = bucket.albums.empty();
 
-                for (auto const &[albumKey, tracks] : albums)
+                for (auto const &[albumName, tracks] : bucket.albums)
                 {
                     std::size_t const albumIdx =
-                        createGroup(artistIdx, albumKey.first, 2);
-                    _nodes[albumIdx].derived = albumKey.second;
+                        createGroup(artistIdx, albumName, 2);
 
                     formatAlbumTrackLabels(tracks, leafLabels);
                     for (std::size_t k = 0; k < tracks.size(); ++k)
@@ -461,6 +475,22 @@ namespace vtplayer
                         _nodes.push_back(std::move(trackNode));
                         _nodes[albumIdx].children.push_back(idx);
                     }
+                }
+
+                // Derived tracks: title-only, sit where an album would (depth
+                // 2), rendered a shade darker via the Track `derived` flag.
+                for (auto const *t : bucket.directTracks)
+                {
+                    Node trackNode;
+                    trackNode.kind = Node::Kind::Track;
+                    trackNode.label = trackTitle(*t);
+                    trackNode.depth = 2;
+                    trackNode.derived = true;
+                    trackNode.track = t;
+                    trackNode.parent = artistIdx;
+                    std::size_t const idx = _nodes.size();
+                    _nodes.push_back(std::move(trackNode));
+                    _nodes[artistIdx].children.push_back(idx);
                 }
             }
         }
@@ -486,12 +516,6 @@ namespace vtplayer
                     return na.track->trackNumber < nb.track->trackNumber;
                 }
             }
-            // Two groups with the same label differ only by derived-ness (a
-            // real album-artist album vs the artist-derived one): show the
-            // real node first.
-            if (na.kind == Node::Kind::Group && na.label == nb.label
-                && na.derived != nb.derived)
-                return !na.derived;
             return na.label < nb.label;
         };
 
@@ -811,7 +835,11 @@ namespace vtplayer
             // came from the `artist` fallback) render a shade darker.
             Color levelFg;
             if (n.kind == Node::Kind::Track)
-                levelFg = _theme.libraryTrackFg;
+                // Album-artist-less tracks shown directly under the artist
+                // carry `derived` → dimmed, like the album nodes used to be.
+                levelFg = n.derived
+                    ? ventty::lerpColor(_theme.libraryTrackFg, _theme.browserBg, kDerivedDim)
+                    : _theme.libraryTrackFg;
             else if (_mode == Mode::Directory)
                 levelFg = _theme.playQueueFg;
             else if (n.label == "#stream")

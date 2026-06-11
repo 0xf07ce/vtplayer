@@ -18,8 +18,10 @@ and tag editor.
 - **Internet radio streaming** — load `.pls` playlists and play HTTP/HLS
   streams with prebuffering and underrun recovery
 - **Media library** — SQLite-backed index of a registered root directory with
-  incremental, mtime-based rescans. Browse by Album, Artist, Directory, or
-  the live filesystem; group tracks by a user-defined Grouping tag
+  incremental, mtime-based rescans. Browse by Album, Artist, Directory, or the
+  live filesystem; group tracks by a user-defined Grouping tag
+- **Saved playlists** — manage user playlists from the source panel and keep the
+  play queue separate from playlist storage
 - **Play queue** — session queue with shuffle, persisted across restarts
 - **Tag editing** — sparse multi-track tag editor (Artist / Album /
   SingleTrack / MultiTrack scopes) via TagLib
@@ -49,6 +51,7 @@ bumped automatically by `.github/workflows/release.yml` on each tagged release.
 - [Building](docs/building.md)
 - [Configuration](docs/configuration.md)
 - [Keybindings](docs/keybindings.md)
+- [UI Terminology](docs/ui-terminology.md)
 - [Plugin Development](docs/plugins.md)
 
 ## License

@@ -15,21 +15,22 @@ All shortcuts work regardless of Korean IME input state.
 | `S` | Toggle shuffle (next/prev follow a random order) |
 | `G` | Toggle gain normalization (ReplayGain ↔ auto-gain) |
 
-## Browser — Library panel
+## Browser — Source panel
 
 | Key | Action |
 |-----|--------|
-| `1` / `2` / `3` / `4` | Left panel mode: Album / Artist / Directory / Files |
-| `L` | Toggle left panel (play queue goes full-width when hidden) |
-| `Tab` | Switch focus (left panel ↔ play queue) |
+| `1` / `2` / `3` / `4` / `5` | Source panel mode: Album / Artist / Directory / Files / Playlists |
+| `L` | Toggle source panel (play queue goes full-width when hidden) |
+| `Tab` | Switch focus (source panel ↔ play queue panel) |
 | `Left` / `Right` | Collapse / expand selected group |
-| `Enter` | Replace play queue with artist/album/track and play |
-| `A` | Append artist/album/track to play queue |
+| `Enter` | Open or play the current source selection |
+| `A` | Append the current source selection to the play queue |
+| `B` | Add the selected library/file item(s) to a saved playlist |
 | `/` | Search library (Tab cycles filter: Any / Artist / Album / Title / Year) |
 | `N` / `Shift+N` | Jump to next / previous search result |
 | `T` | Edit tags (artist / album / track / folder, scoped to selection) |
 
-## Browser — File panel
+## Browser — File browser
 
 | Key | Action |
 |-----|--------|
@@ -41,6 +42,19 @@ All shortcuts work regardless of Korean IME input state.
 | `T` | Edit tags of selected audio file |
 | `Backspace` | Go up to parent directory |
 | `F5` | Refresh directory listing |
+
+## Browser — Playlist browser
+
+| Key | Action |
+|-----|--------|
+| `Enter` | List view: open playlist; contents view: replace play queue with selected track(s) and play |
+| `A` | Contents view: append selected track(s) to the play queue |
+| `Backspace` | Contents view: return to playlist list; edit mode: remove selected track(s) |
+| `Ctrl+A` | Contents view: select all tracks |
+| `Ctrl+E` | Enter playlist edit mode |
+| `Ctrl+S` | Save playlist edits |
+| `Del` / `D` | Edit mode: remove selected track(s) |
+| `Shift+Left` / `Shift+Right` | Edit mode: move selected track(s) up / down |
 
 ## Play queue
 
@@ -86,7 +100,7 @@ All shortcuts work regardless of Korean IME input state.
 | Action | Effect |
 |--------|--------|
 | Click progress bar | Seek to position |
-| Click browser / play queue | Switch focus |
+| Click source panel / play queue panel | Switch focus |
 | Scroll wheel | Navigate lists |
 
 ## Keybinding presets
@@ -118,7 +132,7 @@ it; the loader falls back to the built-ins if the named file is missing.
 Keys not rebound below keep their built-in behavior, so playback, search (`/`,
 `n`, `N`), append (`a`), tags (`t`), quit (`q`) and so on still work. Because
 `h` / `l` / `v` become motions, their built-in commands move to the uppercase
-keys: **`H`** = help, **`L`** = toggle left panel, **`V`** = visualizer.
+keys: **`H`** = help, **`L`** = toggle source panel, **`V`** = visualizer.
 
 | Key | Action |
 |-----|--------|
@@ -129,8 +143,8 @@ keys: **`H`** = help, **`L`** = toggle left panel, **`V`** = visualizer.
 | `dd` | Remove focused / selected item(s) from the play queue |
 | `Ctrl+Up` / `Ctrl+Down` | Reorder selection up / down |
 | `Ctrl+W` `w` | Cycle panel focus (like `Tab`) |
-| `Ctrl+W` `h` / `Ctrl+W` `l` | Focus left panel / play queue |
-| `Ctrl+W` `1`…`5` | Left-panel mode: Album / Artist / Directory / Files / Playlists |
+| `Ctrl+W` `h` / `Ctrl+W` `l` | Focus source panel / play queue panel |
+| `Ctrl+W` `1`…`5` | Source panel mode: Album / Artist / Directory / Files / Playlists |
 | `Ctrl+G` | Toggle gain normalization (`g` is taken by `gg`) |
 | `v` | Enter Visual mode |
 | `Esc` | Cancel a pending count/chord, or leave Visual mode |
