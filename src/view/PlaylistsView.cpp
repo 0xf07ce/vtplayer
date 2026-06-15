@@ -24,6 +24,13 @@ void PlaylistsView::setItems(std::vector<std::string> names)
         _scrollOffset = _selectedIndex;
 }
 
+void PlaylistsView::setReadOnly(bool readOnly)
+{
+    _readOnly = readOnly;
+    if (_readOnly)
+        _editMode = false;
+}
+
 void PlaylistsView::showContents(std::string name, std::vector<TrackInfo> tracks)
 {
     _openName = std::move(name);
@@ -215,6 +222,7 @@ void PlaylistsView::moveTrackSelectionDown()
 
 bool PlaylistsView::saveEdits()
 {
+    if (_readOnly) return false;
     if (!_inContents || !_editMode) return false;
     // A failed write keeps edit mode on so the user can retry.
     bool const saved = !_onSaveTracks || _onSaveTracks(_openName, _tracks);
@@ -263,7 +271,7 @@ bool PlaylistsView::handleKey(ventty::KeyEvent const & event)
     // reorder / multi-select / delete keys are active only while editing.
     if (_inContents)
     {
-        if (event.key == Key::Char && event.ctrl &&
+        if (!_readOnly && event.key == Key::Char && event.ctrl &&
             (event.ch == 'e' || event.ch == 'E' || event.ch == 5))
         {
             // Ctrl+E only *enters* edit mode — it is not a toggle. Once editing,
@@ -272,7 +280,7 @@ bool PlaylistsView::handleKey(ventty::KeyEvent const & event)
             if (!_editMode) enterEditMode();
             return true;
         }
-        if (event.key == Key::Char && event.ctrl &&
+        if (!_readOnly && event.key == Key::Char && event.ctrl &&
             (event.ch == 's' || event.ch == 'S' || event.ch == 19))
         {
             saveEdits(); // save + leave edit mode (no-op when not editing)
@@ -314,7 +322,7 @@ bool PlaylistsView::handleKey(ventty::KeyEvent const & event)
 
         // Reorder / delete mutate the saved playlist, so they stay gated behind
         // edit mode (toggled by Ctrl+E, persisted by Ctrl+S).
-        if (_editMode)
+        if (!_readOnly && _editMode)
         {
             // Shift+Left / Shift+Right reorder the selected block (Left=up).
             if (event.key == Key::Left && event.shift) { moveTrackSelectionUp(); return true; }
@@ -359,7 +367,7 @@ bool PlaylistsView::handleKey(ventty::KeyEvent const & event)
         // FileBrowser's "go up a level".
         if (event.key == Key::Backspace)
         {
-            if (_editMode) removeSelectedTracks();
+            if (!_readOnly && _editMode) removeSelectedTracks();
             else closeContents();
             return true;
         }
@@ -474,7 +482,7 @@ void PlaylistsView::draw(ventty::Window & window)
     // In the contents view, surface "[edit]" while edit mode is armed.
     std::string const suffix = (_inContents && _editMode) ? " [edit]" : "";
     std::string const title =
-        _inContents ? (" " + _openName + suffix) : std::string(" Playlists");
+        _inContents ? (" " + _openName + suffix) : (" " + _title);
     std::string header = truncateToWidth(title, r.width - 2, "...");
     window.drawText(r.x + 1, r.y, header, headerTextStyle);
 
@@ -501,8 +509,7 @@ void PlaylistsView::drawList(ventty::Window & window)
     if (_names.empty())
     {
         ventty::Style hintStyle{_theme.separatorFg, _theme.browserBg};
-        std::string hint = truncateToWidth("No playlists — press ESC to create one",
-                                           contentW, "...");
+        std::string hint = truncateToWidth(_emptyHint, contentW, "...");
         window.drawText(r.x + 1, r.y + 2, hint, hintStyle);
         return;
     }

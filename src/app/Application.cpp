@@ -25,6 +25,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cctype>
+#include <cstdlib>
 #include <random>
 #include <string_view>
 #include <system_error>
@@ -89,38 +91,33 @@ namespace vtplayer
     {
         LeftMode leftModeFromConfig(std::string const &s)
         {
-            // Config strings preserved across the v0.11→v0.12 mode redesign:
-            // "album" still selects the slot labelled "Album" (now the
-            // AlbumArtist tree) and "artist" the slot labelled "Artist"
-            // (now the Artist tree). The user's last UI label survives.
-            if (s == "artist")
-                return LeftMode::ArtistTree;
+            if (s == "files")
+                return LeftMode::FileBrowser;
             if (s == "directory")
                 return LeftMode::Directory;
+            if (s == "album" || s == "artist")
+                return LeftMode::AlbumArtistTree;
             if (s == "playlists")
                 return LeftMode::Playlists;
-            // Legacy "radio" mode (v0.9.x and earlier) falls back to album —
-            // RadioView was removed in v0.10.0 when streaming moved into the
-            // unified library.
-            return LeftMode::AlbumArtistTree; // default; "filebrowser" is never persisted
+            if (s == "streaming" || s == "radio")
+                return LeftMode::Streaming;
+            return LeftMode::AlbumArtistTree;
         }
 
         char const *leftModeToConfig(LeftMode m)
         {
             switch (m)
             {
-            case LeftMode::ArtistTree:
-                return "artist";
+            case LeftMode::FileBrowser:
+                return "files";
             case LeftMode::Directory:
                 return "directory";
-            case LeftMode::Playlists:
-                return "playlists";
             case LeftMode::AlbumArtistTree:
                 return "album";
-            // FileBrowser is transient — normalize so a fresh run starts
-            // back in the indexed library.
-            case LeftMode::FileBrowser:
-                return "album";
+            case LeftMode::Playlists:
+                return "playlists";
+            case LeftMode::Streaming:
+                return "streaming";
             }
             return "album";
         }
@@ -328,6 +325,12 @@ namespace vtplayer
     {
         // Load config
         _config.load();
+        {
+            std::error_code ec;
+            auto const dir = radioDir();
+            if (!dir.empty())
+                std::filesystem::create_directories(dir, ec);
+        }
 
         // Apply theme colors from config
         _theme = Theme::retro();
@@ -521,6 +524,8 @@ namespace vtplayer
 
         _playlistsView = std::make_unique<PlaylistsView>();
         _playlistsView->setTheme(_theme);
+        _playlistsView->setTitle("Playlists");
+        _playlistsView->setEmptyHint("No playlists - press ESC to create one");
         // Enter on a playlist row drills into its tracks (FileBrowser-style),
         // it no longer replaces the queue. Enter inside then replaces the queue
         // with the selection (multi-selection ∪ cursor) and plays, just like the
@@ -534,6 +539,16 @@ namespace vtplayer
         _playlistsView->setOnSaveTracks(
             [this](std::string const &name, std::vector<TrackInfo> const &tracks)
             { return _playlistStore.write(name, tracks); });
+
+        _streamingView = std::make_unique<PlaylistsView>();
+        _streamingView->setTheme(_theme);
+        _streamingView->setTitle("Streaming");
+        _streamingView->setEmptyHint("No radio playlists in ~/.config/vtplayer/radio");
+        _streamingView->setReadOnly(true);
+        _streamingView->setOnOpen([this](std::string const &name)
+                                  { openStreamingContents(name); });
+        _streamingView->setOnPlayTracks([this, sendToQueue](std::vector<TrackInfo> const &tracks)
+                                        { sendToQueue(tracks, /*replace=*/true); });
 
         // Create/Delete are driven from the ESC menu; the per-action OnConfirm
         // callbacks are bound at open time in onContextMenuSelect().
@@ -583,7 +598,6 @@ namespace vtplayer
             // re-applies it after the tree is rebuilt.
             _libraryAnchor = _config.libraryFocus;
             bool const initIsLibrary = (initMode == LeftMode::AlbumArtistTree
-                                        || initMode == LeftMode::ArtistTree
                                         || initMode == LeftMode::Directory);
             if (!_libraryAnchor.empty() && _libraryView && initIsLibrary)
                 _libraryView->locateForMode(_libraryAnchor);
@@ -592,6 +606,8 @@ namespace vtplayer
             // mode is Playlists; setLeftMode() doesn't list from disk.
             if (initMode == LeftMode::Playlists)
                 refreshPlaylists();
+            if (initMode == LeftMode::Streaming)
+                refreshStreaming();
         }
 
         if (!_initialFile.empty())
@@ -694,6 +710,8 @@ namespace vtplayer
             _libraryView->setRect(0, contentY, browserW, contentH);
             if (_playlistsView)
                 _playlistsView->setRect(0, contentY, browserW, contentH);
+            if (_streamingView)
+                _streamingView->setRect(0, contentY, browserW, contentH);
             _playQueueView->setRect(browserW, contentY, playQueueW, contentH);
         }
         else
@@ -702,6 +720,8 @@ namespace vtplayer
             _libraryView->setRect(0, contentY, 0, contentH);
             if (_playlistsView)
                 _playlistsView->setRect(0, contentY, 0, contentH);
+            if (_streamingView)
+                _streamingView->setRect(0, contentY, 0, contentH);
             _playQueueView->setRect(0, contentY, w, contentH);
         }
 
@@ -851,6 +871,10 @@ namespace vtplayer
             case LeftSlot::Playlists:
                 if (_playlistsView)
                     _playlistsView->draw(*_rootWindow);
+                break;
+            case LeftSlot::Streaming:
+                if (_streamingView)
+                    _streamingView->draw(*_rootWindow);
                 break;
             case LeftSlot::FileBrowser:
                 _fileBrowser->draw(*_rootWindow);
@@ -1513,6 +1537,11 @@ namespace vtplayer
             {
                 _playlistsView->handleMouse(event);
             }
+            else if (slot == LeftSlot::Streaming && _streamingView
+                     && _streamingView->rect().contains(event.x, event.y))
+            {
+                _streamingView->handleMouse(event);
+            }
             else if (_playQueueView->rect().contains(event.x, event.y))
             {
                 _playQueueView->handleMouse(event);
@@ -1555,21 +1584,15 @@ namespace vtplayer
         }
 
         // 1-5: pick the Browser-screen left panel directly.
-        //   1 Album  (AlbumArtist > Album > Track tree)
-        //   2 Artist (Artist      > Album > Track tree)
-        //   3 Directory (folder tree from the library index)
-        //   4 FileBrowser (live filesystem from the launch CWD)
-        //   5 Playlists (saved-playlist browser)
-        // Internet radio is no longer a separate mode — PLS playlists in the
-        // library surface in modes 1/2/3 like any other track.
+        //   1 Album, 2 Directory, 3 Playlists, 4 Streaming, 5 Files.
         if (_screen == Screen::Browser && event.key == Key::Char && !event.alt && !event.ctrl
             && (ch == '1' || ch == '2' || ch == '3' || ch == '4' || ch == '5'))
         {
             LeftMode const target = (ch == '1')   ? LeftMode::AlbumArtistTree
-                                    : (ch == '2') ? LeftMode::ArtistTree
-                                    : (ch == '3') ? LeftMode::Directory
-                                    : (ch == '4') ? LeftMode::FileBrowser
-                                                  : LeftMode::Playlists;
+                                    : (ch == '2') ? LeftMode::Directory
+                                    : (ch == '3') ? LeftMode::Playlists
+                                    : (ch == '4') ? LeftMode::Streaming
+                                                  : LeftMode::FileBrowser;
             applyLeftMode(target);
             return;
         }
@@ -1792,7 +1815,7 @@ namespace vtplayer
     {
         // Leaving a library projection (1/2/3): remember the focused track so
         // it can be restored on the next entry — including after a FileBrowser
-        // (4) round-trip.
+        // (5) round-trip.
         if (leftIsLibrary() && _libraryView)
         {
             auto cur = _libraryView->selectedTrackPath();
@@ -1807,10 +1830,11 @@ namespace vtplayer
         // Playlists: re-list from disk so the panel is current.
         if (target == LeftMode::Playlists)
             refreshPlaylists();
+        if (target == LeftMode::Streaming)
+            refreshStreaming();
 
         // Re-locate the anchor to its node at the new mode's grouping level.
         bool const targetIsLibrary = (target == LeftMode::AlbumArtistTree
-                                      || target == LeftMode::ArtistTree
                                       || target == LeftMode::Directory);
         if (targetIsLibrary && !_libraryAnchor.empty() && _libraryView)
             _libraryView->locateForMode(_libraryAnchor);
@@ -1826,6 +1850,15 @@ namespace vtplayer
             if (_playlistsView && _playlistsView->inContents())
             {
                 for (auto const &track : _playlistsView->selectedTracks())
+                    _playQueueView->addTrack(track);
+            }
+            return;
+        }
+        if (leftIsStreaming())
+        {
+            if (_streamingView && _streamingView->inContents())
+            {
+                for (auto const &track : _streamingView->selectedTracks())
                     _playQueueView->addTrack(track);
             }
             return;
@@ -1894,6 +1927,10 @@ namespace vtplayer
             case LeftSlot::Playlists:
                 if (_playlistsView)
                     _playlistsView->handleKey(event);
+                break;
+            case LeftSlot::Streaming:
+                if (_streamingView)
+                    _streamingView->handleKey(event);
                 break;
             case LeftSlot::FileBrowser:
                 _fileBrowser->handleKey(event);
@@ -2020,7 +2057,7 @@ namespace vtplayer
             applyLeftMode(LeftMode::AlbumArtistTree);
             break;
         case Action::LeftModeArtist:
-            applyLeftMode(LeftMode::ArtistTree);
+            applyLeftMode(LeftMode::AlbumArtistTree);
             break;
         case Action::LeftModeDirectory:
             applyLeftMode(LeftMode::Directory);
@@ -2030,6 +2067,9 @@ namespace vtplayer
             break;
         case Action::LeftModePlaylists:
             applyLeftMode(LeftMode::Playlists);
+            break;
+        case Action::LeftModeStreaming:
+            applyLeftMode(LeftMode::Streaming);
             break;
         case Action::Append:
             if (_screen == Screen::Browser)
@@ -2211,7 +2251,7 @@ namespace vtplayer
         // already adapts to queue-vs-library focus in locatePlayingInLibrary().
         // The Playlists panel omits it (a playlist isn't where you'd locate the
         // currently-playing track) and only manages the collection.
-        if (ctx.leftSlot != LeftSlot::Playlists)
+        if (ctx.leftSlot != LeftSlot::Playlists && ctx.leftSlot != LeftSlot::Streaming)
             add("Focus playing track", MenuAction::LocatePlaying);
 
         switch (ctx.leftSlot)
@@ -2242,6 +2282,8 @@ namespace vtplayer
                     add("Delete playlist", MenuAction::DeletePlaylist);
                 }
             }
+            break;
+        case LeftSlot::Streaming:
             break;
         case LeftSlot::Library:
             add("Rescan library", MenuAction::RescanLibrary);
@@ -2319,19 +2361,17 @@ namespace vtplayer
             case LeftMode::AlbumArtistTree:
                 _libraryView->setMode(LibraryView::Mode::AlbumArtistTree);
                 break;
-            case LeftMode::ArtistTree:
-                _libraryView->setMode(LibraryView::Mode::ArtistTree);
-                break;
             case LeftMode::Directory:
                 _libraryView->setMode(LibraryView::Mode::Directory);
                 break;
             case LeftMode::FileBrowser:
             case LeftMode::Playlists:
+            case LeftMode::Streaming:
                 break;
             }
         }
         // Keep keyboard focus on whichever widget now occupies the left slot.
-        // Critical for mode 5: without this, input never reaches PlaylistsView.
+        // Critical for playlist/streaming modes: without this, input never reaches PlaylistsView.
         if (_focus == FocusPanel::FileBrowser)
             setLeftFocused(true);
         if (_terminal)
@@ -2347,6 +2387,60 @@ namespace vtplayer
         // and re-pressing `5` returns to the top-level list.
         _playlistsView->closeContents();
         _playlistsView->setItems(_playlistStore.list());
+    }
+
+    std::filesystem::path Application::radioDir() const
+    {
+        char const * home = std::getenv("HOME");
+        if (!home || *home == '\0') return {};
+        return std::filesystem::path(home) / ".config" / "vtplayer" / "radio";
+    }
+
+    std::filesystem::path Application::radioPathFor(std::string const &name) const
+    {
+        if (name.empty()) return {};
+        return radioDir() / (name + ".pls");
+    }
+
+    void Application::refreshStreaming()
+    {
+        if (!_streamingView)
+            return;
+
+        _streamingView->closeContents();
+        std::vector<std::string> names;
+        std::filesystem::path const dir = radioDir();
+        if (!dir.empty())
+        {
+            std::error_code ec;
+            std::filesystem::create_directories(dir, ec);
+            if (!ec)
+            {
+                for (auto const &entry : std::filesystem::directory_iterator(dir, ec))
+                {
+                    if (ec) break;
+                    std::error_code fec;
+                    if (!entry.is_regular_file(fec)) continue;
+                    auto const p = entry.path();
+                    std::string ext = p.extension().string();
+                    for (char &c : ext)
+                        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    if (ext == ".pls")
+                        names.push_back(p.stem().string());
+                }
+            }
+        }
+        std::sort(names.begin(), names.end(),
+                  [](std::string const &a, std::string const &b)
+                  {
+                      return std::lexicographical_compare(
+                          a.begin(), a.end(), b.begin(), b.end(),
+                          [](unsigned char x, unsigned char y)
+                          {
+                              return std::tolower(x) < std::tolower(y);
+                          });
+                  });
+        _streamingView->setItems(std::move(names));
     }
 
     void Application::applyQueueTitle()
@@ -2389,6 +2483,40 @@ namespace vtplayer
             return;
 
         _playlistsView->showContents(name, std::move(*resolved));
+    }
+
+    std::optional<std::vector<TrackInfo>>
+    Application::resolveStreamingTracks(std::string const &name) const
+    {
+        auto parsed = PlsReader::read(radioPathFor(name));
+        if (!parsed)
+            return std::nullopt;
+
+        std::vector<TrackInfo> resolved;
+        resolved.reserve(parsed->size());
+        for (auto const &t : *parsed)
+        {
+            if (!t.isStream())
+            {
+                if (auto const *indexed = _library.find(t.path))
+                {
+                    resolved.push_back(*indexed);
+                    continue;
+                }
+            }
+            resolved.push_back(t);
+        }
+        return resolved;
+    }
+
+    void Application::openStreamingContents(std::string const &name)
+    {
+        if (!_streamingView)
+            return;
+        auto resolved = resolveStreamingTracks(name);
+        if (!resolved)
+            return;
+        _streamingView->showContents(name, std::move(*resolved));
     }
 
     void Application::openAddToPlaylistMenu()
@@ -2475,6 +2603,8 @@ namespace vtplayer
             _libraryView->setFocused(on && slot == LeftSlot::Library);
         if (_playlistsView)
             _playlistsView->setFocused(on && slot == LeftSlot::Playlists);
+        if (_streamingView)
+            _streamingView->setFocused(on && slot == LeftSlot::Streaming);
     }
 
     void Application::setLibraryPanelVisible(bool visible)
@@ -3086,6 +3216,12 @@ namespace vtplayer
         }
         case LeftSlot::Playlists:
             return {}; // disabled while the playlist browser is focused
+        case LeftSlot::Streaming:
+        {
+            if (!_streamingView || !_streamingView->inContents())
+                return {};
+            return heading(_streamingView->selectedTracks(), {});
+        }
         case LeftSlot::FileBrowser:
         {
             if (!_fileBrowser)

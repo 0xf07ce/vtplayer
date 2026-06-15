@@ -32,10 +32,8 @@ struct Config
 
     // [library]
     std::filesystem::path libraryRoot;
-    /// Left-panel mode persisted across sessions: "artist" | "album" |
-    /// "directory" | "radio". The transient "filebrowser" mode is never
-    /// persisted — it normalizes back to "album" on save so a fresh run
-    /// starts in the indexed library.
+    /// Left-panel mode persisted across sessions: "files" | "directory" |
+    /// "album" | "playlists" | "streaming". Legacy "artist" maps to album.
     std::string leftMode = "album";
     /// Absolute path of the track the library cursor rested on at exit.
     /// Restored (locate) on the next run so focus survives quitting — even

@@ -16,7 +16,7 @@
 namespace vtplayer
 {
 
-/// Left-panel browser for saved playlists (mode 5). It has two views:
+/// Left-panel browser for saved playlists (mode 3). It has two views:
 ///   - List view: the saved playlists by name (the host feeds names via
 ///     setItems() after querying PlaylistStore).
 ///   - Contents view: the tracks of one opened playlist, with a ".." row on
@@ -46,6 +46,9 @@ public:
     void setOnOpen(OnOpen cb) { _onOpen = std::move(cb); }
     void setOnPlayTracks(OnPlayTracks cb) { _onPlayTracks = std::move(cb); }
     void setOnSaveTracks(OnSaveTracks cb) { _onSaveTracks = std::move(cb); }
+    void setTitle(std::string title) { _title = std::move(title); }
+    void setEmptyHint(std::string hint) { _emptyHint = std::move(hint); }
+    void setReadOnly(bool readOnly);
 
     /// Replace the displayed names (caller supplies them already sorted).
     /// Clamps selection / scroll so deleting the last row stays valid.
@@ -117,6 +120,9 @@ private:
     void moveTrackSelectionDown();
 
     Theme _theme;
+    std::string _title = "Playlists";
+    std::string _emptyHint = "No playlists - press ESC to create one";
+    bool _readOnly = false;
     std::vector<std::string> _names;
     int _selectedIndex = 0;
     int _scrollOffset = 0;

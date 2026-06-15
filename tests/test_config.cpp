@@ -65,3 +65,21 @@ TEST_CASE("Config ignores a missing file and keeps defaults")
     CHECK_EQ(cfg.barCount, 24);              // struct default
     CHECK_EQ(cfg.streamBufferSeconds, 20.0f); // struct default
 }
+
+TEST_CASE("Config accepts source panel modes and legacy aliases")
+{
+    auto path = writeIni("[library]\nleft_mode = streaming\n");
+    Config cfg;
+    cfg.loadFrom(path);
+    CHECK_EQ(cfg.leftMode, std::string("streaming"));
+
+    path = writeIni("[library]\nleft_mode = files\n");
+    Config files;
+    files.loadFrom(path);
+    CHECK_EQ(files.leftMode, std::string("files"));
+
+    path = writeIni("[library]\nleft_mode = radio\n");
+    Config legacy;
+    legacy.loadFrom(path);
+    CHECK_EQ(legacy.leftMode, std::string("radio"));
+}

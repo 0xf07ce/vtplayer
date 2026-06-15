@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 1.0.3 (2026-06-15)
+
+- Reworked the source panel mode order to `1` Album, `2` Directory,
+  `3` Playlists, `4` Streaming, and `5` Files. The former Artist mode has
+  been removed; legacy `left_mode = artist` and `left-artist` keybinding
+  tokens now resolve to Album.
+- Added a read-only Streaming source panel backed by
+  `~/.config/vtplayer/radio/*.pls`. Opening a PLS shows its channels;
+  Enter replaces the play queue and starts playback, `A` appends, and `B`
+  adds selected channels to a saved playlist.
+- Stopped indexing PLS radio channels into the media library. The scanner no
+  longer collects `.pls` files, legacy `stream_url` rows are removed from the
+  library database, and the Album/Directory library views now show only local
+  indexed tracks.
+- File browser mode is now persisted as `left_mode = files` instead of being
+  normalized back to Album on exit. Legacy `left_mode = radio` restores the
+  new Streaming mode.
+
 ## 1.0.2 (2026-06-11)
 
 - Album Artist browsing now skips the album level for tracks that do not

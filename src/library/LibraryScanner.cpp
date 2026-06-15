@@ -5,7 +5,6 @@
 
 #include "LibraryRepository.h"
 #include "../plugin/DecoderRegistry.h"
-#include "../util/PlsReader.h"
 #include "../util/UnicodeNormalize.h"
 
 #include "vtplayer/plugin.h"
@@ -179,10 +178,6 @@ LibraryScanner::collect(fs::path const & root,
         if (!e.empty() && e[0] == '.') e.erase(0, 1);
         if (!e.empty()) extSet.insert(std::move(e));
     }
-    // `.pls` playlists are always collected, in addition to the built-in
-    // audio extensions — they aren't audio containers themselves.
-    extSet.insert("pls");
-
     // Extensions claimed by loaded input plugins are always collected so
     // plugin-handled formats (VGM, ROL, …) get indexed alongside the
     // built-in formats.
@@ -246,6 +241,7 @@ LibraryScanner::ingest(std::vector<ScanEntry> const & entries,
 
     report(0);
 
+    _repo.eraseStreamRows();
     auto known = _repo.mtimes();
     std::unordered_set<std::string> seen;
     seen.reserve(entries.size());
@@ -262,77 +258,23 @@ LibraryScanner::ingest(std::vector<ScanEntry> const & entries,
             return result;
 
         ScanEntry const & e = entries[i];
-        std::string const lext = lowerExt(e.path);
+        std::string const key = e.path.string();
+        seen.insert(key);
 
-        if (lext == "pls")
+        auto known_it = known.find(key);
+        bool const present = (known_it != known.end());
+        if (present && e.mtime != 0 && known_it->second == e.mtime)
         {
-            // A `.pls` expands into N rows whose DB keys are synthetic
-            // (`<pls>#CH<N>`) — the source path is never itself a key.
-            // Always re-parse: the fast-path keys on e.path which the repo
-            // never holds, and PLS files are small and rare.
-            auto loaded = PlsReader::read(e.path);
-            std::string const prefix = e.path.string() + "#";
-
-            if (!loaded)
-            {
-                // Parsing failed (file unreadable, not "empty playlist"):
-                // preserve any pre-existing rows rather than wiping them
-                // on a transient I/O hiccup. Mark them seen so the sweep
-                // below leaves them alone.
-                for (auto const & [k, _] : known)
-                    if (k.compare(0, prefix.size(), prefix) == 0)
-                        seen.insert(k);
-                continue;
-            }
-
-            // Per-file wipe: erase every existing channel row for this
-            // PLS before re-emitting the current channel list. Channels
-            // that disappeared or got renumbered are then naturally
-            // counted by the deletion sweep at the bottom (since we do
-            // NOT add the wiped keys to `seen`); only the keys we
-            // actually re-upsert survive the sweep.
-            for (auto const & [k, _] : known)
-                if (k.compare(0, prefix.size(), prefix) == 0)
-                    _repo.erase(k);
-
-            for (auto & info : *loaded)
-            {
-                // Local-file channels inside a library-root .pls would
-                // collide with the regular file scan's row for the same
-                // path. The library only takes URL channels here — local
-                // file playlists are M3U's job (no library indexing).
-                if (!info.isStream()) continue;
-                info.mtime = e.mtime;
-                info.size  = e.size;
-                std::string const childKey = info.path.string();
-                bool const childPresent =
-                    (known.find(childKey) != known.end());
-                _repo.upsert(info);
-                seen.insert(childKey);
-                if (childPresent) ++result.updated;
-                else              ++result.added;
-            }
+            ++result.skipped;
         }
         else
         {
-            std::string const key = e.path.string();
-            seen.insert(key);
-
-            auto known_it = known.find(key);
-            bool const present = (known_it != known.end());
-            if (present && e.mtime != 0 && known_it->second == e.mtime)
-            {
-                ++result.skipped;
-            }
-            else
-            {
-                TrackInfo info = extractMetadata(e.path);
-                info.mtime = e.mtime;
-                info.size  = e.size;
-                _repo.upsert(info);
-                if (present) ++result.updated;
-                else         ++result.added;
-            }
+            TrackInfo info = extractMetadata(e.path);
+            info.mtime = e.mtime;
+            info.size  = e.size;
+            _repo.upsert(info);
+            if (present) ++result.updated;
+            else         ++result.added;
         }
 
         // Report only when the integer percentage actually advances.

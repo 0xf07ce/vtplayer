@@ -16,7 +16,8 @@ Use these names when discussing vtplayer's terminal UI.
 The **Browser screen** is the main two-panel screen:
 
 - **Source panel**: the left panel. It is the navigation/source side where the
-  user chooses tracks from the library, filesystem, or saved playlists. In code,
+  user chooses tracks from the library, filesystem, saved playlists, or radio
+  playlists. In code,
   this is selected by `Application::LeftMode` and occupied by `LibraryView`,
   `FileBrowser`, or `PlaylistsView`.
 - **Play queue panel**: the right panel. It is occupied by `PlayQueueView` and
@@ -29,18 +30,18 @@ width.
 
 The source panel has five modes:
 
-- **Album mode** or **Album library view**: `LibraryView` grouped as
-  Grouping > Album Artist > Album > Track.
-- **Artist mode** or **Artist library view**: `LibraryView` grouped as
-  Grouping > Artist > Album > Track.
+- **Files mode** or **File browser**: `FileBrowser`, the live filesystem view.
 - **Directory mode** or **Directory library view**: `LibraryView` grouped by
   library-root-relative directory paths.
-- **Files mode** or **File browser**: `FileBrowser`, the live filesystem view.
+- **Album mode** or **Album library view**: `LibraryView` grouped as
+  Grouping > Album Artist fallback Artist > Album > Track.
 - **Playlists mode** or **Playlist browser**: `PlaylistsView`, the saved
   playlist browser.
+- **Streaming mode** or **Streaming browser**: read-only `PlaylistsView`
+  listing `.pls` files from `~/.config/vtplayer/radio`.
 
-Use **library view** only when the distinction between Album, Artist, and
-Directory modes is not important.
+Use **library view** only when the distinction between Album and Directory modes
+is not important.
 
 ## Playlist Browser
 
@@ -62,4 +63,4 @@ Keep these names distinct:
 - **Saved playlist**: a user-managed `.m3u8` playlist shown in Playlists mode.
 - **M3U playlist file**: a `.m3u` or `.m3u8` file opened from the file browser.
 - **PLS radio playlist**: a `.pls` file parsed as internet-radio channels and
-  indexed into the library under the stream grouping.
+  shown read-only in Streaming mode.

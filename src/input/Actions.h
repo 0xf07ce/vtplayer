@@ -44,6 +44,7 @@ namespace vtplayer
         LeftModeDirectory,
         LeftModeFiles,
         LeftModePlaylists,
+        LeftModeStreaming,
         Append,
         AddToPlaylist,
         TagEdit,

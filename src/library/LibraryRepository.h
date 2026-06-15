@@ -50,6 +50,10 @@ public:
     /// Wipe every row. Used when the library root is reassigned.
     bool clear();
 
+    /// Remove legacy stream rows. Streams now live in the read-only Streaming
+    /// view rather than the indexed media library.
+    bool eraseStreamRows();
+
     /// path → mtime map for incremental scans (compare against on-disk mtime).
     std::unordered_map<std::string, std::int64_t> mtimes() const;
 

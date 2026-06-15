@@ -19,13 +19,13 @@ All shortcuts work regardless of Korean IME input state.
 
 | Key | Action |
 |-----|--------|
-| `1` / `2` / `3` / `4` / `5` | Source panel mode: Album / Artist / Directory / Files / Playlists |
+| `1` / `2` / `3` / `4` / `5` | Source panel mode: Album / Directory / Playlists / Streaming / Files |
 | `L` | Toggle source panel (play queue goes full-width when hidden) |
 | `Tab` | Switch focus (source panel ↔ play queue panel) |
 | `Left` / `Right` | Collapse / expand selected group |
 | `Enter` | Open or play the current source selection |
 | `A` | Append the current source selection to the play queue |
-| `B` | Add the selected library/file item(s) to a saved playlist |
+| `B` | Add the selected library/file/streaming item(s) to a saved playlist |
 | `/` | Search library (Tab cycles filter: Any / Artist / Album / Title / Year) |
 | `N` / `Shift+N` | Jump to next / previous search result |
 | `T` | Edit tags (artist / album / track / folder, scoped to selection) |
@@ -55,6 +55,16 @@ All shortcuts work regardless of Korean IME input state.
 | `Ctrl+S` | Save playlist edits |
 | `Del` / `D` | Edit mode: remove selected track(s) |
 | `Shift+Left` / `Shift+Right` | Edit mode: move selected track(s) up / down |
+
+## Browser — Streaming
+
+| Key | Action |
+|-----|--------|
+| `Enter` | List view: open `.pls`; contents view: replace play queue with selected channel(s) and play |
+| `A` | Contents view: append selected channel(s) to the play queue |
+| `B` | Contents view: add selected channel(s) to a saved playlist |
+| `Backspace` | Contents view: return to the `.pls` list |
+| `Ctrl+A` | Contents view: select all channels |
 
 ## Play queue
 
@@ -144,7 +154,7 @@ keys: **`H`** = help, **`L`** = toggle source panel, **`V`** = visualizer.
 | `Ctrl+Up` / `Ctrl+Down` | Reorder selection up / down |
 | `Ctrl+W` `w` | Cycle panel focus (like `Tab`) |
 | `Ctrl+W` `h` / `Ctrl+W` `l` | Focus source panel / play queue panel |
-| `Ctrl+W` `1`…`5` | Source panel mode: Album / Artist / Directory / Files / Playlists |
+| `Ctrl+W` `1`…`5` | Source panel mode: Album / Directory / Playlists / Streaming / Files |
 | `Ctrl+G` | Toggle gain normalization (`g` is taken by `gg`) |
 | `v` | Enter Visual mode |
 | `Esc` | Cancel a pending count/chord, or leave Visual mode |

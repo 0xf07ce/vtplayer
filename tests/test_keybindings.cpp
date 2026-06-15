@@ -46,12 +46,14 @@ TEST_CASE("Action token table round-trips and rejects typos")
 {
     CHECK_EQ(actionFromToken("cursor-down"), Action::CursorDown);
     CHECK_EQ(actionFromToken("focus-right"), Action::FocusRight);
+    CHECK_EQ(actionFromToken("left-streaming"), Action::LeftModeStreaming);
     CHECK_EQ(actionFromToken("enter-visual"), Action::EnterVisual);
     CHECK_EQ(actionFromToken("remove"), Action::Remove);
     CHECK_EQ(actionFromToken("nope-not-real"), Action::None);
 
     CHECK(isKnownAction("play-pause"));
     CHECK(isKnownAction("left-playlists"));
+    CHECK(isKnownAction("left-artist")); // legacy alias, dispatched as Album
     CHECK(!isKnownAction("play_pause")); // wrong separator
 }
 
@@ -78,10 +80,14 @@ TEST_CASE("Built-in vi preset binds the expected actions")
     r = eng.feed(K("l"));
     CHECK_EQ(actionFromToken(r.token), Action::FocusRight);
 
-    // <C-w>3 -> left-directory (panel select, conflict-free with counts).
+    // <C-w>2 -> left-directory (panel select, conflict-free with counts).
     CHECK_EQ(eng.feed(K("<C-w>")).kind, RK::None);
-    r = eng.feed(K("3"));
+    r = eng.feed(K("2"));
     CHECK_EQ(actionFromToken(r.token), Action::LeftModeDirectory);
+
+    CHECK_EQ(eng.feed(K("<C-w>")).kind, RK::None);
+    r = eng.feed(K("4"));
+    CHECK_EQ(actionFromToken(r.token), Action::LeftModeStreaming);
 
     // gg -> cursor-home.
     CHECK_EQ(eng.feed(K("g")).kind, RK::None);
@@ -117,6 +123,10 @@ TEST_CASE("Built-in default preset binds standard single keys")
     CHECK_EQ(emit("h"), Action::ToggleHelp);     // h = help (NOT a motion here)
     CHECK_EQ(emit("l"), Action::ToggleLeftPanel);// l = panel (NOT a motion here)
     CHECK_EQ(emit("1"), Action::LeftModeAlbum);  // digits are commands, not counts
+    CHECK_EQ(emit("2"), Action::LeftModeDirectory);
+    CHECK_EQ(emit("3"), Action::LeftModePlaylists);
+    CHECK_EQ(emit("4"), Action::LeftModeStreaming);
+    CHECK_EQ(emit("5"), Action::LeftModeFiles);
     CHECK_EQ(emit("<Up>"), Action::CursorUp);
     CHECK_EQ(emit("<CR>"), Action::Activate);
     CHECK_EQ(emit("/"), Action::Search);
@@ -129,7 +139,7 @@ TEST_CASE("Built-in default preset binds standard single keys")
     CHECK_EQ(emit("<lt>"), Action::SeekBack);    // the '<' key in vim notation
 
     // A digit never starts a count here (counts = off): every press emits.
-    CHECK_EQ(emit("3"), Action::LeftModeDirectory);
+    CHECK_EQ(emit("3"), Action::LeftModePlaylists);
 
     // An unbound key still falls through to the built-in handlers.
     CHECK_EQ(eng.feed(K("z")).kind, RK::Passthrough);

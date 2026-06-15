@@ -61,34 +61,26 @@ namespace vtplayer
         Plugins,   ///< list of currently loaded plugins
     };
 
-    /// Left-panel mode on the Browser screen. Three projections of the
-    /// indexed MediaLibrary (rendered by LibraryView) plus the live
-    /// FileBrowser:
-    ///   1 (AlbumArtistTree) — Grouping > AlbumArtist > Album > Track, label "Album"
-    ///   2 (ArtistTree)      — Grouping > Artist      > Album > Track, label "Artist"
-    ///   3 (Directory)       — folder tree under the library root
-    ///   4 (FileBrowser)     — live filesystem from the launch CWD
-    /// Both library tree modes share the same four-level shape; the
-    /// depth-0 axis is `TrackInfo::grouping` (ID3v2 TIT1 / Vorbis GROUPING
-    /// / MP4 ©grp) and the depth-1 axis differs by mode.
+    /// Left-panel mode on the Browser screen.
     enum class LeftMode
     {
-        AlbumArtistTree,
-        ArtistTree,
-        Directory,
         FileBrowser,
-        Playlists,  // 5 — saved-playlist browser (PlaylistsView)
+        Directory,
+        AlbumArtistTree,
+        Playlists,
+        Streaming,
     };
 
     /// Which widget currently occupies the Browser-screen left slot. The slot
-    /// used to be a binary (library vs filebrowser); Playlists adds a third
-    /// occupant, so draw/input/mouse/focus routing switches on this instead of
-    /// the `leftIsLibrary()` bool.
+    /// used to be a binary (library vs filebrowser); saved playlists and
+    /// streaming add more occupants, so draw/input/mouse/focus routing
+    /// switches on this instead of the `leftIsLibrary()` bool.
     enum class LeftSlot
     {
         Library,
         FileBrowser,
         Playlists,
+        Streaming,
     };
 
     /// Actions in the ESC context menu. The visible item set is built
@@ -226,7 +218,7 @@ namespace vtplayer
         void setLeftMode(LeftMode mode);
 
         /// True when the left panel is a MediaLibrary projection
-        /// (AlbumArtistTree / ArtistTree / Directory) rather than the live
+        /// (AlbumArtistTree / Directory) rather than the live
         /// FileBrowser.
         // During a scan the LibraryView tree is dropped (pass 1) and not
         // rebuilt until finalizeScan() (its results land all at once), so the
@@ -235,13 +227,12 @@ namespace vtplayer
         bool leftIsLibrary() const
         {
             return (_leftMode == LeftMode::AlbumArtistTree
-                    || _leftMode == LeftMode::ArtistTree
                     || _leftMode == LeftMode::Directory)
                    && !_collectActive.load() && !_ingestActive.load();
         }
 
-        /// True when the left panel is the saved-playlist browser (mode 5).
         bool leftIsPlaylists() const { return _leftMode == LeftMode::Playlists; }
+        bool leftIsStreaming() const { return _leftMode == LeftMode::Streaming; }
 
         /// Which widget currently fills the left slot. Keeps the existing
         /// `leftIsLibrary()` semantics intact: Playlists is its own slot, and
@@ -250,11 +241,13 @@ namespace vtplayer
         LeftSlot activeLeftWidget() const
         {
             if (_leftMode == LeftMode::Playlists) return LeftSlot::Playlists;
+            if (_leftMode == LeftMode::Streaming) return LeftSlot::Streaming;
             return leftIsLibrary() ? LeftSlot::Library : LeftSlot::FileBrowser;
         }
 
         /// Re-list playlists from disk into PlaylistsView.
         void refreshPlaylists();
+        void refreshStreaming();
 
         /// Drill into a playlist (Enter on a PlaylistsView list row): read the
         /// named playlist, resolve each entry against the library for richer
@@ -263,6 +256,7 @@ namespace vtplayer
         /// the play queue — that happens later from the contents view (Enter on
         /// a track = replace + play, `a` = append).
         void openPlaylistContents(std::string const & name);
+        void openStreamingContents(std::string const & name);
 
         /// Read a playlist file and resolve each entry against the library for
         /// richer metadata (album / grouping / ReplayGain), falling back to the
@@ -271,6 +265,10 @@ namespace vtplayer
         /// refresh path.
         std::optional<std::vector<TrackInfo>>
         resolvePlaylistTracks(std::string const & name) const;
+        std::optional<std::vector<TrackInfo>>
+        resolveStreamingTracks(std::string const & name) const;
+        std::filesystem::path radioDir() const;
+        std::filesystem::path radioPathFor(std::string const & name) const;
 
         /// Push the play queue header title: the active playlist's name, or the
         /// default "Play Queue" when `_currentPlaylistName` is empty.
@@ -286,7 +284,7 @@ namespace vtplayer
         /// the Visualizer screen, the play-queue selection, a Library group's
         /// tracks (disabled at the top-level Grouping axis), or the FileBrowser
         /// selection. No-op when the set is empty or no playlists exist. The
-        /// list order mirrors the mode-5 PlaylistsView (PlaylistStore::list),
+        /// list order mirrors the mode-3 PlaylistsView (PlaylistStore::list),
         /// except the playlist most recently used by this picker in the current
         /// session is floated to the top (`_lastAddedPlaylist`).
         void openAddToPlaylistMenu();
@@ -523,6 +521,7 @@ namespace vtplayer
         std::unique_ptr<FileBrowser> _fileBrowser;
         std::unique_ptr<LibraryView> _libraryView;
         std::unique_ptr<PlaylistsView> _playlistsView;
+        std::unique_ptr<PlaylistsView> _streamingView;
         std::unique_ptr<PlayQueueView> _playQueueView;
         std::unique_ptr<TransportBar> _transportBar;
         std::unique_ptr<VisualizerView> _visualizerView;
@@ -544,7 +543,7 @@ namespace vtplayer
 
         // Startup positional argument. At most one is set: _initialFile is a
         // single track to queue+play; _initialDir is a folder to open in the
-        // FileBrowser. Either forces FileBrowser (4) mode at launch.
+        // FileBrowser. Either forces FileBrowser (5) mode at launch.
         std::filesystem::path _initialFile;
         std::filesystem::path _initialDir;
 

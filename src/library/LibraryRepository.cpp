@@ -122,6 +122,8 @@ bool LibraryRepository::open()
         return false;
     }
 
+    eraseStreamRows();
+
     if (sqlite3_prepare_v2(_db, kUpsertSql, -1, &_upsertStmt, nullptr) != SQLITE_OK ||
         sqlite3_prepare_v2(_db, kEraseSql,  -1, &_eraseStmt,  nullptr) != SQLITE_OK)
     {
@@ -258,6 +260,16 @@ bool LibraryRepository::clear()
     if (!_db) return false;
     char * err = nullptr;
     int const rc = sqlite3_exec(_db, "DELETE FROM tracks;", nullptr, nullptr, &err);
+    if (err) sqlite3_free(err);
+    return rc == SQLITE_OK;
+}
+
+bool LibraryRepository::eraseStreamRows()
+{
+    if (!_db) return false;
+    char * err = nullptr;
+    int const rc = sqlite3_exec(_db, "DELETE FROM tracks WHERE stream_url <> '';",
+                                nullptr, nullptr, &err);
     if (err) sqlite3_free(err);
     return rc == SQLITE_OK;
 }

@@ -32,19 +32,6 @@ namespace vtplayer
             return t.title.empty() ? t.path.stem().string() : t.title;
         }
 
-        /// Stream channels carry no meaningful disc/track numbering, so they
-        /// keep the simple "N. title" / "title" form.
-        std::string formatStreamLabel(TrackInfo const &t)
-        {
-            if (t.trackNumber > 0)
-            {
-                char buf[8];
-                std::snprintf(buf, sizeof(buf), "%d. ", t.trackNumber);
-                return std::string(buf) + trackTitle(t);
-            }
-            return trackTitle(t);
-        }
-
         /// Label every leaf of one album, deciding disc/track display from the
         /// album as a whole:
         ///   - any track missing a track number  → every row shows just {title}
@@ -150,20 +137,9 @@ namespace vtplayer
         sortNodeChildren();
         recomputeVisible();
 
-        // Header count reflects what the UI label promises. Computed once
-        // here rather than per-frame in draw():
-        //   Album label  (AlbumArtistTree) → #albums   (depth-2 groups)
-        //   Artist label (ArtistTree)      → #artists  (depth-1 groups)
-        //   Directory                       → #tracks
-        if (_mode == Mode::ArtistTree)
-        {
-            for (auto const &n : _nodes)
-            {
-                if (n.kind == Node::Kind::Group && n.depth == 1)
-                    ++_headerCount;
-            }
-        }
-        else if (_mode == Mode::AlbumArtistTree)
+        // Header count reflects what the UI label promises: Album mode counts
+        // album groups, Directory mode counts indexed tracks.
+        if (_mode == Mode::AlbumArtistTree)
         {
             for (auto const &n : _nodes)
             {
@@ -206,26 +182,9 @@ namespace vtplayer
 
         for (auto const &t : _library->tracks())
         {
-            // Stream channels carry a synthetic path `<abs_pls>#CH<N>`.
-            // Promote the .pls file itself to a group so its channels nest
-            // underneath it (labelled by the channel title) instead of
-            // appearing as a single leaf called "foo.pls#CH1".
-            bool isStreamChannel = false;
-            std::filesystem::path filePath = t.path;
             if (t.isStream())
-            {
-                auto const &sp = t.path.native();
-                auto const hash = sp.rfind(
-                    static_cast<std::filesystem::path::value_type>('#'));
-                if (hash != std::filesystem::path::string_type::npos
-                    && sp.compare(hash, 3,
-                                  std::filesystem::path::string_type{'#', 'C', 'H'})
-                           == 0)
-                {
-                    filePath = std::filesystem::path(sp.substr(0, hash));
-                    isStreamChannel = true;
-                }
-            }
+                continue;
+            std::filesystem::path filePath = t.path;
 
             // Path components relative to the library root.
             std::filesystem::path rel;
@@ -248,11 +207,7 @@ namespace vtplayer
 
             std::size_t parent = kNoIdx;
             int depth = 0;
-            // Stream channels treat every path component — including the
-            // `.pls` filename — as a group, since the real leaf is the
-            // channel. Regular files keep the last component as the leaf.
-            std::size_t const groupCount =
-                isStreamChannel ? parts.size() : parts.size() - 1;
+            std::size_t const groupCount = parts.size() - 1;
             for (std::size_t i = 0; i < groupCount; ++i)
             {
                 parent = findOrCreateGroup(parent, parts[i], depth);
@@ -261,21 +216,7 @@ namespace vtplayer
 
             Node trackNode;
             trackNode.kind = Node::Kind::Track;
-            if (isStreamChannel)
-            {
-                // Channel name parsed by PlsReader (TitleN= or hostname
-                // fallback). The .pls filename is the group above.
-                trackNode.label = toNfc(
-                    !t.title.empty() ? t.title : t.path.filename().string());
-            }
-            else
-            {
-                // Directory mode is a filesystem view, so show the actual
-                // file name (matching FileBrowser) rather than "N. Title"
-                // — that tag-based form is reserved for the Artist/Album
-                // modes.
-                trackNode.label = toNfc(t.path.filename().string());
-            }
+            trackNode.label = toNfc(t.path.filename().string());
             trackNode.depth = depth;
             trackNode.track = &t;
             trackNode.parent = parent;
@@ -310,8 +251,8 @@ namespace vtplayer
             return idx;
         };
 
-        // Local-file tracks build a four-level tree: Grouping → Artist →
-        // Album → Track.
+        // Local-file tracks build a four-level tree: Grouping → AlbumArtist
+        // fallback Artist → Album → Track.
         //
         // Depth-0 key is `TrackInfo::grouping` (ID3v2 TIT1 / Vorbis GROUPING
         // / MP4 ©grp) — a single user-defined top-level bucket like "kpop",
@@ -319,12 +260,9 @@ namespace vtplayer
         // own "missing" label to keep the empty-grouping case visually
         // distinct from empty-artist `(null)` one level down).
         //
-        // Depth-1 (album-artist axis):
-        //   Mode 2 (ArtistTree, UI "Artist") reads `artist`; empty → the
-        //   `#unknown_artist` sentinel.
-        //   Mode 1 (AlbumArtistTree, UI "Album") reads `albumArtist`, falling
-        //   back to `artist` when `albumArtist` is empty. A track grouped via
-        //   that fallback is "derived".
+        // Depth-1 reads `albumArtist`, falling back to `artist` when
+        // `albumArtist` is empty. A track grouped via that fallback is
+        // "derived".
         //
         // Depth-2 (album axis) only exists for tracks that carry a *real*
         // `albumArtist`. A derived track (no album-artist, grouped under the
@@ -344,25 +282,13 @@ namespace vtplayer
         // "015B" and another tagged "015B " (or NFD-encoded "015B") land
         // in the same group.
         //
-        // Stream channels (URL entries inside `.pls` playlists) build a
-        // *shallower* three-level subtree under a forced `#stream` group:
-        // `#stream` → <pls stem> → channel. The album axis is skipped
-        // entirely because PlsReader pins both artist and album to the
-        // pls stem, which would otherwise show the same label twice in a
-        // row. Channel leaves live at depth 2 (instead of 3 for local
-        // files); the rest of the view treats depth opaquely so the
-        // mixed-depth shape is safe.
-        //
         // std::map keeps every axis alphabetically ordered for stable
         // display. Root and depth-1 order is then overridden by
-        // sortNodeChildren() to pin `#stream`, `#ungrouped`/`#unknown_artist`
-        // to the top.
-        bool const albumArtistMode = (_mode == Mode::AlbumArtistTree);
+        // sortNodeChildren() to pin `#ungrouped`/`#unknown_artist` to the top.
         // One bucket per (grouping, artist). Real album-artist tracks group by
-        // album name; derived tracks (album_artist empty → artist fallback)
+        // album name; derived tracks (album_artist empty -> artist fallback)
         // skip the album axis and become title-only leaves directly under the
-        // artist. In ArtistTree mode nothing is derived, so `directTracks`
-        // stays empty and every track lands in `albums` as before.
+        // artist.
         struct ArtistBucket
         {
             std::map<std::string, std::vector<TrackInfo const *>> albums;
@@ -370,17 +296,10 @@ namespace vtplayer
         };
         // grouping → artist label → bucket.
         std::map<std::string, std::map<std::string, ArtistBucket>> tree;
-        std::map<std::string, std::vector<TrackInfo const *>> streamTree;
         for (auto const &t : _library->tracks())
         {
             if (t.isStream())
-            {
-                std::string plsStem = trimAscii(toNfc(t.album));
-                if (plsStem.empty())
-                    plsStem = "#unknown_stream";
-                streamTree[plsStem].push_back(&t);
                 continue;
-            }
             std::string grouping = trimAscii(toNfc(t.grouping));
             if (grouping.empty())
                 grouping = "#ungrouped";
@@ -388,22 +307,15 @@ namespace vtplayer
             // Resolve the album-artist identity {label, derived}.
             std::string artist;
             bool derived = false;
-            if (albumArtistMode)
+            artist = trimAscii(toNfc(t.albumArtist));
+            if (artist.empty())
             {
-                artist = trimAscii(toNfc(t.albumArtist));
-                if (artist.empty())
+                std::string const fallback = trimAscii(toNfc(t.artist));
+                if (!fallback.empty())
                 {
-                    std::string const fallback = trimAscii(toNfc(t.artist));
-                    if (!fallback.empty())
-                    {
-                        artist = fallback;
-                        derived = true;
-                    }
+                    artist = fallback;
+                    derived = true;
                 }
-            }
-            else
-            {
-                artist = trimAscii(toNfc(t.artist));
             }
             if (artist.empty())
                 artist = "#unknown_artist";
@@ -419,28 +331,6 @@ namespace vtplayer
                 std::string albumRaw = trimAscii(toNfc(t.album));
                 std::string album = albumRaw.empty() ? "#unknown_album" : std::move(albumRaw);
                 bucket.albums[std::move(album)].push_back(&t);
-            }
-        }
-
-        // Stream branch (mixed depth: tracks land at depth 2).
-        if (!streamTree.empty())
-        {
-            std::size_t const streamIdx = createGroup(kNoIdx, "#stream", 0);
-            for (auto const &[plsStem, tracks] : streamTree)
-            {
-                std::size_t const plsIdx = createGroup(streamIdx, plsStem, 1);
-                for (auto const *t : tracks)
-                {
-                    Node trackNode;
-                    trackNode.kind = Node::Kind::Track;
-                    trackNode.label = formatStreamLabel(*t);
-                    trackNode.depth = 2;
-                    trackNode.track = t;
-                    trackNode.parent = plsIdx;
-                    std::size_t const idx = _nodes.size();
-                    _nodes.push_back(std::move(trackNode));
-                    _nodes[plsIdx].children.push_back(idx);
-                }
             }
         }
 
@@ -521,21 +411,16 @@ namespace vtplayer
 
         // Pin synthetic labels to the top in a fixed order, ahead of the
         // alphabetical run. Pinning is depth-aware: groupings (depth 0)
-        // pin `#stream` then `#ungrouped`; artists inside a grouping
-        // (depth 1) pin `#unknown_artist`. Directory mode keeps pure
-        // alphabetical ordering at every depth.
+        // pin `#ungrouped`; artists inside a grouping (depth 1) pin
+        // `#unknown_artist`. Directory mode keeps pure alphabetical ordering.
         auto groupingPriority = [&](std::string const &label) -> int {
             if (_mode == Mode::Directory) return 3;
-            if (label == "#stream")    return 0;
-            if (label == "#ungrouped") return 1;
+            if (label == "#ungrouped") return 0;
             return 3;
         };
         auto artistPriority = [&](std::string const &label) -> int {
             if (_mode == Mode::Directory) return 3;
-            // `#stream` appears at this depth only as the sole child of
-            // the `#stream` grouping — pinning is harmless either way.
-            if (label == "#stream")          return 0;
-            if (label == "#unknown_artist")  return 1;
+            if (label == "#unknown_artist")  return 0;
             return 3;
         };
         auto pinnedCmp = [&](auto priority) {
@@ -683,14 +568,14 @@ namespace vtplayer
                 continue;
 
             // Choose the node that represents this track at the current
-            // mode's grouping level. Both AlbumArtistTree and ArtistTree
-            // are Grouping(0) > Artist(1) > Album(2) > Track(3); cross-
+            // mode's grouping level. AlbumArtistTree is
+            // Grouping(0) > Artist(1) > Album(2) > Track(3); cross-
             // axis locate stops at the album so the user lands on the
             // album group regardless of which axis they came from.
             // Directory keeps drilling to the track itself (folders
             // expanded so the file is revealed).
             std::size_t sel = i;
-            if (_mode == Mode::AlbumArtistTree || _mode == Mode::ArtistTree)
+            if (_mode == Mode::AlbumArtistTree)
             {
                 int const wantDepth = 2; // album level
                 for (std::size_t cur = i; cur != kNoIdx; cur = _nodes[cur].parent)
@@ -766,9 +651,7 @@ namespace vtplayer
         window.fill(r.x + 1, r.y, r.width - 1, 1, U' ', headerStyle);
 
         std::string header = " Library \xC2\xB7 ";
-        header += (_mode == Mode::AlbumArtistTree) ? "Album"
-                  : (_mode == Mode::ArtistTree)    ? "Artist"
-                                                   : "Directory";
+        header += (_mode == Mode::AlbumArtistTree) ? "Album" : "Directory";
         if (_library)
         {
             header += " (" + std::to_string(_headerCount) + ")";
@@ -828,9 +711,9 @@ namespace vtplayer
             // tint. Directory mode has no artist/album concept — groups
             // are just folders, so use the neutral file-browser directory
             // color and only the track tint. The synthetic labels —
-            // `#ungrouped` at depth 0, `#unknown_artist` at depth 1,
-            // `#unknown_album` at depth 2, and `#stream` wherever it
-            // appears — each get the "missing tag" tint to set them apart
+            // `#ungrouped` at depth 0, `#unknown_artist` at depth 1, and
+            // `#unknown_album` at depth 2 each get the "missing tag" tint
+            // to set them apart
             // from real values. Derived album-artist / album nodes (the label
             // came from the `artist` fallback) render a shade darker.
             Color levelFg;
@@ -842,8 +725,6 @@ namespace vtplayer
                     : _theme.libraryTrackFg;
             else if (_mode == Mode::Directory)
                 levelFg = _theme.playQueueFg;
-            else if (n.label == "#stream")
-                levelFg = _theme.libraryStreamFg;
             else if (n.depth == 0 && n.label == "#ungrouped")
                 levelFg = _theme.libraryNullFg;
             else if (n.depth == 1 && n.label == "#unknown_artist")

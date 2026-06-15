@@ -94,7 +94,7 @@ int main(int argc, char *argv[])
         std::error_code ec;
         if (std::filesystem::is_directory(path, ec))
         {
-            // Directory argument: open the FileBrowser there (4).
+            // Directory argument: open the FileBrowser there (5).
             app.setInitialDirectory(std::move(path));
         }
         else if (std::filesystem::exists(path))
