@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <functional>
 #include <map>
+#include <unordered_set>
 
 namespace vtplayer
 {
@@ -100,11 +101,13 @@ namespace vtplayer
 
     void LibraryView::setMode(Mode mode)
     {
-        // Always rebuild, even when the mode is unchanged: re-pressing the
-        // current mode's key resets the tree to its default fold state
-        // (every mode starts fully collapsed).
+        if (mode == _mode)
+            return;
+
+        saveCurrentModeState();
         _mode = mode;
         rebuild();
+        restoreCurrentModeState();
     }
 
     void LibraryView::clear()
@@ -493,6 +496,87 @@ namespace vtplayer
         {
             _scrollOffset = _selectedIndex - listH + 1;
         }
+    }
+
+    std::string LibraryView::nodeKey(std::size_t nodeIdx) const
+    {
+        if (nodeIdx >= _nodes.size())
+            return {};
+
+        auto const &n = _nodes[nodeIdx];
+        if (n.kind == Node::Kind::Track)
+            return n.track ? ("T:" + n.track->path.string()) : std::string{};
+
+        std::vector<std::string> parts;
+        for (std::size_t cur = nodeIdx; cur != kNoIdx; cur = _nodes[cur].parent)
+            parts.push_back(_nodes[cur].label);
+        std::reverse(parts.begin(), parts.end());
+
+        std::string key = (_mode == Mode::AlbumArtistTree) ? "A:" : "D:";
+        for (auto const &part : parts)
+        {
+            key.push_back('\x1f');
+            key += part;
+        }
+        return key;
+    }
+
+    void LibraryView::saveCurrentModeState()
+    {
+        ModeState state;
+        state.valid = true;
+        state.scrollOffset = _scrollOffset;
+
+        if (!_visible.empty() && _selectedIndex >= 0
+            && _selectedIndex < static_cast<int>(_visible.size()))
+        {
+            state.selectedKey = nodeKey(_visible[static_cast<std::size_t>(_selectedIndex)]);
+        }
+
+        for (std::size_t i = 0; i < _nodes.size(); ++i)
+        {
+            auto const &n = _nodes[i];
+            if (n.kind != Node::Kind::Group || !n.expanded)
+                continue;
+            std::string key = nodeKey(i);
+            if (!key.empty())
+                state.expandedKeys.push_back(std::move(key));
+        }
+
+        if (_mode == Mode::AlbumArtistTree)
+            _albumState = std::move(state);
+        else
+            _directoryState = std::move(state);
+    }
+
+    void LibraryView::restoreCurrentModeState()
+    {
+        ModeState const &state = (_mode == Mode::AlbumArtistTree) ? _albumState
+                                                                  : _directoryState;
+        if (!state.valid)
+            return;
+
+        std::unordered_set<std::string> const expanded(state.expandedKeys.begin(),
+                                                       state.expandedKeys.end());
+        for (std::size_t i = 0; i < _nodes.size(); ++i)
+        {
+            auto &n = _nodes[i];
+            if (n.kind != Node::Kind::Group)
+                continue;
+            n.expanded = expanded.find(nodeKey(i)) != expanded.end();
+        }
+
+        recomputeVisible();
+        for (std::size_t v = 0; v < _visible.size(); ++v)
+        {
+            if (nodeKey(_visible[v]) == state.selectedKey)
+            {
+                _selectedIndex = static_cast<int>(v);
+                break;
+            }
+        }
+        _scrollOffset = std::max(0, state.scrollOffset);
+        scrollToSelected();
     }
 
     void LibraryView::collectTracks(std::size_t nodeIdx, std::vector<TrackInfo> &out) const

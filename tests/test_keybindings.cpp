@@ -75,6 +75,12 @@ TEST_CASE("Built-in vi preset binds the expected actions")
     r = eng.feed(K("d"));
     CHECK_EQ(actionFromToken(r.token), Action::Remove);
 
+    // Backspace is navigation only; deletion stays on Del / D.
+    r = eng.feed(K("<BS>"));
+    CHECK_EQ(actionFromToken(r.token), Action::GoBack);
+    r = eng.feed(K("<Del>"));
+    CHECK_EQ(actionFromToken(r.token), Action::Remove);
+
     // <C-w>l -> focus-right (the window-movement chord).
     CHECK_EQ(eng.feed(K("<C-w>")).kind, RK::None);
     r = eng.feed(K("l"));
@@ -130,6 +136,8 @@ TEST_CASE("Built-in default preset binds standard single keys")
     CHECK_EQ(emit("<Up>"), Action::CursorUp);
     CHECK_EQ(emit("<CR>"), Action::Activate);
     CHECK_EQ(emit("/"), Action::Search);
+    CHECK_EQ(emit("<BS>"), Action::GoBack);
+    CHECK_EQ(emit("<Del>"), Action::Remove);
     CHECK_EQ(emit("<C-a>"), Action::SelectAll);
     CHECK_EQ(emit("<S-Up>"), Action::ExtendSelectionUp);   // multi-select extend
     CHECK_EQ(emit("<S-Down>"), Action::ExtendSelectionDown);

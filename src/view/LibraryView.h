@@ -134,6 +134,9 @@ private:
     void sortNodeChildren();
     void recomputeVisible();
     void scrollToSelected();
+    std::string nodeKey(std::size_t nodeIdx) const;
+    void saveCurrentModeState();
+    void restoreCurrentModeState();
 
     /// Append every track under `nodeIdx` (or the node itself if it's a Track).
     void collectTracks(std::size_t nodeIdx, std::vector<TrackInfo> & out) const;
@@ -151,6 +154,16 @@ private:
 
     int _selectedIndex = 0;              ///< index into _visible
     int _scrollOffset  = 0;
+
+    struct ModeState
+    {
+        std::string selectedKey;
+        std::vector<std::string> expandedKeys;
+        int scrollOffset = 0;
+        bool valid = false;
+    };
+    ModeState _albumState;
+    ModeState _directoryState;
 
     /// Header count for the current mode (artists / albums / tracks),
     /// computed once per rebuild() rather than every draw().

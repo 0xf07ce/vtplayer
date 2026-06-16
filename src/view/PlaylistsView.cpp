@@ -362,13 +362,12 @@ bool PlaylistsView::handleKey(ventty::KeyEvent const & event)
 
     if (_inContents)
     {
-        // Backspace: in edit mode it removes the selection (an alias for `d`),
-        // since destructive edits are the focus there; otherwise it mirrors
-        // FileBrowser's "go up a level".
+        // Backspace always mirrors FileBrowser's "go up a level". Deletion is
+        // deliberately limited to Delete / D so Ctrl+H cannot remove tracks on
+        // terminals that encode it as Backspace.
         if (event.key == Key::Backspace)
         {
-            if (!_readOnly && _editMode) removeSelectedTracks();
-            else closeContents();
+            closeContents();
             return true;
         }
         if (event.key == Key::Enter)

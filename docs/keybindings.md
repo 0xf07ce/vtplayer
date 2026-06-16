@@ -49,7 +49,7 @@ All shortcuts work regardless of Korean IME input state.
 |-----|--------|
 | `Enter` | List view: open playlist; contents view: replace play queue with selected track(s) and play |
 | `A` | Contents view: append selected track(s) to the play queue |
-| `Backspace` | Contents view: return to playlist list; edit mode: remove selected track(s) |
+| `Backspace` | Contents view: return to playlist list |
 | `Ctrl+A` | Contents view: select all tracks |
 | `Ctrl+E` | Enter playlist edit mode |
 | `Ctrl+S` | Save playlist edits |
@@ -71,7 +71,7 @@ All shortcuts work regardless of Korean IME input state.
 | Key | Action |
 |-----|--------|
 | `Enter` | Play selected track |
-| `Del` / `D` / `Backspace` | Remove selection |
+| `Del` / `D` | Remove selection |
 | `Ctrl+Up` / `Ctrl+Down` | Move selected track up / down |
 | `Ctrl+A` | Select all |
 | `T` | Edit tags (multi-selection if any, else cursor track) |

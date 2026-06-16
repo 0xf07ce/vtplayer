@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 1.0.4 (2026-06-16)
+
+- Album and Directory library views now preserve their own selected row,
+  scroll offset, and expanded groups when switching between source modes.
+  Track-to-track switches still carry the selected track across projections.
+- Backspace is now reserved for "go back" navigation everywhere. Play queue
+  and playlist edit deletion stay on `Del` / `D`, avoiding accidental deletes
+  when terminals report `Ctrl+H` as Backspace.
+
 ## 1.0.3 (2026-06-15)
 
 - Reworked the source panel mode order to `1` Album, `2` Directory,

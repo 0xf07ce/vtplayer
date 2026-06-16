@@ -502,7 +502,6 @@ bool PlayQueueView::handleKey(ventty::KeyEvent const & event)
     }
 
     if (event.key == Key::Delete ||
-        event.key == Key::Backspace ||
         (event.key == Key::Char && (event.ch == 'd' || event.ch == 'D')))
     {
         removeSelected();

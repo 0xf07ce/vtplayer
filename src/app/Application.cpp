@@ -1813,11 +1813,32 @@ namespace vtplayer
 
     void Application::applyLeftMode(LeftMode target)
     {
-        // Leaving a library projection (1/2/3): remember the focused track so
-        // it can be restored on the next entry — including after a FileBrowser
-        // (5) round-trip.
-        if (leftIsLibrary() && _libraryView)
+        LeftMode const previous = _leftMode;
+        bool const previousIsLibrary = leftIsLibrary();
+        bool const targetIsLibrary = (target == LeftMode::AlbumArtistTree
+                                      || target == LeftMode::Directory);
+
+        bool trackModeTransfer = false;
+        std::filesystem::path trackAnchor;
+        if (previousIsLibrary && targetIsLibrary && previous != target
+            && _focus == FocusPanel::FileBrowser && _libraryView)
         {
+            auto const sel = _libraryView->currentSelection();
+            if (sel.kind == LibraryView::SelectionKind::Track && !sel.tracks.empty())
+            {
+                trackAnchor = sel.tracks.front().path;
+                if (!trackAnchor.empty())
+                {
+                    _libraryAnchor = trackAnchor;
+                    trackModeTransfer = true;
+                }
+            }
+        }
+        else if (previousIsLibrary && _libraryView)
+        {
+            // Leaving a library projection for another left slot: remember a
+            // representative track so startup/scan restoration still has an
+            // anchor, but do not use it to force 1/2 cross-mode expansion.
             auto cur = _libraryView->selectedTrackPath();
             if (!cur.empty())
                 _libraryAnchor = cur;
@@ -1825,6 +1846,9 @@ namespace vtplayer
 
         // Picking a left mode implies the panel should be visible.
         setLibraryPanelVisible(true);
+        if (targetIsLibrary && target == previous)
+            return;
+
         setLeftMode(target);
 
         // Playlists: re-list from disk so the panel is current.
@@ -1833,11 +1857,11 @@ namespace vtplayer
         if (target == LeftMode::Streaming)
             refreshStreaming();
 
-        // Re-locate the anchor to its node at the new mode's grouping level.
-        bool const targetIsLibrary = (target == LeftMode::AlbumArtistTree
-                                      || target == LeftMode::Directory);
-        if (targetIsLibrary && !_libraryAnchor.empty() && _libraryView)
-            _libraryView->locateForMode(_libraryAnchor);
+        // Only track-to-track 1/2 switches carry the current track across
+        // projections. Group/folder selections keep each projection's own
+        // saved cursor and fold state.
+        if (trackModeTransfer && _libraryView)
+            _libraryView->locateForMode(trackAnchor);
     }
 
     void Application::appendSelection()
