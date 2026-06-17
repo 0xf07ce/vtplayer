@@ -40,6 +40,7 @@ else()
         GIT_TAG        v2.0.2
         GIT_SHALLOW    TRUE
     )
+    set(_VTPLAYER_BUILD_TESTING_SAVE "${BUILD_TESTING}")
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     set(BUILD_TESTING     OFF CACHE BOOL "" FORCE)
     set(BUILD_EXAMPLES    OFF CACHE BOOL "" FORCE)
@@ -47,6 +48,8 @@ else()
     set(VISIBILITY_HIDDEN ON  CACHE BOOL "" FORCE)
     set(WITH_ZLIB         ON  CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(taglib)
+    set(BUILD_TESTING "${_VTPLAYER_BUILD_TESTING_SAVE}" CACHE BOOL "Build unit tests" FORCE)
+    unset(_VTPLAYER_BUILD_TESTING_SAVE)
 
     # TagLib only sets INSTALL_INTERFACE include dirs on its `tag` target; expose
     # the source tree so `#include <taglib/...>` works when consumed via subdir.

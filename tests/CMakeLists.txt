@@ -9,7 +9,13 @@ enable_language(C)
 # Build the dummy plugin modules first; the test loads them at runtime.
 add_library(vtp_test_dummy_input MODULE plugins/dummy_input.c)
 add_library(vtp_test_bad_abi     MODULE plugins/bad_abi.c)
-foreach(mod vtp_test_dummy_input vtp_test_bad_abi)
+add_library(vtp_test_legacy_v2    MODULE plugins/legacy_v2_input.c)
+add_library(vtp_test_dummy_summon MODULE plugins/dummy_summon.c)
+foreach(mod
+        vtp_test_dummy_input
+        vtp_test_bad_abi
+        vtp_test_legacy_v2
+        vtp_test_dummy_summon)
     set_target_properties(${mod} PROPERTIES
         PREFIX ""
         C_VISIBILITY_PRESET hidden
@@ -49,8 +55,19 @@ target_include_directories(vtplayer_tests PRIVATE
 target_link_libraries(vtplayer_tests PRIVATE ventty ${CMAKE_DL_LIBS})
 
 # Point the test at the freshly-built plugin modules and ensure they exist.
-add_dependencies(vtplayer_tests vtp_test_dummy_input vtp_test_bad_abi)
+add_dependencies(vtplayer_tests
+    vtp_test_dummy_input
+    vtp_test_bad_abi
+    vtp_test_legacy_v2
+    vtp_test_dummy_summon)
 target_compile_definitions(vtplayer_tests PRIVATE
     DUMMY_PLUGIN_DIR="$<TARGET_FILE_DIR:vtp_test_dummy_input>")
 
-add_test(NAME vtplayer_tests COMMAND vtplayer_tests)
+add_test(NAME vtplayer_tests COMMAND $<TARGET_FILE:vtplayer_tests>)
+set_tests_properties(vtplayer_tests PROPERTIES
+    WORKING_DIRECTORY $<TARGET_FILE_DIR:vtplayer_tests>)
+
+add_custom_target(check
+    COMMAND ${CMAKE_CTEST_COMMAND} --test-dir ${CMAKE_BINARY_DIR} --output-on-failure
+    DEPENDS vtplayer_tests
+    USES_TERMINAL)

@@ -227,6 +227,12 @@ namespace vtplayer
                                         _searchDialog->cursorScreenY());
                 _terminal->setCursorVisible(true);
             }
+            else if (_summonTrackDialog && _summonTrackDialog->wantsCursor())
+            {
+                _terminal->setCursorPos(_summonTrackDialog->cursorScreenX(),
+                                        _summonTrackDialog->cursorScreenY());
+                _terminal->setCursorVisible(true);
+            }
             else if (_textInputDialog && _textInputDialog->wantsCursor())
             {
                 _terminal->setCursorPos(_textInputDialog->cursorScreenX(),
@@ -489,6 +495,40 @@ namespace vtplayer
                                        if (_terminal)
                                            _terminal->forceRedraw(); });
 
+        _summonTrackDialog = std::make_unique<SummonTrackDialog>();
+        _summonTrackDialog->setTheme(_theme);
+        {
+            std::vector<SummonTrackDialog::Provider> providers;
+            for (auto const & provider : _pluginHost.summonProviders())
+            {
+                providers.push_back(SummonTrackDialog::Provider{
+                    provider.plugin,
+                    provider.handle,
+                    provider.label,
+                });
+            }
+            _summonTrackDialog->setProviders(std::move(providers));
+        }
+        _summonTrackDialog->setDownloadDirectoryProvider([this]
+                                                         {
+                                                             if (_fileBrowser)
+                                                                 return _fileBrowser->currentDirectory();
+                                                             std::error_code ec;
+                                                             auto cwd = std::filesystem::current_path(ec);
+                                                             return ec ? std::filesystem::path(".") : cwd;
+                                                         });
+        _summonTrackDialog->setOnDownloadFinished([this](std::filesystem::path const &path)
+                                                  {
+                                                      if (_fileBrowser
+                                                          && _fileBrowser->currentDirectory()
+                                                                 == path.parent_path())
+                                                      {
+                                                          _fileBrowser->refresh();
+                                                      }
+                                                      if (_terminal)
+                                                          _terminal->forceRedraw();
+                                                  });
+
         _tagEditDialog = std::make_unique<TagEditDialog>();
         _tagEditDialog->setTheme(_theme);
         _tagEditDialog->setOnSave([this](std::vector<std::filesystem::path> const &targets,
@@ -668,6 +708,14 @@ namespace vtplayer
         // output can corrupt the restored terminal.
         _audio.shutdown();
 
+        // The summon dialog may own worker threads calling plugin interfaces.
+        // Tear it down before PluginHost destroys provider handles and dlcloses.
+        if (_summonTrackDialog)
+        {
+            _summonTrackDialog->close();
+            _summonTrackDialog.reset();
+        }
+
         // Unload plugins only after the audio engine has fully stopped: a live
         // PluginSource holds pointers into the module's code, so dlclose() any
         // earlier would risk a use-after-unmap crash.
@@ -827,6 +875,12 @@ namespace vtplayer
         if (_searchDialog && _searchDialog->isOpen())
         {
             _searchDialog->draw(*_rootWindow);
+        }
+
+        // Track summon dialog (overlay).
+        if (_summonTrackDialog && _summonTrackDialog->isOpen())
+        {
+            _summonTrackDialog->draw(*_rootWindow);
         }
 
         // Tag-edit dialog (overlay).
@@ -1315,6 +1369,14 @@ namespace vtplayer
         {
             _searchDialog->handleKey(event);
             if (!_searchDialog->isOpen() && _terminal)
+                _terminal->forceRedraw();
+            return;
+        }
+
+        if (_summonTrackDialog && _summonTrackDialog->isOpen())
+        {
+            _summonTrackDialog->handleKey(event);
+            if (!_summonTrackDialog->isOpen() && _terminal)
                 _terminal->forceRedraw();
             return;
         }
@@ -2267,6 +2329,7 @@ namespace vtplayer
             if (ctx.libraryRootConfigured)
                 add("Go to library root", MenuAction::GoToLibraryRoot);
             add("Set current directory as library root", MenuAction::SetLibraryRoot);
+            add("Summon Track", MenuAction::SummonTrack);
             add("Exit", MenuAction::Exit);
             return;
         }
@@ -2904,7 +2967,27 @@ namespace vtplayer
         case MenuAction::SetLibraryRoot:
             if (_fileBrowser)
             {
-                setLibraryRoot(_fileBrowser->currentDirectory());
+                auto const root = _fileBrowser->currentDirectory();
+                if (_confirmDialog && shouldConfirmLibraryRootChange(root))
+                {
+                    _confirmDialog->setOnConfirm(
+                        [this, root](bool yes)
+                        {
+                            if (yes)
+                                setLibraryRoot(root);
+                            if (_terminal)
+                                _terminal->forceRedraw();
+                        });
+                    _confirmDialog->open("Replace Library Root",
+                                         "Discard current library root and rescan here?",
+                                         /*defaultYes=*/false);
+                    if (_terminal)
+                        _terminal->forceRedraw();
+                }
+                else
+                {
+                    setLibraryRoot(root);
+                }
             }
             break;
         case MenuAction::GoToLibraryRoot:
@@ -2914,6 +2997,10 @@ namespace vtplayer
                 if (std::filesystem::is_directory(_config.libraryRoot, ec))
                     _fileBrowser->setDirectory(_config.libraryRoot);
             }
+            break;
+        case MenuAction::SummonTrack:
+            if (_summonTrackDialog)
+                _summonTrackDialog->open();
             break;
         case MenuAction::RescanLibrary:
             scanLibrary(/*force=*/true);
@@ -3559,6 +3646,22 @@ namespace vtplayer
             _searchDialog->invalidateNav();
 
         scanLibrary(/*force=*/true);
+    }
+
+    bool Application::shouldConfirmLibraryRootChange(std::filesystem::path const & root) const
+    {
+        if (_config.libraryRoot.empty() || !_libraryRepo)
+            return false;
+
+        std::error_code ec;
+        if (!std::filesystem::exists(_libraryRepo->path(), ec) || ec)
+            return false;
+
+        ec.clear();
+        if (std::filesystem::equivalent(_config.libraryRoot, root, ec) && !ec)
+            return false;
+
+        return true;
     }
 
     void Application::locatePlayingInLibrary()

@@ -67,6 +67,7 @@ static const VtpPluginManifest kManifest = {
     "bad-abi",
     "0.1.0",
     &kInput,
+    NULL,
 };
 
 VTP_EXPORT const VtpPluginManifest *vtp_register(uint32_t host_abi, const VtpHostApi *host)

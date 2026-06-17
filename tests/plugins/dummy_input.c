@@ -117,6 +117,7 @@ static const VtpPluginManifest kManifest = {
     "dummy-sine",
     "0.1.0",
     &kInput,
+    NULL,
 };
 
 VTP_EXPORT const VtpPluginManifest *vtp_register(uint32_t host_abi, const VtpHostApi *host)

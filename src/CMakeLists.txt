@@ -43,6 +43,8 @@ add_executable(vtplayer
     view/LibraryView.cpp
     view/LibrarySearchDialog.h
     view/LibrarySearchDialog.cpp
+    view/SummonTrackDialog.h
+    view/SummonTrackDialog.cpp
     view/PlayQueueView.h
     view/PlayQueueView.cpp
     view/TagEditDialog.h

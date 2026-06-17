@@ -4,7 +4,6 @@
 .agents/
 .claude/
 build/
-build-tests/
 cmake-build-*/
 local/
 AGENTS.md

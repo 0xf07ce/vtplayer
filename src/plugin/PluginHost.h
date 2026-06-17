@@ -8,6 +8,7 @@
 #include <vector>
 
 struct VtpPluginManifest;
+struct VtpSummonPlugin;
 
 namespace vtplayer
 {
@@ -61,6 +62,18 @@ public:
     /// Snapshot of every currently loaded plugin, in load order.
     std::vector<PluginInfo> plugins() const;
 
+    /// Stable view of a loaded summon provider. Valid until shutdown().
+    struct SummonProvider
+    {
+        VtpSummonPlugin const * plugin = nullptr;
+        void *                  handle = nullptr;
+        std::string             label;
+        std::string             pluginName;
+    };
+
+    /// Snapshot of currently loaded summon providers, in load order.
+    std::vector<SummonProvider> summonProviders() const;
+
     /// Canonical plugin directory: `~/.config/vtplayer/plugins`. Empty if
     /// $HOME is unset.
     static std::filesystem::path defaultDir();
@@ -71,6 +84,9 @@ private:
         void *                    handle   = nullptr;
         VtpPluginManifest const * manifest = nullptr;
         std::string               path;
+        VtpSummonPlugin const *   summon = nullptr;
+        void *                    summonHandle = nullptr;
+        std::string               summonLabel;
     };
 
     void loadOne(std::filesystem::path const & file);

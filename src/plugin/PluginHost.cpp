@@ -7,6 +7,7 @@
 #include "vtplayer/plugin.h"
 
 #include <atomic>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
@@ -25,6 +26,9 @@ namespace
 // Host-side debug flag, shared with the C log callback below. Set once before
 // loadAll(); read from any thread a plugin might log on.
 std::atomic<bool> g_hostDebug{false};
+constexpr uint32_t kLegacyAbiVersion = 2u;
+
+#define VTP_FIELD_END(type, field) (offsetof(type, field) + sizeof(((type *)nullptr)->field))
 
 // ---- VtpHostApi service implementations (C linkage, static lifetime) ----
 
@@ -115,6 +119,50 @@ bool isLoadableModule(fs::path const & p)
     return ext == ".so" || ext == ".dylib";
 }
 
+bool manifestHasInput(VtpPluginManifest const * manifest)
+{
+    return manifest
+           && manifest->struct_size >= VTP_FIELD_END(VtpPluginManifest, input)
+           && manifest->input != nullptr;
+}
+
+bool manifestHasSummon(VtpPluginManifest const * manifest)
+{
+    return manifest
+           && manifest->abi_version >= VTP_PLUGIN_ABI_VERSION
+           && manifest->struct_size >= VTP_FIELD_END(VtpPluginManifest, summon)
+           && manifest->summon != nullptr;
+}
+
+std::string manifestName(VtpPluginManifest const * manifest, std::string const & path)
+{
+    if (manifest && manifest->struct_size >= VTP_FIELD_END(VtpPluginManifest, name)
+        && manifest->name && *manifest->name)
+    {
+        return manifest->name;
+    }
+    return fs::path(path).filename().string();
+}
+
+std::string manifestVersion(VtpPluginManifest const * manifest)
+{
+    if (manifest && manifest->struct_size >= VTP_FIELD_END(VtpPluginManifest, version)
+        && manifest->version && *manifest->version)
+    {
+        return manifest->version;
+    }
+    return "0.0.0";
+}
+
+bool validateSummon(VtpSummonPlugin const * summon)
+{
+    if (!summon)
+        return false;
+    if (summon->struct_size < VTP_FIELD_END(VtpSummonPlugin, download))
+        return false;
+    return summon->create && summon->destroy && summon->query && summon->download;
+}
+
 } // namespace
 
 PluginHost::~PluginHost()
@@ -182,6 +230,8 @@ void PluginHost::loadOne(fs::path const & file)
 
     VtpPluginManifest const * manifest = reg(VTP_PLUGIN_ABI_VERSION, &hostApi());
     if (!manifest)
+        manifest = reg(kLegacyAbiVersion, &hostApi());
+    if (!manifest)
     {
         loaderLog(_debug, "plugin declined to register: %s", path.c_str());
         dlclose(handle);
@@ -193,32 +243,78 @@ void PluginHost::loadOne(fs::path const & file)
     // Gate on it FIRST: a mismatch means the rest of the struct may have a
     // different layout, and dereferencing a relocated field (e.g. `input`)
     // would fault. Skipping here is how a stale plugin is ignored, not crashed.
-    if (manifest->abi_version != VTP_PLUGIN_ABI_VERSION)
+    if (manifest->struct_size < VTP_FIELD_END(VtpPluginManifest, abi_version))
+    {
+        loaderLog(_debug, "manifest smaller than ABI field, skipping: %s", path.c_str());
+        dlclose(handle);
+        return;
+    }
+
+    if (manifest->abi_version != VTP_PLUGIN_ABI_VERSION
+        && manifest->abi_version != kLegacyAbiVersion)
     {
         loaderLog(_debug, "ABI version mismatch, skipping: %s", path.c_str());
         dlclose(handle);
         return;
     }
 
-    // Defense in depth: even at a matching ABI, refuse a manifest too small to
-    // contain the fields we are about to read (a truncated or foreign build).
-    if (manifest->struct_size < sizeof(VtpPluginManifest))
+    // Defense in depth: refuse a manifest too small to contain the v2 prefix
+    // fields we are about to read. ABI v3 appended summon after this prefix.
+    if (manifest->struct_size < VTP_FIELD_END(VtpPluginManifest, input))
     {
-        loaderLog(_debug, "manifest smaller than expected, skipping: %s", path.c_str());
+        loaderLog(_debug, "manifest smaller than input field, skipping: %s", path.c_str());
         dlclose(handle);
         return;
     }
 
-    if (!manifest->input)
+    bool supported = false;
+    VtpSummonPlugin const * summon = nullptr;
+    void * summonHandle = nullptr;
+    std::string summonLabel;
+
+    if (manifestHasInput(manifest))
     {
-        loaderLog(_debug, "manifest carries no input plugin, skipping: %s", path.c_str());
+        DecoderRegistry::instance().registerInput(manifest->input);
+        supported = true;
+    }
+
+    if (manifestHasSummon(manifest))
+    {
+        if (!validateSummon(manifest->summon))
+        {
+            loaderLog(_debug, "summon interface is incomplete, ignoring: %s", path.c_str());
+        }
+        else
+        {
+            summon = manifest->summon;
+            summonHandle = summon->create(&hostApi());
+            if (summonHandle)
+            {
+                summonLabel = (summon->label && *summon->label)
+                                  ? summon->label
+                                  : ((summon->id && *summon->id) ? summon->id : "Summon");
+                supported = true;
+            }
+            else
+            {
+                loaderLog(_debug, "summon provider create failed, ignoring: %s", path.c_str());
+                summon = nullptr;
+            }
+        }
+    }
+
+    if (!supported)
+    {
+        loaderLog(_debug, "manifest carries no supported interface, skipping: %s", path.c_str());
+        if (summon && summon->destroy && summonHandle)
+            summon->destroy(summonHandle);
         dlclose(handle);
         return;
     }
-    DecoderRegistry::instance().registerInput(manifest->input);
 
-    loaderLog(_debug, "loaded plugin: %s", manifest->name ? manifest->name : path.c_str());
-    _loaded.push_back(Loaded{handle, manifest, path});
+    std::string const loadedName = manifestName(manifest, path);
+    loaderLog(_debug, "loaded plugin: %s", loadedName.c_str());
+    _loaded.push_back(Loaded{handle, manifest, path, summon, summonHandle, summonLabel});
 }
 
 std::vector<PluginHost::PluginInfo> PluginHost::plugins() const
@@ -228,17 +324,26 @@ std::vector<PluginHost::PluginInfo> PluginHost::plugins() const
     for (auto const & l : _loaded)
     {
         PluginInfo info;
-        if (l.manifest && l.manifest->name && *l.manifest->name)
-            info.name = l.manifest->name;
-        else
-            info.name = fs::path(l.path).filename().string();
-
-        if (l.manifest && l.manifest->version && *l.manifest->version)
-            info.version = l.manifest->version;
-        else
-            info.version = "0.0.0";
-
+        info.name = manifestName(l.manifest, l.path);
+        info.version = manifestVersion(l.manifest);
         out.push_back(std::move(info));
+    }
+    return out;
+}
+
+std::vector<PluginHost::SummonProvider> PluginHost::summonProviders() const
+{
+    std::vector<SummonProvider> out;
+    for (auto const & l : _loaded)
+    {
+        if (!l.summon)
+            continue;
+        SummonProvider provider;
+        provider.plugin = l.summon;
+        provider.handle = l.summonHandle;
+        provider.label = l.summonLabel;
+        provider.pluginName = manifestName(l.manifest, l.path);
+        out.push_back(std::move(provider));
     }
     return out;
 }
@@ -253,6 +358,8 @@ void PluginHost::shutdown()
 
     for (auto it = _loaded.rbegin(); it != _loaded.rend(); ++it)
     {
+        if (it->summon && it->summon->destroy && it->summonHandle)
+            it->summon->destroy(it->summonHandle);
         if (it->handle)
             dlclose(it->handle);
     }

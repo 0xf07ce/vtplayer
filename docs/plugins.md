@@ -27,15 +27,20 @@ The boundary is pure C POD on purpose:
   structs, `float` buffers, and function pointers. **No C++/STL types**
   (`std::string`, `std::filesystem::path`, `TrackInfo`, `ventty::*`) ever cross.
 
-### Plugin kind
+### Plugin interfaces
 
-There is exactly **one** plugin kind: an **input plugin** — a new decode /
-sample-source backend that claims one or more file extensions and produces
-audio frames.
+There are two plugin interfaces. A plugin may expose either one, or both:
+
+- **Input plugin** — a new decode / sample-source backend that claims one or
+  more file extensions and produces audio frames.
+- **Summon plugin** — a provider for the Summon Track dialog. It searches a
+  catalog/service and downloads the selected result into the current
+  FileBrowser directory.
 
 An input plugin lets vtplayer play formats libav cannot — chip-tune / retro
-formats (VGM, ROL, SID, …), trackers, or any custom synthesis — by handing the
-host decoded PCM on demand.
+formats (VGM, ROL, SID, ...), trackers, or any custom synthesis — by handing the
+host decoded PCM on demand. A summon plugin lets vtplayer discover or acquire
+tracks without hardcoding a service into the host UI.
 
 ## 2. The contract at a glance
 
@@ -43,14 +48,15 @@ host decoded PCM on demand.
 |------|-------|
 | Header | `vtplayer/plugin.h` (MIT, depends only on `<stddef.h>` / `<stdint.h>`) |
 | Exported symbol | `const VtpPluginManifest *vtp_register(uint32_t host_abi, const VtpHostApi *host)` |
-| Current ABI version | `VTP_PLUGIN_ABI_VERSION` = **2** |
+| Current ABI version | `VTP_PLUGIN_ABI_VERSION` = **3** |
 | Output sample format | interleaved **float32**, **stereo** (`VTP_CHANNELS` = 2), **44100 Hz** (`VTP_SAMPLE_RATE`) |
 | Plugin install dir | `~/.config/vtplayer/plugins/` |
 | Loadable file extensions | `.so`, `.dylib` |
 
-The host calls `vtp_register` exactly once, during startup, before the terminal
-UI and audio device come up. Your plugin returns a pointer to a **statically
-allocated** manifest, or `NULL` to decline.
+The host calls `vtp_register` during startup, before the terminal UI and audio
+device come up. ABI v3 is tried first; if the plugin returns `NULL`, the host
+tries ABI v2 as a legacy fallback for old input plugins. Your plugin returns a
+pointer to a **statically allocated** manifest, or `NULL` to decline.
 
 ## 3. ABI reference
 
@@ -72,7 +78,7 @@ VTP_EXPORT const VtpPluginManifest *vtp_register(uint32_t host_abi,
   return `NULL`. The host *also* re-checks `manifest->abi_version` independently
   and skips you on mismatch — so returning a manifest with the wrong
   `abi_version` is a safe no-op, but declining early is cleaner.
-- `host` points to the host service table (§3.5). You may copy the struct; the
+- `host` points to the host service table (§3.6). You may copy the struct; the
   pointer and any strings it returns are valid for the process lifetime.
 - Return a manifest with **static lifetime**. The host stores the pointer and
   never copies the pointed-to data.
@@ -86,7 +92,8 @@ typedef struct VtpPluginManifest
     uint32_t              abi_version;  /* set to VTP_PLUGIN_ABI_VERSION */
     const char           *name;         /* "libvgm", ... (UTF-8, static lifetime) */
     const char           *version;     /* "0.1.0" (free-form, static lifetime) */
-    const VtpInputPlugin *input;        /* the decode backend; MUST be non-NULL */
+    const VtpInputPlugin  *input;       /* optional decode backend */
+    const VtpSummonPlugin *summon;      /* optional Summon Track provider */
 } VtpPluginManifest;
 ```
 
@@ -95,8 +102,12 @@ typedef struct VtpPluginManifest
 - `name` is shown in the Help → Plugins tab and used in log lines. If `NULL`,
   the host falls back to the filename.
 - `version` is informational. If `NULL`, the host shows `"0.0.0"`.
-- `input` MUST point to a statically allocated `VtpInputPlugin`. A manifest with
-  `input == NULL` is rejected and the module is unloaded.
+- `input`, when non-NULL, MUST point to a statically allocated
+  `VtpInputPlugin`.
+- `summon`, when non-NULL, MUST point to a statically allocated
+  `VtpSummonPlugin`.
+- A manifest with no supported interface (`input == NULL` and
+  `summon == NULL`, or only incomplete interfaces) is rejected and unloaded.
 
 ### 3.3 `VtpInputPlugin` — the decode backend
 
@@ -141,7 +152,7 @@ The function pointers, and the contract for each:
 | `duration(h)` | UI | Total length in seconds, or `<= 0` if unknown. The host reads this once right after `open`. |
 | `seekable(h)` | UI | Return `1` if `seek` is meaningful, else `0`. The host reads this once after `open`. |
 | `close(h)` | UI | Release everything for `h`. The host calls this exactly once per successful `open`. After `close`, the host never touches `h` again. |
-| `read_tags(path, out)` | **scanner (background)** | *Optional* (may be `NULL`). A **handle-free** metadata probe used by the library scanner. See §3.4. |
+| `read_tags(path, out)` | **scanner (background)** | *Optional* (may be `NULL`). A **handle-free** metadata probe used by the library scanner. See §3.5. |
 
 **EOF semantics (critical).** `read` returning **fewer frames than requested**
 is interpreted by the host as **permanent end-of-stream** — it flags track-end
@@ -156,7 +167,92 @@ read. Consequences:
   (chip emulation) has no such problem.
 - `read` may be called with `frames == 0`; return `0`.
 
-### 3.4 `VtpTagOut` and `read_tags`
+### 3.4 `VtpSummonPlugin` — Summon Track provider
+
+```c
+#define VTP_SUMMON_RESULT_DISABLED 1u
+
+typedef struct VtpSummonQueryRequest
+{
+    uint32_t    struct_size;
+    const char *query;
+    const char *current_dir;
+    uint32_t    max_results;
+} VtpSummonQueryRequest;
+
+typedef struct VtpSummonResult
+{
+    uint32_t    struct_size;
+    const char *title;
+    const char *channel;
+    const char *duration;
+    const char *url;
+    const char *opaque;
+    uint32_t    flags;
+} VtpSummonResult;
+
+typedef struct VtpSummonDownloadRequest
+{
+    uint32_t               struct_size;
+    const char            *current_dir;
+    const VtpSummonResult *selected_result;
+} VtpSummonDownloadRequest;
+
+typedef struct VtpSummonDownloadOut
+{
+    uint32_t struct_size;
+    char     output_path[4096];
+    int      skipped;
+    char     message[512];
+} VtpSummonDownloadOut;
+
+typedef struct VtpSummonPlugin
+{
+    uint32_t    struct_size;
+    const char *id;
+    const char *label;
+
+    void *(*create)(const VtpHostApi *host);
+    void  (*destroy)(void *h);
+    void  (*cancel)(void *h);
+
+    int (*query)(void *h,
+                 const VtpSummonQueryRequest *request,
+                 VtpSummonResult *results,
+                 size_t *n_results);
+
+    int (*download)(void *h,
+                    const VtpSummonDownloadRequest *request,
+                    VtpSummonDownloadOut *out);
+} VtpSummonPlugin;
+```
+
+`create(host)` is called once when the plugin loads. Return an opaque provider
+handle, or `NULL` to make the host ignore this summon interface. `destroy(h)` is
+called before the module is unloaded, after the dialog has joined any worker
+thread.
+
+`query` runs on a host worker thread. The host passes the query string, the
+current FileBrowser directory, and a maximum result count. It also passes a
+host-owned `results` array and `*n_results` capacity; fill up to that many
+slots, then set `*n_results` to the number written. Return `0` on success.
+Result strings must remain valid until the next `query`, `download`, `cancel`,
+or `destroy` call on the same handle; the host copies them immediately.
+
+`download` runs on a host worker thread for the selected row. Write the final
+path into `out->output_path` on success. If the target already exists and you
+intentionally skip work, return `0` and set `out->skipped = 1`. Return non-zero
+for failure or cancellation.
+
+`cancel(h)` may be called from the UI thread while `query` or `download` is
+running. It should ask the in-flight operation to stop promptly. For spawned
+processes, put them in their own process group and kill the group on cancel.
+
+Use `VTP_SUMMON_RESULT_DISABLED` for a visible result row that should not
+download anything (for example, "yt-dlp is not available"). The host displays
+the row but ignores Enter on it.
+
+### 3.5 `VtpTagOut` and `read_tags`
 
 ```c
 typedef struct VtpTagOut
@@ -192,7 +288,7 @@ claims.
   playing through `read` on the audio thread. It shares no handle with playback,
   so just keep it free of unsynchronized global mutable state.
 
-### 3.5 `VtpHostApi` — services the host provides
+### 3.6 `VtpHostApi` — services the host provides
 
 ```c
 typedef struct VtpHostApi
@@ -246,6 +342,9 @@ These are the invariants the host guarantees, and the ones you must uphold.
 - A module is **never `dlclose`d while a source from it is active.** The plugin
   pointer outlives every `PluginSource` the host builds from it. Shutdown order:
   audio stops → registry cleared → modules unloaded.
+- A summon provider is destroyed only after the Summon Track dialog has closed
+  and joined its worker thread. Shutdown order for summon is:
+  dialog closes/joins → provider `destroy` → module unloaded.
 
 **You must guarantee to the host:**
 
@@ -258,6 +357,7 @@ These are the invariants the host guarantees, and the ones you must uphold.
 - Handles are opaque to the host; you own their memory and free it in `close`.
 - `read_tags`, if provided, must be safe to call on a background thread with no
   shared handle.
+- `query` and `download` may block, but they must honor `cancel` promptly.
 
 ## 5. How the host uses your plugin
 
@@ -278,6 +378,11 @@ Understanding the host flow helps you fill the contract correctly.
 - **Gain.** Plugin sources are assumed to carry no ReplayGain tags, so the host
   uses its runtime auto-gain path (targeting roughly −18 dBFS). You just emit
   samples around `[-1, 1]`.
+- **Summon Track.** On dialog open, the host lists every loaded
+  `VtpSummonPlugin` as a tab using `label`. Each provider gets its own query,
+  result list, selection, scroll offset, and status. Enter with no results calls
+  `query`; Enter on a normal result calls `download`; Enter on a disabled result
+  does nothing.
 
 ## 6. Complete example — a minimal input plugin
 
@@ -367,6 +472,7 @@ static const VtpPluginManifest kManifest = {
     "myplugin",
     "0.1.0",
     &kInput,
+    NULL,
 };
 
 VTP_EXPORT const VtpPluginManifest *vtp_register(uint32_t host_abi,
@@ -379,7 +485,96 @@ VTP_EXPORT const VtpPluginManifest *vtp_register(uint32_t host_abi,
 }
 ```
 
-## 7. Building the plugin
+## 7. Complete example — a minimal summon plugin
+
+This provider returns one synthetic row and pretends the download succeeded.
+Real providers usually keep per-provider state in the handle returned by
+`create`, populate result strings from that handle, and perform network or
+process work inside `query` / `download`.
+
+```c
+/* mysummon.c — a minimal vtplayer summon plugin (MIT-licensable). */
+#include "vtplayer/plugin.h"
+
+#include <stddef.h>
+#include <stdint.h>
+
+static int g_handle;
+
+static void *my_create(const VtpHostApi *host)
+{
+    (void) host;
+    return &g_handle;
+}
+
+static void my_destroy(void *h) { (void) h; }
+static void my_cancel(void *h) { (void) h; }
+
+static int my_query(void *h,
+                    const VtpSummonQueryRequest *request,
+                    VtpSummonResult *results,
+                    size_t *n_results)
+{
+    (void) h;
+    (void) request;
+    if (!results || !n_results || *n_results == 0)
+        return -1;
+
+    results[0].struct_size = sizeof(VtpSummonResult);
+    results[0].title = "Example Track";
+    results[0].channel = "Example";
+    results[0].duration = "3:21";
+    results[0].url = "https://example.invalid/track";
+    results[0].opaque = "";
+    results[0].flags = 0;
+    *n_results = 1;
+    return 0;
+}
+
+static int my_download(void *h,
+                       const VtpSummonDownloadRequest *request,
+                       VtpSummonDownloadOut *out)
+{
+    (void) h;
+    (void) request;
+    if (!out) return -1;
+    out->skipped = 0;
+    out->output_path[0] = '\0';
+    out->message[0] = '\0';
+    return 0;
+}
+
+static const VtpSummonPlugin kSummon = {
+    sizeof(VtpSummonPlugin),
+    "mysummon",
+    "My Summon",
+    my_create,
+    my_destroy,
+    my_cancel,
+    my_query,
+    my_download,
+};
+
+static const VtpPluginManifest kManifest = {
+    sizeof(VtpPluginManifest),
+    VTP_PLUGIN_ABI_VERSION,
+    "mysummon",
+    "0.1.0",
+    NULL,
+    &kSummon,
+};
+
+VTP_EXPORT const VtpPluginManifest *vtp_register(uint32_t host_abi,
+                                                 const VtpHostApi *host)
+{
+    (void) host;
+    if (host_abi != VTP_PLUGIN_ABI_VERSION)
+        return NULL;
+    return &kManifest;
+}
+```
+
+## 8. Building the plugin
 
 The plugin needs `vtplayer/plugin.h` on its include path and must be built as a
 shared **module** with **hidden visibility** (so `vtp_register` is the only
@@ -423,7 +618,7 @@ cc -std=c11 -O2 -fPIC -fvisibility=hidden \
 A C++ or Rust plugin is fine too — just export `extern "C"` `vtp_register` and
 keep the boundary POD.
 
-## 8. Installing & loading
+## 9. Installing & loading
 
 1. Copy the built module into the plugin directory:
 
@@ -443,46 +638,63 @@ keep the boundary POD.
 
    On success you get `[plugin] loaded plugin: myplugin`. On rejection you get a
    reason (`dlopen failed`, `no vtp_register symbol`, `ABI version mismatch`,
-   `manifest carries no input plugin`).
+   `manifest carries no supported interface`).
 
 3. Confirm in the UI: open **Help** and switch to the **Plugins** tab — your
    plugin's `name` and `version` are listed there.
 
 4. Play a file with your extension, or let the library scan index it.
 
-## 9. Verification checklist
+## 10. Verification checklist
 
 Before shipping, confirm:
 
 - [ ] `vtp_register` is the only exported symbol (built with hidden visibility).
 - [ ] `vtp_register` returns `NULL` when `host_abi != VTP_PLUGIN_ABI_VERSION`.
 - [ ] Every `struct_size` field equals the `sizeof` of its struct.
-- [ ] `manifest->input` is non-NULL and points to static storage.
-- [ ] `exts` are lowercase, no dot, static lifetime; `n_exts` matches.
-- [ ] `open` returns `NULL` on failure and a non-NULL handle on success.
-- [ ] `read` writes interleaved stereo float32, returns frame count, and only
+- [ ] At least one manifest interface pointer is non-NULL and points to static
+      storage.
+- [ ] For input plugins: `exts` are lowercase, no dot, static lifetime;
+      `n_exts` matches.
+- [ ] For input plugins: `open` returns `NULL` on failure and a non-NULL handle
+      on success.
+- [ ] For input plugins: `read` writes interleaved stereo float32, returns frame
+      count, and only
       ever returns a short count at true end-of-stream. It never blocks.
-- [ ] `read` is allocation-free / lock-free on the hot path.
-- [ ] `close` frees the handle and is called exactly once per successful `open`.
-- [ ] `seek` returns 0 on success; `seekable` reflects reality.
-- [ ] `read_tags` (if present) is handle-free and thread-safe.
+- [ ] For input plugins: `read` is allocation-free / lock-free on the hot path.
+- [ ] For input plugins: `close` frees the handle and is called exactly once per
+      successful `open`.
+- [ ] For input plugins: `seek` returns 0 on success; `seekable` reflects
+      reality.
+- [ ] For input plugins: `read_tags` (if present) is handle-free and
+      thread-safe.
+- [ ] For summon plugins: `query` fills no more than `*n_results` slots and
+      keeps result strings valid until the next provider call.
+- [ ] For summon plugins: `download` writes `out->output_path` on success and
+      uses `out->skipped = 1` for intentional existing-file skips.
+- [ ] For summon plugins: `cancel` stops in-flight work promptly.
 - [ ] No writes to `stdout`/`stderr` — use `host->log`.
-- [ ] `--debug` shows `loaded plugin: <name>`; the Plugins tab lists it; a test
-      file plays end to end.
+- [ ] `--debug` shows `loaded plugin: <name>`; the Plugins tab lists it; the
+      input path plays a test file or the summon path appears in Summon Track.
 
-## 10. ABI stability rules
+## 11. ABI stability rules
 
 - The header begins every struct with `struct_size` and only ever **appends**
   fields — never reorders or removes them. A reader uses `struct_size` to learn
   which fields the other side actually populated, so a newer host and an older
   plugin (or vice versa) interoperate for the shared prefix.
-- `VTP_PLUGIN_ABI_VERSION` is bumped **only** on a breaking change (a field's
-  meaning changes, or one is removed). Appending fields does **not** bump it.
-- Pin your plugin to the ABI version it was built against and decline mismatched
-  hosts; the host independently re-checks and skips on mismatch, so a stale
-  plugin can never crash a newer host — it just won't load.
+- `VTP_PLUGIN_ABI_VERSION` is bumped **only** on a breaking change, or when the
+  host must negotiate a new top-level interface. ABI v3 appended
+  `VtpPluginManifest::summon`.
+- ABI v3 hosts still load ABI v2 input plugins. The host calls
+  `vtp_register(3, ...)` first, then `vtp_register(2, ...)` if the first call
+  returns `NULL`. A v2 manifest has no summon field and simply exposes no
+  Summon Track provider.
+- Pin your plugin to the ABI version it was built against and decline
+  unsupported hosts; the host independently re-checks and skips on mismatch, so
+  a stale plugin can never crash a newer host — it just won't load.
 
-## 11. Common pitfalls
+## 12. Common pitfalls
 
 - **Blocking in `read`.** The single most common mistake. `read` is realtime;
   buffer your I/O elsewhere. A blocked `read` stutters or freezes audio.

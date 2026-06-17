@@ -17,6 +17,7 @@
 #include "../view/LibrarySearchDialog.h"
 #include "../view/PlaylistsView.h"
 #include "../view/PlayQueueView.h"
+#include "../view/SummonTrackDialog.h"
 #include "../view/TagEditDialog.h"
 #include "../view/TextInputDialog.h"
 #include "../view/Theme.h"
@@ -90,6 +91,7 @@ namespace vtplayer
     {
         SetLibraryRoot,
         GoToLibraryRoot,
+        SummonTrack,
         RescanLibrary,
         LocatePlaying,
         CreatePlaylist,
@@ -383,6 +385,7 @@ namespace vtplayer
 
         /// Re-point the library at `root`, wiping any prior index, then scan.
         void setLibraryRoot(std::filesystem::path root);
+        bool shouldConfirmLibraryRootChange(std::filesystem::path const & root) const;
 
         /// Switch the left panel to Library and move the cursor to the track
         /// that is currently playing. No-op if nothing is playing or the
@@ -534,6 +537,7 @@ namespace vtplayer
         /// back to an action (the item set varies with `_leftMode`).
         std::vector<MenuAction> _contextMenuActions;
         std::unique_ptr<LibrarySearchDialog> _searchDialog;
+        std::unique_ptr<SummonTrackDialog> _summonTrackDialog;
         std::unique_ptr<TagEditDialog> _tagEditDialog;
         std::unique_ptr<TextInputDialog> _textInputDialog;
         std::unique_ptr<ConfirmDialog> _confirmDialog;

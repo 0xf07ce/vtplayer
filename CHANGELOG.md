@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## 1.1.0 (2026-06-17)
+
+- Bumped the public plugin ABI to **3** and added a second plugin interface:
+  `VtpSummonPlugin`, a C-ABI search/download provider used by Summon Track.
+  `VtpPluginManifest` now carries optional `input` and `summon` interface
+  pointers, so a plugin may expose an input backend, a summon provider, or
+  both.
+- Preserved ABI v2 input-plugin compatibility. `PluginHost` now negotiates
+  `vtp_register()` with ABI 3 first, then ABI 2 as a legacy fallback, validates
+  manifests by prefix size/field offset, and only rejects plugins that expose no
+  supported interface.
+- Added host-side summon provider lifecycle management: loaded providers are
+  exposed to the application with stable handles and labels, `destroy()` is
+  called before module unload, and `Application::cleanup()` closes the Summon
+  Track dialog before `PluginHost::shutdown()` so worker threads cannot outlive
+  provider handles.
+- Reworked Summon Track to be provider-driven instead of hardcoded. The dialog
+  now shows one tab per loaded provider, keeps query/results/selection/scroll
+  status per tab, calls provider `query()` / `download()` on worker threads,
+  honors `cancel()`, ignores disabled result rows, and shows
+  "No summon providers available" when no provider is loaded.
+- Extended plugin tests with a true legacy ABI v2 input fixture and a dummy ABI
+  v3 summon fixture, covering v2 fallback loading, summon provider listing, and
+  the existing bad-ABI skip path.
+- Updated `docs/plugins.md` for ABI v3, input vs summon interfaces, v2
+  compatibility rules, summon lifecycle/cancellation contracts, and a minimal
+  summon provider example.
+
 ## 1.0.4 (2026-06-16)
 
 - Album and Directory library views now preserve their own selected row,

@@ -16,6 +16,7 @@
 #include "vtplayer/plugin.h"
 
 #include <cmath>
+#include <string>
 #include <vector>
 
 #ifndef DUMMY_PLUGIN_DIR
@@ -35,14 +36,39 @@ TEST_CASE("plugin host load / decode / abi-gate / unload")
     host.setDebug(false);
     host.loadFrom(DUMMY_PLUGIN_DIR);
 
-    // The good plugin registered "sine"; the bad-ABI plugin must be skipped,
-    // so its "bad" extension is absent.
+    // The good v3 plugin registered "sine"; the true legacy v2 plugin still
+    // registers "legacy"; the bad-ABI plugin must be skipped, so "bad" is absent.
     VtpInputPlugin const * sine = reg.find("sine");
     CHECK(sine != nullptr);
     CHECK(reg.find("SINE") != nullptr);   // case-insensitive lookup
     CHECK(reg.find(".sine") != nullptr);  // tolerant of a leading dot
+    CHECK(reg.find("legacy") != nullptr); // ABI v2 fallback path
     CHECK(reg.find("bad") == nullptr);    // ABI 999 → skipped
     CHECK(host.count() >= 1);
+
+    auto summon = host.summonProviders();
+    CHECK(!summon.empty());
+    bool foundDummySummon = false;
+    for (auto const & provider : summon)
+    {
+        if (provider.label == "Dummy Summon" && provider.plugin && provider.plugin->query)
+        {
+            foundDummySummon = true;
+            VtpSummonQueryRequest request{};
+            request.struct_size = sizeof(request);
+            request.query = "anything";
+            request.current_dir = ".";
+            request.max_results = 4;
+            VtpSummonResult results[4]{};
+            for (auto & result : results)
+                result.struct_size = sizeof(result);
+            std::size_t n = 4;
+            CHECK(provider.plugin->query(provider.handle, &request, results, &n) == 0);
+            CHECK(n == 1);
+            CHECK(std::string(results[0].title) == "Summoned Test Track");
+        }
+    }
+    CHECK(foundDummySummon);
 
     if (sine)
     {
