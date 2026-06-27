@@ -47,11 +47,13 @@ TEST_CASE("Action token table round-trips and rejects typos")
     CHECK_EQ(actionFromToken("cursor-down"), Action::CursorDown);
     CHECK_EQ(actionFromToken("focus-right"), Action::FocusRight);
     CHECK_EQ(actionFromToken("left-streaming"), Action::LeftModeStreaming);
+    CHECK_EQ(actionFromToken("queue-toggle"), Action::ToggleRightPanel);
     CHECK_EQ(actionFromToken("enter-visual"), Action::EnterVisual);
     CHECK_EQ(actionFromToken("remove"), Action::Remove);
     CHECK_EQ(actionFromToken("nope-not-real"), Action::None);
 
     CHECK(isKnownAction("play-pause"));
+    CHECK(isKnownAction("queue-toggle"));
     CHECK(isKnownAction("left-playlists"));
     CHECK(isKnownAction("left-artist")); // legacy alias, dispatched as Album
     CHECK(!isKnownAction("play_pause")); // wrong separator
@@ -95,6 +97,13 @@ TEST_CASE("Built-in vi preset binds the expected actions")
     r = eng.feed(K("4"));
     CHECK_EQ(actionFromToken(r.token), Action::LeftModeStreaming);
 
+    // L hides the play queue in vi too; left-panel toggle moves to <C-w>L.
+    r = eng.feed(K("L"));
+    CHECK_EQ(actionFromToken(r.token), Action::ToggleRightPanel);
+    CHECK_EQ(eng.feed(K("<C-w>")).kind, RK::None);
+    r = eng.feed(K("L"));
+    CHECK_EQ(actionFromToken(r.token), Action::ToggleLeftPanel);
+
     // gg -> cursor-home.
     CHECK_EQ(eng.feed(K("g")).kind, RK::None);
     r = eng.feed(K("g"));
@@ -128,6 +137,7 @@ TEST_CASE("Built-in default preset binds standard single keys")
     CHECK_EQ(emit("x"), Action::Stop);
     CHECK_EQ(emit("h"), Action::ToggleHelp);     // h = help (NOT a motion here)
     CHECK_EQ(emit("l"), Action::ToggleLeftPanel);// l = panel (NOT a motion here)
+    CHECK_EQ(emit("L"), Action::ToggleRightPanel);
     CHECK_EQ(emit("1"), Action::LeftModeAlbum);  // digits are commands, not counts
     CHECK_EQ(emit("2"), Action::LeftModeDirectory);
     CHECK_EQ(emit("3"), Action::LeftModePlaylists);

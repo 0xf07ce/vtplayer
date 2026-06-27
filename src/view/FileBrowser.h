@@ -64,6 +64,7 @@ public:
 
     /// Multi-selection (files only — `..` and directories never join the set).
     bool isMultiSelected(int idx) const { return _multiSelected.count(idx) > 0; }
+    std::vector<std::filesystem::path> selectedAudioPaths() const;
     void clearMultiSelection();
     void selectAllFiles();
 

@@ -27,6 +27,7 @@ namespace vtplayer
         ToggleVisualizer,
         ToggleHelp,
         ToggleLeftPanel,
+        ToggleRightPanel,
         PlayPause,
         Stop,
         NextTrack,

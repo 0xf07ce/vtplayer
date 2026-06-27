@@ -250,6 +250,29 @@ FileEntry const * FileBrowser::selectedEntry() const
     return nullptr;
 }
 
+std::vector<std::filesystem::path> FileBrowser::selectedAudioPaths() const
+{
+    std::vector<std::filesystem::path> paths;
+    for (int sel : _multiSelected)
+    {
+        if (sel >= 0 && sel < static_cast<int>(_entries.size()) && _entries[sel].isAudio)
+        {
+            paths.push_back(_entries[sel].path);
+        }
+    }
+    if (!paths.empty())
+    {
+        return paths;
+    }
+
+    auto const * entry = selectedEntry();
+    if (entry && entry->isAudio)
+    {
+        paths.push_back(entry->path);
+    }
+    return paths;
+}
+
 void FileBrowser::draw(ventty::Window & window)
 {
     auto const & r = rect();

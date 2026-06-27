@@ -41,7 +41,7 @@ namespace vtplayer
         struct Drop
         {
             float headY = 0.0f;      ///< current head position (row, fractional)
-            float speed = 0.5f;      ///< rows advanced per frame
+            float speed = 1.0f;      ///< rows advanced per frame
             int maxAge = 24;         ///< target trail length in frames
             float brightness = 1.0f; ///< scalar [0..1], snapshot of intensity at spawn
         };

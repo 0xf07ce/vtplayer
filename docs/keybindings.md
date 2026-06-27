@@ -20,7 +20,8 @@ All shortcuts work regardless of Korean IME input state.
 | Key | Action |
 |-----|--------|
 | `1` / `2` / `3` / `4` / `5` | Source panel mode: Album / Directory / Playlists / Streaming / Files |
-| `L` | Toggle source panel (play queue goes full-width when hidden) |
+| `l` | Toggle source panel (play queue goes full-width when hidden) |
+| `Shift+L` | Toggle play queue panel (source panel goes full-width when hidden) |
 | `Tab` | Switch focus (source panel ↔ play queue panel) |
 | `Left` / `Right` | Collapse / expand selected group |
 | `Enter` | Open or play the current source selection |
@@ -142,7 +143,8 @@ it; the loader falls back to the built-ins if the named file is missing.
 Keys not rebound below keep their built-in behavior, so playback, search (`/`,
 `n`, `N`), append (`a`), tags (`t`), quit (`q`) and so on still work. Because
 `h` / `l` / `v` become motions, their built-in commands move to the uppercase
-keys: **`H`** = help, **`L`** = toggle source panel, **`V`** = visualizer.
+keys: **`H`** = help, **`L`** = toggle play queue panel, **`V`** = visualizer.
+The source-panel toggle is available as **`Ctrl+W L`** in this preset.
 
 | Key | Action |
 |-----|--------|

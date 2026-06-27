@@ -309,10 +309,12 @@ void AudioEngine::stop()
 {
     auto prev = _state.exchange(PlayState::Stopped, std::memory_order_acq_rel);
 
-    // Uninit the device first — this blocks until the audio callback
-    // has fully returned, so after this point no thread touches _source.
+    // Stop the output device before doing slower teardown work. This cuts
+    // audible playback immediately on program exit; uninit below then waits
+    // for any in-flight callback to return before _source is released.
     if (prev != PlayState::Stopped)
     {
+        ma_device_stop(_device);
         ma_device_uninit(_device);
     }
 

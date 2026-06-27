@@ -310,6 +310,10 @@ namespace vtplayer
         /// When hidden, PlayQueueView takes the full content width and focus
         /// is pinned to it. Bound to the `l` key.
         void setLibraryPanelVisible(bool visible);
+        /// Show/hide the Browser-screen right panel (PlayQueueView). When
+        /// hidden, the current left widget takes the full content width and
+        /// focus is pinned to it. Bound to Shift+L.
+        void setPlayQueuePanelVisible(bool visible);
         void setVisualizerByIndex(int index);
 
         void playTrack(int index);
@@ -421,6 +425,7 @@ namespace vtplayer
         FocusPanel _focus = FocusPanel::FileBrowser;
         LeftMode _leftMode = LeftMode::AlbumArtistTree;
         bool _libraryPanelVisible = true; // `l` toggles the left panel
+        bool _playQueuePanelVisible = true; // Shift+L toggles the right panel
 
         /// Last focused track in a library projection (1/2/3). Saved when
         /// leaving such a mode and re-applied (locate) when entering one, so

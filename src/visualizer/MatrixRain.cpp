@@ -101,8 +101,8 @@ namespace vtplayer
         // Intensity decay applied each frame the engine isn't playing.
         constexpr float kIntensityIdleDecay = 0.85f;
         // 속도 범위: uniform-random speed per drop (rows / frame).
-        constexpr float kSpeedMin = 0.0625f;
-        constexpr float kSpeedMax = 0.3125f;
+        constexpr float kSpeedMin = 0.25f;
+        constexpr float kSpeedMax = 1.25f;
         // === Step 3 knobs (intensity → speed) ===
         // 새 drop 의 기준속도(uniSpeed) 에 [kSpeedFactorMin..kSpeedFactorMax]
         // 사이의 스케일을 곱한다. I=0 (조용함) → kSpeedFactorMin,

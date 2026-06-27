@@ -678,6 +678,11 @@ namespace vtplayer
 
     void Application::cleanup()
     {
+        // Cut playback first on every exit path. The rest of cleanup may wait
+        // for scans, save config, or tear down plugins, but none of that
+        // should leave audio playing.
+        _audio.stop();
+
         // Stop any in-flight scan before tearing down: the worker references
         // `_library`/`_libraryRepo`, which outlive it only if joined here.
         joinScanThread();
@@ -745,10 +750,10 @@ namespace vtplayer
         int const contentY = 1;
         int const contentH = h - 2;
 
-        // Browser split: FileBrowser (left 40%) | PlayQueueView (right 60%).
-        // When the left panel is hidden (`l`), PlayQueue spans full width and
-        // the left widgets get a zero-width rect so hit-testing skips them.
-        if (_libraryPanelVisible)
+        // Browser split: source panel (left 40%) | PlayQueueView (right 60%).
+        // Either side can be hidden, but never both at once. Hidden widgets get
+        // zero-width rects so hit-testing skips them.
+        if (_libraryPanelVisible && _playQueuePanelVisible)
         {
             int browserW = (w * 2) / 5;
             if (browserW < 20)
@@ -762,7 +767,7 @@ namespace vtplayer
                 _streamingView->setRect(0, contentY, browserW, contentH);
             _playQueueView->setRect(browserW, contentY, playQueueW, contentH);
         }
-        else
+        else if (_playQueuePanelVisible)
         {
             _fileBrowser->setRect(0, contentY, 0, contentH);
             _libraryView->setRect(0, contentY, 0, contentH);
@@ -771,6 +776,16 @@ namespace vtplayer
             if (_streamingView)
                 _streamingView->setRect(0, contentY, 0, contentH);
             _playQueueView->setRect(0, contentY, w, contentH);
+        }
+        else
+        {
+            _fileBrowser->setRect(0, contentY, w, contentH);
+            _libraryView->setRect(0, contentY, w, contentH);
+            if (_playlistsView)
+                _playlistsView->setRect(0, contentY, w, contentH);
+            if (_streamingView)
+                _streamingView->setRect(0, contentY, w, contentH);
+            _playQueueView->setRect(0, contentY, 0, contentH);
         }
 
         // Visualizer takes the full content area.
@@ -935,9 +950,10 @@ namespace vtplayer
                 break;
             }
         }
-        _playQueueView->draw(*_rootWindow);
+        if (_playQueuePanelVisible)
+            _playQueueView->draw(*_rootWindow);
 
-        if (_libraryPanelVisible)
+        if (_libraryPanelVisible && _playQueuePanelVisible)
         {
             // Draw vertical separator between panels
             int sepX = _fileBrowser->rect().width;
@@ -950,7 +966,7 @@ namespace vtplayer
                                      ventty::Style{_theme.separatorFg, _theme.background});
             }
         }
-        else
+        else if (!_libraryPanelVisible)
         {
             // No left panel: PlayQueue spans full width but leaves column 0
             // for the surrounding box's left edge (its content starts at
@@ -960,6 +976,18 @@ namespace vtplayer
             {
                 _rootWindow->putChar(r.x, r.y + y, ventty::DOUBLE_BOX.v,
                                      ventty::Style{_theme.border, _theme.playQueueBg});
+            }
+        }
+        else
+        {
+            // No play queue panel: the left widget spans full width, so draw
+            // the right edge normally supplied by the separator/queue panel.
+            auto const &r = _fileBrowser->rect();
+            int const x = r.x + r.width - 1;
+            for (int y = 0; y < r.height; ++y)
+            {
+                _rootWindow->putChar(x, r.y + y, ventty::DOUBLE_BOX.v,
+                                     ventty::Style{_theme.border, _theme.browserBg});
             }
         }
     }
@@ -1659,11 +1687,21 @@ namespace vtplayer
             return;
         }
 
-        // l/L: toggle the Browser-screen left panel (Library / FileBrowser).
-        // Hidden -> PlayQueue spans the full width.
-        if (_screen == Screen::Browser && event.key == Key::Char && (ch == 'l' || ch == 'L') && !event.alt && !event.ctrl)
+        // l: toggle the Browser-screen left panel (Library / FileBrowser).
+        // Hidden -> PlayQueue spans the full width. Disabled while the play
+        // queue panel is hidden.
+        if (_screen == Screen::Browser && event.key == Key::Char && ch == 'l' && !event.alt && !event.ctrl)
         {
             setLibraryPanelVisible(!_libraryPanelVisible);
+            return;
+        }
+
+        // Shift+L: toggle the Browser-screen right panel (PlayQueueView).
+        // Hidden -> the left panel spans the full width. Disabled while the
+        // left panel is hidden.
+        if (_screen == Screen::Browser && event.key == Key::Char && ch == 'L' && !event.alt && !event.ctrl)
+        {
+            setPlayQueuePanelVisible(!_playQueuePanelVisible);
             return;
         }
 
@@ -1923,7 +1961,7 @@ namespace vtplayer
         // projections. Group/folder selections keep each projection's own
         // saved cursor and fold state.
         if (trackModeTransfer && _libraryView)
-            _libraryView->locateForMode(trackAnchor);
+            _libraryView->locate(trackAnchor);
     }
 
     void Application::appendSelection()
@@ -1971,8 +2009,8 @@ namespace vtplayer
 
     void Application::focusNextPanel()
     {
-        // No-op when the left panel is hidden — only PlayQueue is focusable.
-        if (!_libraryPanelVisible)
+        // No-op when either side is hidden: only one panel is focusable.
+        if (!_libraryPanelVisible || !_playQueuePanelVisible)
             return;
         focusPanel(_focus == FocusPanel::FileBrowser ? FocusPanel::PlayQueue
                                                      : FocusPanel::FileBrowser);
@@ -1982,6 +2020,8 @@ namespace vtplayer
     {
         if (panel == FocusPanel::PlayQueue)
         {
+            if (!_playQueuePanelVisible)
+                return;
             // Only switch to the play queue if it isn't empty.
             if (_playQueueView->empty())
                 return;
@@ -2025,7 +2065,8 @@ namespace vtplayer
         }
         else
         {
-            _playQueueView->handleKey(event);
+            if (_playQueuePanelVisible)
+                _playQueueView->handleKey(event);
         }
     }
 
@@ -2068,6 +2109,9 @@ namespace vtplayer
             break;
         case Action::ToggleLeftPanel:
             setLibraryPanelVisible(!_libraryPanelVisible);
+            break;
+        case Action::ToggleRightPanel:
+            setPlayQueuePanelVisible(!_playQueuePanelVisible);
             break;
         case Action::PlayPause:
         {
@@ -2698,6 +2742,8 @@ namespace vtplayer
     {
         if (_libraryPanelVisible == visible)
             return;
+        if (!visible && !_playQueuePanelVisible)
+            return;
         _libraryPanelVisible = visible;
 
         if (!visible)
@@ -2715,6 +2761,37 @@ namespace vtplayer
             setLeftFocused(true);
             if (_playQueueView)
                 _playQueueView->setFocused(false);
+        }
+
+        resize();
+        if (_terminal)
+            _terminal->forceRedraw();
+    }
+
+    void Application::setPlayQueuePanelVisible(bool visible)
+    {
+        if (_playQueuePanelVisible == visible)
+            return;
+        if (!visible && !_libraryPanelVisible)
+            return;
+        _playQueuePanelVisible = visible;
+
+        if (!visible)
+        {
+            // Nothing to focus on the right anymore: pin focus to the left.
+            _focus = FocusPanel::FileBrowser;
+            setLeftFocused(true);
+            if (_playQueueView)
+                _playQueueView->setFocused(false);
+        }
+        else
+        {
+            // Restoring the queue mirrors the existing l-toggle: the restored
+            // panel receives focus so keyboard queue actions work immediately.
+            _focus = FocusPanel::PlayQueue;
+            setLeftFocused(false);
+            if (_playQueueView)
+                _playQueueView->setFocused(true);
         }
 
         resize();
@@ -3341,12 +3418,12 @@ namespace vtplayer
             if (!entry)
                 return {};
 
-            std::vector<std::filesystem::path> paths;
+            std::vector<std::filesystem::path> paths = _fileBrowser->selectedAudioPaths();
             std::string label;
-            if (entry->isAudio)
+            if (!paths.empty())
             {
-                paths.push_back(entry->path);
-                label = entry->path.filename().string();
+                label = paths.size() == 1 ? paths.front().filename().string()
+                                          : std::to_string(paths.size()) + " files";
             }
             else if (entry->isDirectory)
             {
