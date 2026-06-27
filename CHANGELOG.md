@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 1.1.1 (2026-06-27)
+
+- Added a left-only browser layout: `Shift+L` hides the play queue so the
+  active source panel can span the full width. This is mutually exclusive
+  with the existing `l` right-only layout, so both panels cannot be hidden at
+  once.
+- File browser multi-selection is now honored by the saved-playlist picker.
+  Pressing `B` after selecting multiple audio files adds every selected file
+  instead of only the cursor row.
+- Album and Directory library views now support the same multi-selection
+  controls as the file browser. Shift+Up/Down extends the selected row range
+  and Ctrl+A selects the visible rows; Enter, `A`, `B`, and tag editing operate
+  on the selected set.
+- Improved shutdown responsiveness by stopping the output device immediately
+  before slower audio teardown work continues.
+- Increased Matrix Rain drop speeds so the visualizer moves at the intended
+  pace.
+
 ## 1.1.0 (2026-06-17)
 
 - Bumped the public plugin ABI to **3** and added a second plugin interface:

@@ -117,6 +117,7 @@ namespace vtplayer
         _visible.clear();
         _selectedIndex = 0;
         _scrollOffset = 0;
+        clearMultiSelection();
         _headerCount = 0;
     }
 
@@ -127,6 +128,7 @@ namespace vtplayer
         _visible.clear();
         _selectedIndex = 0;
         _scrollOffset = 0;
+        clearMultiSelection();
         _headerCount = 0;
 
         if (!_library)
@@ -480,6 +482,15 @@ namespace vtplayer
         }
         if (_selectedIndex < 0)
             _selectedIndex = 0;
+        for (auto it = _multiSelected.begin(); it != _multiSelected.end();)
+        {
+            if (*it < 0 || *it >= static_cast<int>(_visible.size()))
+                it = _multiSelected.erase(it);
+            else
+                ++it;
+        }
+        if (_multiSelected.empty())
+            _selectionAnchor = -1;
         scrollToSelected();
     }
 
@@ -551,6 +562,7 @@ namespace vtplayer
 
     void LibraryView::restoreCurrentModeState()
     {
+        clearMultiSelection();
         ModeState const &state = (_mode == Mode::AlbumArtistTree) ? _albumState
                                                                   : _directoryState;
         if (!state.valid)
@@ -593,6 +605,62 @@ namespace vtplayer
             collectTracks(child, out);
     }
 
+    void LibraryView::collectTracksUnique(std::size_t nodeIdx,
+                                          std::vector<TrackInfo> &out,
+                                          std::set<std::filesystem::path> &seen) const
+    {
+        if (nodeIdx >= _nodes.size())
+            return;
+        auto const &n = _nodes[nodeIdx];
+        if (n.kind == Node::Kind::Track && n.track)
+        {
+            if (seen.insert(n.track->path).second)
+                out.push_back(*n.track);
+            return;
+        }
+        for (auto child : n.children)
+            collectTracksUnique(child, out, seen);
+    }
+
+    void LibraryView::clearMultiSelection()
+    {
+        _multiSelected.clear();
+        _selectionAnchor = -1;
+    }
+
+    void LibraryView::selectAllVisible()
+    {
+        _multiSelected.clear();
+        for (int i = 0; i < static_cast<int>(_visible.size()); ++i)
+            _multiSelected.insert(i);
+        _selectionAnchor = _selectedIndex;
+    }
+
+    void LibraryView::extendSelectionTo(int newIndex)
+    {
+        if (_selectionAnchor < 0)
+            _selectionAnchor = _selectedIndex;
+        int const lo = std::min(_selectionAnchor, newIndex);
+        int const hi = std::max(_selectionAnchor, newIndex);
+        _multiSelected.clear();
+        for (int i = lo; i <= hi; ++i)
+        {
+            if (i >= 0 && i < static_cast<int>(_visible.size()))
+                _multiSelected.insert(i);
+        }
+    }
+
+    std::set<int> LibraryView::selectedVisibleRows() const
+    {
+        if (!_multiSelected.empty())
+            return _multiSelected;
+
+        std::set<int> rows;
+        if (_selectedIndex >= 0 && _selectedIndex < static_cast<int>(_visible.size()))
+            rows.insert(_selectedIndex);
+        return rows;
+    }
+
     bool LibraryView::expandPath(std::size_t nodeIdx)
     {
         if (nodeIdx >= _nodes.size())
@@ -613,6 +681,7 @@ namespace vtplayer
     {
         if (path.empty())
             return;
+        clearMultiSelection();
         auto const target = path.string();
         for (std::size_t i = 0; i < _nodes.size(); ++i)
         {
@@ -642,6 +711,7 @@ namespace vtplayer
     {
         if (path.empty())
             return;
+        clearMultiSelection();
         auto const target = path.string();
         for (std::size_t i = 0; i < _nodes.size(); ++i)
         {
@@ -714,7 +784,8 @@ namespace vtplayer
 
     void LibraryView::onFocusChanged()
     {
-        // Nothing yet — kept for parity with PlayQueueView.
+        if (!isFocused())
+            clearMultiSelection();
     }
 
     void LibraryView::draw(ventty::Window &window)
@@ -789,6 +860,7 @@ namespace vtplayer
 
             auto const &n = _nodes[_visible[visIdx]];
             bool const cursor = (visIdx == _selectedIndex) && isFocused();
+            bool const multi = isFocused() && _multiSelected.count(visIdx) > 0;
 
             // Color by hierarchy. ArtistAlbum mode is a four-level tree
             // (grouping/artist/album/track), so each depth gets its own
@@ -827,7 +899,7 @@ namespace vtplayer
                     : _theme.libraryAlbumFg;
 
             Color fg = cursor ? _theme.browserSelFg : levelFg;
-            Color bg = cursor ? _theme.browserSelBg : _theme.browserBg;
+            Color bg = (cursor || multi) ? _theme.browserSelBg : _theme.browserBg;
             ventty::Style style{fg, bg};
             window.fill(r.x + 1, y, r.width - 1, 1, U' ', style);
 
@@ -867,6 +939,23 @@ namespace vtplayer
         if (_selectedIndex < 0 || _selectedIndex >= static_cast<int>(_visible.size()))
             return s;
 
+        auto const rows = selectedVisibleRows();
+        if (rows.empty())
+            return s;
+
+        if (rows.size() > 1)
+        {
+            s.kind = SelectionKind::MultiSelection;
+            s.label = std::to_string(rows.size()) + " selected";
+            std::set<std::filesystem::path> seen;
+            for (int row : rows)
+            {
+                if (row >= 0 && row < static_cast<int>(_visible.size()))
+                    collectTracksUnique(_visible[static_cast<std::size_t>(row)], s.tracks, seen);
+            }
+            return s;
+        }
+
         std::size_t const nodeIdx = _visible[static_cast<std::size_t>(_selectedIndex)];
         auto const & n = _nodes[nodeIdx];
 
@@ -904,7 +993,12 @@ namespace vtplayer
             return;
 
         std::vector<TrackInfo> out;
-        collectTracks(_visible[_selectedIndex], out);
+        std::set<std::filesystem::path> seen;
+        for (int row : selectedVisibleRows())
+        {
+            if (row >= 0 && row < static_cast<int>(_visible.size()))
+                collectTracksUnique(_visible[static_cast<std::size_t>(row)], out, seen);
+        }
         if (out.empty())
             return;
         _onSend(std::move(out), replace);
@@ -917,12 +1011,35 @@ namespace vtplayer
 
         auto const visSize = static_cast<int>(_visible.size());
 
+        if (event.key == Key::Char && event.ctrl &&
+            (event.ch == 'a' || event.ch == 'A' || event.ch == 1))
+        {
+            selectAllVisible();
+            return true;
+        }
+
         if (event.key == Key::Up)
         {
             if (_selectedIndex > 0)
             {
-                _selectedIndex--;
+                int const target = _selectedIndex - 1;
+                if (event.shift)
+                {
+                    if (_selectionAnchor < 0)
+                        _selectionAnchor = _selectedIndex;
+                    _selectedIndex = target;
+                    extendSelectionTo(target);
+                }
+                else
+                {
+                    clearMultiSelection();
+                    _selectedIndex = target;
+                }
                 scrollToSelected();
+            }
+            else if (!event.shift)
+            {
+                clearMultiSelection();
             }
             return true;
         }
@@ -930,13 +1047,30 @@ namespace vtplayer
         {
             if (_selectedIndex < visSize - 1)
             {
-                _selectedIndex++;
+                int const target = _selectedIndex + 1;
+                if (event.shift)
+                {
+                    if (_selectionAnchor < 0)
+                        _selectionAnchor = _selectedIndex;
+                    _selectedIndex = target;
+                    extendSelectionTo(target);
+                }
+                else
+                {
+                    clearMultiSelection();
+                    _selectedIndex = target;
+                }
                 scrollToSelected();
+            }
+            else if (!event.shift)
+            {
+                clearMultiSelection();
             }
             return true;
         }
         if (event.key == Key::PageUp)
         {
+            clearMultiSelection();
             int const step = std::max(1, rect().height - 2);
             _selectedIndex = std::max(0, _selectedIndex - step);
             scrollToSelected();
@@ -944,6 +1078,7 @@ namespace vtplayer
         }
         if (event.key == Key::PageDown)
         {
+            clearMultiSelection();
             int const step = std::max(1, rect().height - 2);
             _selectedIndex = std::min(visSize - 1, _selectedIndex + step);
             scrollToSelected();
@@ -951,12 +1086,14 @@ namespace vtplayer
         }
         if (event.key == Key::Home)
         {
+            clearMultiSelection();
             _selectedIndex = 0;
             scrollToSelected();
             return true;
         }
         if (event.key == Key::End)
         {
+            clearMultiSelection();
             _selectedIndex = visSize - 1;
             scrollToSelected();
             return true;
@@ -966,6 +1103,7 @@ namespace vtplayer
 
         if (event.key == Key::Right)
         {
+            clearMultiSelection();
             if (current.kind == Node::Kind::Group && !current.expanded)
             {
                 current.expanded = true;
@@ -975,6 +1113,7 @@ namespace vtplayer
         }
         if (event.key == Key::Left)
         {
+            clearMultiSelection();
             if (current.kind == Node::Kind::Group && current.expanded)
             {
                 current.expanded = false;
@@ -1029,6 +1168,7 @@ namespace vtplayer
         {
             if (_selectedIndex > 0)
             {
+                clearMultiSelection();
                 _selectedIndex--;
                 scrollToSelected();
             }
@@ -1038,6 +1178,7 @@ namespace vtplayer
         {
             if (_selectedIndex < static_cast<int>(_visible.size()) - 1)
             {
+                clearMultiSelection();
                 _selectedIndex++;
                 scrollToSelected();
             }
@@ -1053,6 +1194,7 @@ namespace vtplayer
                 int const visIdx = _scrollOffset + row;
                 if (visIdx >= 0 && visIdx < static_cast<int>(_visible.size()))
                 {
+                    clearMultiSelection();
                     _selectedIndex = visIdx;
                 }
             }

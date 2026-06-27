@@ -2874,6 +2874,7 @@ namespace vtplayer
                 case LibraryView::SelectionKind::Album:          kindLabel = "Album";    break;
                 case LibraryView::SelectionKind::DirectoryGroup: kindLabel = "Folder";   break;
                 case LibraryView::SelectionKind::Track:          kindLabel = "Track";    break;
+                case LibraryView::SelectionKind::MultiSelection: kindLabel = "Selection"; break;
                 case LibraryView::SelectionKind::None:           return;
                 }
                 if (sel.kind == LibraryView::SelectionKind::Track)

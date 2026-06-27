@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <functional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -91,6 +92,7 @@ public:
         Album,          ///< AlbumArtistTree, depth-2 group
         DirectoryGroup, ///< Directory mode, any group (folder)
         Track,          ///< a single track leaf (any mode)
+        MultiSelection, ///< multiple visible rows selected
     };
     struct Selection
     {
@@ -137,9 +139,16 @@ private:
     std::string nodeKey(std::size_t nodeIdx) const;
     void saveCurrentModeState();
     void restoreCurrentModeState();
+    void clearMultiSelection();
+    void selectAllVisible();
+    void extendSelectionTo(int newIndex);
+    std::set<int> selectedVisibleRows() const;
 
     /// Append every track under `nodeIdx` (or the node itself if it's a Track).
     void collectTracks(std::size_t nodeIdx, std::vector<TrackInfo> & out) const;
+    void collectTracksUnique(std::size_t nodeIdx,
+                             std::vector<TrackInfo> & out,
+                             std::set<std::filesystem::path> & seen) const;
 
     /// Expand the node and every ancestor. Returns true if state changed.
     bool expandPath(std::size_t nodeIdx);
@@ -154,6 +163,8 @@ private:
 
     int _selectedIndex = 0;              ///< index into _visible
     int _scrollOffset  = 0;
+    std::set<int> _multiSelected;
+    int _selectionAnchor = -1;
 
     struct ModeState
     {
