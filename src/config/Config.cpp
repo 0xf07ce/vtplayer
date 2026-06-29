@@ -228,13 +228,10 @@ namespace vtplayer
             if (!v->empty())
                 keymapPreset = *v;
         }
-        // Collect all theme.* keys
-        for (auto const &[key, value] : values)
+        if (auto *v = get("theme.name"))
         {
-            if (key.starts_with("theme."))
-            {
-                themeColors[key.substr(6)] = value;
-            }
+            if (*v == "light" || *v == "dark")
+                themeName = *v;
         }
     }
 
@@ -288,16 +285,10 @@ namespace vtplayer
         out << "scan_sig = " << scanSig << "\n\n";
 
         out << "[keybindings]\n";
-        out << "preset = " << keymapPreset << "\n";
+        out << "preset = " << keymapPreset << "\n\n";
 
-        if (!themeColors.empty())
-        {
-            out << "\n[theme]\n";
-            for (auto const &[key, value] : themeColors)
-            {
-                out << key << " = " << value << "\n";
-            }
-        }
+        out << "[theme]\n";
+        out << "name = " << themeName << "\n";
 
         return out.str();
     }

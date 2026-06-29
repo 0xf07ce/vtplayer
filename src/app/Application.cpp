@@ -338,12 +338,7 @@ namespace vtplayer
                 std::filesystem::create_directories(dir, ec);
         }
 
-        // Apply theme colors from config
-        _theme = Theme::retro();
-        if (!_config.themeColors.empty())
-        {
-            _theme.applyColors(_config.themeColors);
-        }
+        _theme = Theme::fromName(_config.themeName);
 
         // Keybindings: materialize the built-in presets (first run only) and
         // configure the input engine from the selected one. The "default"
@@ -2351,6 +2346,11 @@ namespace vtplayer
             items.emplace_back(std::move(label));
             actions.push_back(action);
         };
+        auto const addThemeToggle = [&]
+        {
+            std::string const next = (_config.themeName == "light") ? "Dark" : "Light";
+            add("Change theme: " + next, MenuAction::ChangeTheme);
+        };
 
         // The play queue (right panel) owns its menu: it never borrows the left
         // panel's management actions (create / rename / delete playlist, rescan,
@@ -2360,6 +2360,7 @@ namespace vtplayer
         if (ctx.queueFocused)
         {
             add("Focus playing track", MenuAction::LocatePlaying);
+            addThemeToggle();
             add("Exit", MenuAction::Exit);
             return;
         }
@@ -2374,6 +2375,7 @@ namespace vtplayer
                 add("Go to library root", MenuAction::GoToLibraryRoot);
             add("Set current directory as library root", MenuAction::SetLibraryRoot);
             add("Summon Track", MenuAction::SummonTrack);
+            addThemeToggle();
             add("Exit", MenuAction::Exit);
             return;
         }
@@ -2423,6 +2425,7 @@ namespace vtplayer
             break; // handled above
         }
 
+        addThemeToggle();
         add("Exit", MenuAction::Exit);
     }
 
@@ -2441,6 +2444,34 @@ namespace vtplayer
         _contextMenu->setItems(std::move(items));
         _contextMenu->open();
         _terminal->forceRedraw();
+    }
+
+    void Application::applyTheme()
+    {
+        _theme = Theme::fromName(_config.themeName);
+
+        if (_headerBar) _headerBar->setTheme(_theme);
+        if (_fileBrowser) _fileBrowser->setTheme(_theme);
+        if (_libraryView) _libraryView->setTheme(_theme);
+        if (_playQueueView) _playQueueView->setTheme(_theme);
+        if (_playlistsView) _playlistsView->setTheme(_theme);
+        if (_streamingView) _streamingView->setTheme(_theme);
+        if (_transportBar) _transportBar->setTheme(_theme);
+        if (_visualizerView) _visualizerView->setTheme(_theme);
+        if (_contextMenu) _contextMenu->setTheme(_theme);
+        if (_addToPlaylistMenu) _addToPlaylistMenu->setTheme(_theme);
+        if (_searchDialog) _searchDialog->setTheme(_theme);
+        if (_summonTrackDialog) _summonTrackDialog->setTheme(_theme);
+        if (_tagEditDialog) _tagEditDialog->setTheme(_theme);
+        if (_textInputDialog) _textInputDialog->setTheme(_theme);
+        if (_confirmDialog) _confirmDialog->setTheme(_theme);
+    }
+
+    void Application::toggleTheme()
+    {
+        _config.themeName = (_config.themeName == "light") ? "dark" : "light";
+        applyTheme();
+        _config.save();
     }
 
     void Application::setVisualizerByIndex(int index)
@@ -3085,6 +3116,9 @@ namespace vtplayer
             break;
         case MenuAction::LocatePlaying:
             locatePlayingInLibrary();
+            break;
+        case MenuAction::ChangeTheme:
+            toggleTheme();
             break;
         case MenuAction::CreatePlaylist:
             if (_textInputDialog)

@@ -381,18 +381,16 @@ bool TagEditDialog::handleKey(ventty::KeyEvent const & event)
         return true;
 
     // ----- Mode toggles -----
-    // Ctrl+E in View mode: enter Edit mode. Disabled when read-only — the
+    // F3 in View mode: enter Edit mode. Disabled when read-only — the
     // targets have no writable tags, so there is nothing to edit.
-    if (_mode == Mode::View && !_readOnly && event.key == Key::Char && event.ctrl
-        && (event.ch == 'e' || event.ch == 'E' || event.ch == 0x05))
+    if (_mode == Mode::View && !_readOnly && event.key == Key::F3)
     {
         _mode = Mode::Edit;
         return true;
     }
-    // Ctrl+S in Edit mode: bring up the save-confirm overlay (only if the
+    // F2 in Edit mode: bring up the save-confirm overlay (only if the
     // user actually changed something — there's nothing to confirm otherwise).
-    if (_mode == Mode::Edit && event.key == Key::Char && event.ctrl
-        && (event.ch == 's' || event.ch == 'S' || event.ch == 0x13))
+    if (_mode == Mode::Edit && event.key == Key::F2)
     {
         if (hasEdits())
         {
@@ -452,7 +450,7 @@ bool TagEditDialog::handleKey(ventty::KeyEvent const & event)
         return true;
     }
 
-    // Enter in Edit mode does nothing — saving goes through Ctrl+S → confirm.
+    // Enter in Edit mode does nothing — saving goes through F2 → confirm.
     if (event.key == Key::Enter)
         return true;
 
@@ -647,10 +645,10 @@ void TagEditDialog::drawEditor(ventty::Window & window,
     {
     case Mode::View:
         footer = _readOnly ? " Read-only (plugin format)   ESC: close "
-                           : " Ctrl+E: edit   ESC: close ";
+                           : " F3: edit   ESC: close ";
         break;
     case Mode::Edit:
-        footer = " Tab/Up/Down: move   Ctrl+S: save   ESC: revert ";
+        footer = " Tab/Up/Down: move   F2: save   ESC: revert ";
         break;
     case Mode::ConfirmSave:
         footer = " ←/→: choose   Enter: confirm   ESC: cancel ";

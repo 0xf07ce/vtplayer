@@ -45,7 +45,9 @@ The file browser always opens at the directory the player was launched from.
 
 ### [theme]
 
-Color overrides in `#RRGGBB` hex format. See `src/view/Theme.h` for all available color fields.
+| Key | Default | Description |
+|-----|---------|-------------|
+| `name` | `dark` | Built-in color theme: `dark` or `light`. |
 
 ## Example
 
@@ -73,8 +75,5 @@ focus_path =
 scan_sig =
 
 [theme]
-background = #1E1E1E
-foreground = #D4D4D4
+name = dark
 ```
-
-Keys under `[theme]` are the bare color-field names listed in `src/view/Theme.h` (e.g. `background`, `foreground`, `border`, `transport_progress_fg`, …), each set to a `#RRGGBB` hex value.

@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 1.1.2 (2026-06-29)
+
+- Added a built-in light theme alongside the existing dark theme. The ESC
+  context menu now includes a theme switcher directly above Exit, and the
+  selected `dark` / `light` theme is persisted in `[theme] name`.
+- Removed per-color theme overrides from the configuration format so theme
+  selection is limited to the two supported built-in palettes.
+- Changed the tag editor shortcuts: `F3` now enters edit mode and `F2` opens
+  the save confirmation, replacing the previous Ctrl+E / Ctrl+S tag-editor
+  bindings.
+
 ## 1.1.1 (2026-06-27)
 
 - Added a left-only browser layout: `Shift+L` hides the play queue so the

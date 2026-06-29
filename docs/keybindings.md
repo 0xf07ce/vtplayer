@@ -94,8 +94,8 @@ All shortcuts work regardless of Korean IME input state.
 
 | Key | Action |
 |-----|--------|
-| `Ctrl+E` | Switch to Edit mode |
-| `Ctrl+S` | Confirm and save tags |
+| `F3` | Switch to Edit mode |
+| `F2` | Confirm and save tags |
 | `Esc` | Dismiss without saving |
 
 ## Misc

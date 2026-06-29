@@ -5,7 +5,6 @@
 
 #include <filesystem>
 #include <string>
-#include <unordered_map>
 
 namespace vtplayer
 {
@@ -49,8 +48,8 @@ struct Config
     /// "default" = built-in keys; "vi" = modal, vi-style navigation.
     std::string keymapPreset = "default";
 
-    // [theme] — color overrides as "#RRGGBB" hex strings
-    std::unordered_map<std::string, std::string> themeColors;
+    // [theme]
+    std::string themeName = "dark";
 
     /// Load from default config path (~/.config/vtplayer/config.ini).
     /// If the file does not exist, writes out the current values as defaults.

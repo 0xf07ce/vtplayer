@@ -94,6 +94,7 @@ namespace vtplayer
         SummonTrack,
         RescanLibrary,
         LocatePlaying,
+        ChangeTheme,
         CreatePlaylist,
         RenamePlaylist,
         DeletePlaylist,
@@ -181,6 +182,8 @@ namespace vtplayer
 
         void openContextMenu();
         void onContextMenuSelect(int index);
+        void applyTheme();
+        void toggleTheme();
 
         /// Snapshot of "where focus is and what is selected" at the moment the
         /// ESC menu opens. classifyMenuContext() fills it from current state;

@@ -21,16 +21,16 @@ namespace vtplayer
 /// Modal "tags" overlay. Always shows the same set of fields regardless of
 /// what the caller selected — UX consistency wins over scope-specific
 /// trimming. The dialog has three modes:
-///   - View:         title is "Tags"; fields are read-only. Ctrl+E enters
+///   - View:         title is "Tags"; fields are read-only. F3 enters
 ///                   Edit mode. ESC closes. Arrow keys are inert — there is
 ///                   nothing to focus when nothing is editable. When opened
 ///                   read-only (every target is a plugin-handled file with no
 ///                   TagLib-writable tags) the title reads "Tags (read-only)"
-///                   and Ctrl+E is disabled, so the dialog stays a pure
+///                   and F3 is disabled, so the dialog stays a pure
 ///                   inspector — there is no way to enter an edit that would
 ///                   silently fail on save.
 ///   - Edit:         title is "Edit Tags"; fields accept text input.
-///                   Ctrl+S brings up a save confirmation. ESC reverts all
+///                   F2 brings up a save confirmation. ESC reverts all
 ///                   pending edits and drops back to View (a second ESC then
 ///                   closes); nothing is written until the user confirms.
 ///   - ConfirmSave:  Yes/No overlay on top of the editor. Yes invokes
@@ -56,7 +56,7 @@ public:
     /// Open the dialog over `tracks`. `header` is the sub-title shown
     /// below the main title strip — used to describe what's being viewed
     /// (e.g. "Album: Kid A  (12 tracks)"). When `readOnly` is true the
-    /// dialog is locked to View mode (Ctrl+E does nothing) — used when the
+    /// dialog is locked to View mode (F3 does nothing) — used when the
     /// targets are plugin-handled files whose tags cannot be written.
     void open(std::string header, std::vector<TrackInfo> tracks,
               bool readOnly = false);
@@ -126,7 +126,7 @@ private:
     int _focusedField = 0;
 
     /// Default the confirm overlay to Yes — the user just pressed
-    /// Ctrl+S, so making Enter mean "go ahead and save" matches intent.
+    /// F2, so making Enter mean "go ahead and save" matches intent.
     bool _confirmYes = true;
 
     int _cursorScreenX = -1;

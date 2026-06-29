@@ -7,7 +7,6 @@
 
 #include <string>
 #include <string_view>
-#include <unordered_map>
 
 namespace vtplayer
 {
@@ -94,83 +93,89 @@ namespace vtplayer
             return Theme{};
         }
 
-        /// Apply color overrides from key-value map.
-        /// Keys match INI field names under [theme], values are "#RRGGBB" hex strings.
-        void applyColors(std::unordered_map<std::string, std::string> const &colors)
+        static Theme dark()
         {
-            auto set = [&](std::string const &key, Color &target)
-            {
-                auto it = colors.find(key);
-                if (it != colors.end() && !it->second.empty())
-                {
-                    target = Color::fromHex(it->second);
-                }
-            };
+            return Theme{};
+        }
+
+        static Theme light()
+        {
+            Theme theme;
 
             // Global
-            set("background", background);
-            set("foreground", foreground);
-            set("border", border);
-            set("border_dim", borderDim);
+            theme.background = Color{0xF4, 0xF3, 0xF6};
+            theme.foreground = Color{0x3E, 0x3A, 0x44};
+            theme.border = Color{0xB9, 0xB2, 0xC1};
+            theme.borderDim = Color{0xD9, 0xD5, 0xDE};
 
-            // Header
-            set("header_bg", headerBg);
-            set("header_fg", headerFg);
-            set("header_title_fg", headerTitleFg);
-            set("header_track_fg", headerTrackFg);
+            // Header bar
+            theme.headerBg = Color{0xEA, 0xE7, 0xEE};
+            theme.headerFg = Color{0x7A, 0x72, 0x83};
+            theme.headerTitleFg = Color{0x9A, 0x4F, 0x96};
+            theme.headerTrackFg = Color{0x2F, 0x2B, 0x35};
 
             // File browser
-            set("browser_bg", browserBg);
-            set("browser_fg", browserFg);
-            set("browser_dir_fg", browserDirFg);
-            set("browser_audio_fg", browserAudioFg);
-            set("browser_sel_bg", browserSelBg);
-            set("browser_sel_fg", browserSelFg);
-            set("browser_header_fg", browserHeaderFg);
+            theme.browserBg = Color{0xF4, 0xF3, 0xF6};
+            theme.browserFg = Color{0x3E, 0x3A, 0x44};
+            theme.browserDirFg = Color{0x4C, 0x6E, 0x91};
+            theme.browserAudioFg = Color{0x4B, 0x7A, 0x5B};
+            theme.browserSelBg = Color{0xDF, 0xD7, 0xE8};
+            theme.browserSelFg = Color{0x24, 0x20, 0x29};
+            theme.browserHeaderFg = Color{0xA8, 0x4A, 0x92};
 
             // Library tree
-            set("library_grouping_fg", libraryGroupingFg);
-            set("library_artist_fg", libraryArtistFg);
-            set("library_album_fg", libraryAlbumFg);
-            set("library_track_fg", libraryTrackFg);
-            set("library_null_fg", libraryNullFg);
-            set("library_stream_fg", libraryStreamFg);
+            theme.libraryGroupingFg = Color{0x9A, 0x65, 0x19};
+            theme.libraryArtistFg = Color{0x8E, 0x5A, 0x34};
+            theme.libraryAlbumFg = Color{0x62, 0x5C, 0x9A};
+            theme.libraryTrackFg = Color{0x5C, 0x6F, 0x45};
+            theme.libraryNullFg = Color{0x8E, 0x86, 0x95};
+            theme.libraryStreamFg = Color{0x3C, 0x7D, 0x9B};
 
             // Play queue
-            set("play_queue_bg", playQueueBg);
-            set("play_queue_fg", playQueueFg);
-            set("play_queue_sel_bg", playQueueSelBg);
-            set("play_queue_sel_fg", playQueueSelFg);
-            set("play_queue_playing_fg", playQueuePlayingFg);
-            set("play_queue_index_fg", playQueueIndexFg);
-            set("play_queue_duration_fg", playQueueDurationFg);
-            set("play_queue_artist_fg", playQueueArtistFg);
-            set("play_queue_header_fg", playQueueHeaderFg);
+            theme.playQueueBg = Color{0xF1, 0xEF, 0xF4};
+            theme.playQueueFg = Color{0x3E, 0x3A, 0x44};
+            theme.playQueueSelBg = Color{0xDD, 0xD3, 0xE7};
+            theme.playQueueSelFg = Color{0x24, 0x20, 0x29};
+            theme.playQueuePlayingFg = Color{0x8D, 0x55, 0xA3};
+            theme.playQueueIndexFg = Color{0xAA, 0xA3, 0xB2};
+            theme.playQueueDurationFg = Color{0x8F, 0x88, 0x98};
+            theme.playQueueArtistFg = Color{0x72, 0x6B, 0x7C};
+            theme.playQueueHeaderFg = Color{0xA8, 0x4A, 0x92};
 
-            // Transport
-            set("transport_bg", transportBg);
-            set("transport_fg", transportFg);
-            set("transport_progress_fg", transportProgressFg);
-            set("transport_time_fg", transportTimeFg);
-            set("transport_state_fg", transportStateFg);
-            set("transport_fn_key_fg", transportFnKeyFg);
-            set("transport_fn_label_fg", transportFnLabelFg);
+            // Transport bar
+            theme.transportBg = Color{0xEA, 0xE7, 0xEE};
+            theme.transportFg = Color{0x72, 0x6B, 0x7C};
+            theme.transportProgressFg = Color{0xA7, 0x55, 0xB4};
+            theme.transportTimeFg = Color{0x2F, 0x2B, 0x35};
+            theme.transportStateFg = Color{0x4B, 0x7A, 0x5B};
+            theme.transportFnKeyFg = Color{0x9A, 0x4F, 0x96};
+            theme.transportFnLabelFg = Color{0x8F, 0x88, 0x98};
 
             // Visualizer
-            set("vis_bar_low", visBarLow);
-            set("vis_bar_mid", visBarMid);
-            set("vis_bar_high", visBarHigh);
-            set("vis_trail_fg", visTrailFg);
-            set("vis_label_fg", visLabelFg);
+            theme.visBarLow = Color{0x75, 0x4C, 0xB3};
+            theme.visBarMid = Color{0xB0, 0x6F, 0xC4};
+            theme.visBarHigh = Color{0xE6, 0x9C, 0xC7};
+            theme.visTrailFg = Color{0xB0, 0xAA, 0xB8};
+            theme.visLabelFg = Color{0x9B, 0x93, 0xA4};
 
             // Matrix rain
-            set("matrix_head_fg", matrixHead);
-            set("matrix_body_fg", matrixBody);
-            set("matrix_tail_fg", matrixTail);
+            theme.matrixHead = Color{0x2F, 0x8F, 0x51};
+            theme.matrixBody = Color{0x4B, 0xA8, 0x63};
+            theme.matrixTail = Color{0x9D, 0xC8, 0xA9};
 
             // Separator
-            set("separator_fg", separatorFg);
+            theme.separatorFg = Color{0xA6, 0x9F, 0xAE};
+
+            return theme;
         }
+
+        static Theme fromName(std::string_view name)
+        {
+            if (name == "light")
+                return light();
+            return dark();
+        }
+
     };
 
 } // namespace vtplayer

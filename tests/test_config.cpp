@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 
 namespace
@@ -82,4 +83,32 @@ TEST_CASE("Config accepts source panel modes and legacy aliases")
     Config legacy;
     legacy.loadFrom(path);
     CHECK_EQ(legacy.leftMode, std::string("radio"));
+}
+
+TEST_CASE("Config accepts only built-in theme names")
+{
+    auto path = writeIni("[theme]\nname = light\n");
+    Config cfg;
+    cfg.loadFrom(path);
+    CHECK_EQ(cfg.themeName, std::string("light"));
+
+    path = writeIni("[theme]\nname = custom\n");
+    Config invalid;
+    invalid.loadFrom(path);
+    CHECK_EQ(invalid.themeName, std::string("dark"));
+}
+
+TEST_CASE("Config saves the selected built-in theme")
+{
+    Config cfg;
+    cfg.themeName = "light";
+
+    auto path = writeIni("");
+    CHECK(cfg.saveTo(path));
+
+    std::ifstream in(path);
+    std::string content((std::istreambuf_iterator<char>(in)),
+                        std::istreambuf_iterator<char>());
+    CHECK(content.find("[theme]") != std::string::npos);
+    CHECK(content.find("name = light") != std::string::npos);
 }
