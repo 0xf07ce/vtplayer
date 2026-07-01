@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 1.1.3 (2026-07-01)
+
+- Added a single-file rename workflow on `F5` for local audio files. The
+  dialog offers tag-derived file name suggestions, validates path/collision
+  cases, and updates the library, play queue, current-track metadata, search
+  state, and file browser selection after a successful rename.
+- Added `F3` / `tag-edit-immediate` so source-panel tag editing can open
+  directly in edit mode while plugin-handled files remain read-only.
+- Moved shared metadata extraction into `TagReader`, letting the library
+  scanner and rename workflow use the same TagLib and input-plugin tag reader.
+- Improved light-theme visualizer contrast for Matrix Rain, Debug Bars,
+  Oscilloscope, and Vinyl.
+
 ## 1.1.2 (2026-06-29)
 
 - Added a built-in light theme alongside the existing dark theme. The ESC

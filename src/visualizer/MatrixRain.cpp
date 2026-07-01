@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <complex>
+#include <cstdint>
 
 namespace vtplayer
 {
@@ -161,6 +162,35 @@ namespace vtplayer
         // 본체 디밍: body 색상을 배경 쪽으로 끌어내려 새로 추가되는
         // 글자가 전반적으로 어둡게 보이도록. (0 = 배경, 1 = theme body)
         constexpr float kBodyDim = 0.55f;
+
+        Color hsvToRgb(float hueDeg, float sat, float val)
+        {
+            hueDeg = std::fmod(hueDeg, 360.0f);
+            if (hueDeg < 0.0f)
+                hueDeg += 360.0f;
+            sat = std::clamp(sat, 0.0f, 1.0f);
+            val = std::clamp(val, 0.0f, 1.0f);
+
+            float const c = val * sat;
+            float const x = c * (1.0f - std::abs(std::fmod(hueDeg / 60.0f, 2.0f) - 1.0f));
+            float const m = val - c;
+
+            float r = 0.0f;
+            float g = 0.0f;
+            float b = 0.0f;
+            if (hueDeg < 60.0f) { r = c; g = x; }
+            else if (hueDeg < 120.0f) { r = x; g = c; }
+            else if (hueDeg < 180.0f) { g = c; b = x; }
+            else if (hueDeg < 240.0f) { g = x; b = c; }
+            else if (hueDeg < 300.0f) { r = x; b = c; }
+            else { r = c; b = x; }
+
+            auto ch = [](float v)
+            {
+                return static_cast<uint8_t>(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f));
+            };
+            return Color{ch(r + m), ch(g + m), ch(b + m)};
+        }
     } // namespace
 
     MatrixRain::MatrixRain()
@@ -180,6 +210,40 @@ namespace vtplayer
         // Bake the three theme-derived endpoint colors that draw() used to
         // recompute every frame.
         Color const bg = _theme.background;
+        if (_theme.isLight)
+        {
+            for (int b = 0; b < kBrightnessLevels; ++b)
+            {
+                float const intensity =
+                    static_cast<float>(b) / static_cast<float>(kBrightnessLevels - 1);
+                float const hue = 235.0f * (1.0f - intensity);
+                Color const head = hsvToRgb(hue, 1.0f, 0.24f + intensity * 0.16f);
+                Color const body = hsvToRgb(hue, 0.96f, 0.42f + intensity * 0.20f);
+                Color const whiteTail = lerpColor(
+                    Color{0xF8, 0xFA, 0xFF},
+                    hsvToRgb(hue, 0.22f, 0.98f),
+                    0.25f);
+
+                _headLut[b] = head;
+                for (int f = 0; f < kFadeLevels; ++f)
+                {
+                    float const linT =
+                        static_cast<float>(f) / static_cast<float>(kFadeLevels - 1);
+                    float const t = std::sqrt(linT);
+                    if (t < 0.45f)
+                    {
+                        _trailLut[b][f] = lerpColor(head, body, t / 0.45f);
+                    }
+                    else
+                    {
+                        float const fadeT = (t - 0.45f) / 0.55f;
+                        _trailLut[b][f] = lerpColor(body, whiteTail, fadeT);
+                    }
+                }
+            }
+            return;
+        }
+
         Color const headBright =
             lerpColor(_theme.matrixHead, Color{0x40, 0xFF, 0x40}, kHeadBoost);
         Color const bodyDim = lerpColor(bg, _theme.matrixBody, kBodyDim);

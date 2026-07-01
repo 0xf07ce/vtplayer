@@ -10,6 +10,7 @@
 #include "../plugin/DecoderRegistry.h"
 #include "../util/M3uReader.h"
 #include "../util/PlsReader.h"
+#include "../util/TagReader.h"
 #include "../util/TagWriter.h"
 #include "../util/UnicodeNormalize.h"
 #include "../visualizer/DebugBars.h"
@@ -231,6 +232,12 @@ namespace vtplayer
             {
                 _terminal->setCursorPos(_summonTrackDialog->cursorScreenX(),
                                         _summonTrackDialog->cursorScreenY());
+                _terminal->setCursorVisible(true);
+            }
+            else if (_fileRenameDialog && _fileRenameDialog->wantsCursor())
+            {
+                _terminal->setCursorPos(_fileRenameDialog->cursorScreenX(),
+                                        _fileRenameDialog->cursorScreenY());
                 _terminal->setCursorVisible(true);
             }
             else if (_textInputDialog && _textInputDialog->wantsCursor())
@@ -529,6 +536,15 @@ namespace vtplayer
         _tagEditDialog->setOnSave([this](std::vector<std::filesystem::path> const &targets,
                                           TagUpdate const &upd)
                                   { applyTagEdit(targets, upd); });
+
+        _fileRenameDialog = std::make_unique<FileRenameDialog>();
+        _fileRenameDialog->setTheme(_theme);
+        _fileRenameDialog->setOnConfirm(
+            [this](std::filesystem::path const &path,
+                   std::string const &newName) -> std::optional<std::string>
+            {
+                return applyFileRename(path, newName);
+            });
 
         _transportBar = std::make_unique<TransportBar>();
         _transportBar->setTheme(_theme);
@@ -897,6 +913,12 @@ namespace vtplayer
         if (_tagEditDialog && _tagEditDialog->isOpen())
         {
             _tagEditDialog->draw(*_rootWindow);
+        }
+
+        // File rename dialog (overlay).
+        if (_fileRenameDialog && _fileRenameDialog->isOpen())
+        {
+            _fileRenameDialog->draw(*_rootWindow);
         }
 
         // Playlist create / delete dialogs (overlays).
@@ -1412,6 +1434,14 @@ namespace vtplayer
             return;
         }
 
+        if (_fileRenameDialog && _fileRenameDialog->isOpen())
+        {
+            _fileRenameDialog->handleKey(event);
+            if (!_fileRenameDialog->isOpen() && _terminal)
+                _terminal->forceRedraw();
+            return;
+        }
+
         if (_textInputDialog && _textInputDialog->isOpen())
         {
             _textInputDialog->handleKey(event);
@@ -1740,6 +1770,20 @@ namespace vtplayer
         {
             focusNextPanel();
             return;
+        }
+
+        if (_screen == Screen::Browser && event.key == Key::F3
+            && _focus == FocusPanel::FileBrowser
+            && (leftIsLibrary() || activeLeftWidget() == LeftSlot::FileBrowser))
+        {
+            openTagEditor(/*editImmediately=*/true);
+            return;
+        }
+
+        if (_screen == Screen::Browser && event.key == Key::F5)
+        {
+            if (openFileRenameDialog())
+                return;
         }
 
         // Space: play/pause
@@ -2207,6 +2251,17 @@ namespace vtplayer
             if (_screen == Screen::Browser)
                 openTagEditor();
             break;
+        case Action::TagEditImmediate:
+            if (_screen == Screen::Browser && _focus == FocusPanel::FileBrowser
+                && (leftIsLibrary() || activeLeftWidget() == LeftSlot::FileBrowser))
+            {
+                openTagEditor(/*editImmediately=*/true);
+            }
+            break;
+        case Action::RenameFile:
+            if (_screen == Screen::Browser)
+                openFileRenameDialog();
+            break;
         case Action::Search:
         {
             // `/` is handled by the focused list view (LibraryView opens the
@@ -2291,7 +2346,8 @@ namespace vtplayer
             break;
         }
         case Action::Refresh:
-            sendOnce(Key::F5);
+            if (!openFileRenameDialog())
+                sendOnce(Key::F5);
             break;
         case Action::GoBack:
             sendOnce(Key::Backspace);
@@ -2463,6 +2519,7 @@ namespace vtplayer
         if (_searchDialog) _searchDialog->setTheme(_theme);
         if (_summonTrackDialog) _summonTrackDialog->setTheme(_theme);
         if (_tagEditDialog) _tagEditDialog->setTheme(_theme);
+        if (_fileRenameDialog) _fileRenameDialog->setTheme(_theme);
         if (_textInputDialog) _textInputDialog->setTheme(_theme);
         if (_confirmDialog) _confirmDialog->setTheme(_theme);
     }
@@ -2844,7 +2901,7 @@ namespace vtplayer
         }
     }
 
-    void Application::openTagEditor()
+    void Application::openTagEditor(bool editImmediately)
     {
         if (!_tagEditDialog)
             return;
@@ -2965,7 +3022,8 @@ namespace vtplayer
                               t.path.extension().string()) != nullptr;
             });
 
-        _tagEditDialog->open(std::move(headerText), std::move(tracks), readOnly);
+        _tagEditDialog->open(std::move(headerText), std::move(tracks),
+                             readOnly, editImmediately);
         if (_terminal)
             _terminal->forceRedraw();
     }
@@ -3064,6 +3122,181 @@ namespace vtplayer
         }
         if (_terminal)
             _terminal->forceRedraw();
+    }
+
+    bool Application::openFileRenameDialog()
+    {
+        if (!_fileRenameDialog || _screen != Screen::Browser
+            || _focus != FocusPanel::FileBrowser)
+        {
+            return false;
+        }
+
+        TrackInfo track;
+        bool found = false;
+
+        if (leftIsLibrary() && _libraryView)
+        {
+            auto sel = _libraryView->currentSelection();
+            if (sel.kind == LibraryView::SelectionKind::Track
+                && sel.tracks.size() == 1 && !sel.tracks.front().isStream())
+            {
+                track = sel.tracks.front();
+                found = true;
+            }
+        }
+        else if (activeLeftWidget() == LeftSlot::FileBrowser && _fileBrowser)
+        {
+            auto const *entry = _fileBrowser->selectedEntry();
+            if (entry && entry->isAudio && !entry->isDirectory && !entry->isPlaylist)
+            {
+                if (auto const *indexed = _library.find(entry->path))
+                    track = *indexed;
+                else
+                    track = readTrackInfo(entry->path, /*filenameTitleFallback=*/false);
+                track.path = entry->path;
+                if (track.format == AudioFormat::Unknown)
+                    track.format = TrackInfo::formatFromPath(entry->path);
+                found = true;
+            }
+        }
+
+        if (!found || track.path.empty())
+            return false;
+
+        TrackInfo realTags = readTrackInfo(track.path, /*filenameTitleFallback=*/false);
+        realTags.path = track.path;
+        if (realTags.format == AudioFormat::Unknown)
+            realTags.format = track.format == AudioFormat::Unknown
+                                  ? TrackInfo::formatFromPath(track.path)
+                                  : track.format;
+        track = std::move(realTags);
+
+        _fileRenameDialog->open(std::move(track));
+        if (_terminal)
+            _terminal->forceRedraw();
+        return true;
+    }
+
+    std::optional<std::string>
+    Application::applyFileRename(std::filesystem::path const & path,
+                                 std::string const & newName)
+    {
+        if (path.empty())
+            return std::string("No file selected");
+        if (newName.empty() || newName == "." || newName == "..")
+            return std::string("Invalid file name");
+        if (newName.find('/') != std::string::npos
+            || newName.find('\\') != std::string::npos)
+        {
+            return std::string("Use a file name, not a path");
+        }
+
+        std::filesystem::path const leaf(newName);
+        if (leaf.has_parent_path() || leaf.filename().string() != newName)
+            return std::string("Use a file name, not a path");
+
+        std::filesystem::path const target = path.parent_path() / leaf;
+        if (target == path)
+            return std::nullopt;
+
+        std::error_code ec;
+        if (!std::filesystem::exists(path, ec) || ec)
+            return std::string("Original file no longer exists");
+
+        ec.clear();
+        bool const targetExists = std::filesystem::exists(target, ec);
+        if (ec)
+            return ec.message();
+
+        bool sameExistingFile = false;
+        if (targetExists)
+        {
+            ec.clear();
+            sameExistingFile = std::filesystem::equivalent(path, target, ec);
+            if (ec) sameExistingFile = false;
+        }
+        if (targetExists && !sameExistingFile)
+            return std::string("File already exists");
+
+        TrackInfo replacement;
+        bool const wasIndexed = (_library.find(path) != nullptr);
+        if (auto const *existing = _library.find(path))
+            replacement = *existing;
+
+        ec.clear();
+        std::filesystem::rename(path, target, ec);
+        if (ec)
+            return ec.message();
+
+        TrackInfo diskInfo = readTrackInfo(target, /*filenameTitleFallback=*/true);
+        if (replacement.path.empty())
+            replacement = diskInfo;
+        else
+        {
+            replacement.path = target;
+            replacement.format = diskInfo.format;
+            replacement.duration = diskInfo.duration > 0.0f ? diskInfo.duration
+                                                            : replacement.duration;
+        }
+        replacement.path = target;
+        if (replacement.format == AudioFormat::Unknown)
+            replacement.format = TrackInfo::formatFromPath(target);
+
+        std::int64_t newMtime = 0;
+        std::int64_t newSize = 0;
+        ec.clear();
+        if (auto t = std::filesystem::last_write_time(target, ec); !ec)
+            newMtime = fileTimeToUnix(t);
+        ec.clear();
+        if (auto sz = std::filesystem::file_size(target, ec); !ec)
+            newSize = static_cast<std::int64_t>(sz);
+        replacement.mtime = newMtime;
+        if (newSize > 0) replacement.size = newSize;
+
+        if (wasIndexed)
+        {
+            _library.erase(path);
+            _library.upsert(replacement);
+            if (_libraryRepo && _libraryRepo->isOpen())
+            {
+                _libraryRepo->erase(path);
+                _libraryRepo->upsert(replacement);
+            }
+        }
+
+        if (_playQueueView)
+            _playQueueView->replaceTrackPath(path, replacement);
+
+        for (auto & p : _shuffleOrder)
+        {
+            if (p == path)
+                p = target;
+        }
+
+        if (_audio.currentTrack().path == path)
+            _audio.updateCurrentTrackMeta(replacement);
+
+        if (_libraryAnchor == path)
+            _libraryAnchor = target;
+
+        if (_libraryView)
+        {
+            _libraryView->rebuild();
+            _libraryView->locate(target);
+        }
+        if (_searchDialog)
+            _searchDialog->invalidateNav();
+
+        if (_fileBrowser && _fileBrowser->currentDirectory() == target.parent_path())
+        {
+            _fileBrowser->refresh();
+            _fileBrowser->locate(target);
+        }
+
+        if (_terminal)
+            _terminal->forceRedraw();
+        return std::nullopt;
     }
 
     void Application::onContextMenuSelect(int index)

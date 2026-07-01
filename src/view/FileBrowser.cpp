@@ -250,6 +250,21 @@ FileEntry const * FileBrowser::selectedEntry() const
     return nullptr;
 }
 
+bool FileBrowser::locate(std::filesystem::path const & path)
+{
+    for (int i = 0; i < static_cast<int>(_entries.size()); ++i)
+    {
+        if (_entries[static_cast<std::size_t>(i)].path == path)
+        {
+            clearMultiSelection();
+            _selectedIndex = i;
+            scrollToSelected();
+            return true;
+        }
+    }
+    return false;
+}
+
 std::vector<std::filesystem::path> FileBrowser::selectedAudioPaths() const
 {
     std::vector<std::filesystem::path> paths;

@@ -153,7 +153,8 @@ TEST_CASE("Built-in default preset binds standard single keys")
     CHECK_EQ(emit("<S-Down>"), Action::ExtendSelectionDown);
     CHECK_EQ(emit("<S-Left>"), Action::MoveUp);            // reorder selection
     CHECK_EQ(emit("<S-Right>"), Action::MoveDown);
-    CHECK_EQ(emit("<F5>"), Action::Refresh);
+    CHECK_EQ(emit("<F3>"), Action::TagEditImmediate);
+    CHECK_EQ(emit("<F5>"), Action::RenameFile);
     CHECK_EQ(emit("<lt>"), Action::SeekBack);    // the '<' key in vim notation
 
     // A digit never starts a count here (counts = off): every press emits.

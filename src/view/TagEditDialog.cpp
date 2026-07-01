@@ -72,10 +72,11 @@ std::optional<int> commonInt(std::vector<TrackInfo> const & tracks, F pick)
 
 void TagEditDialog::open(std::string header,
                          std::vector<TrackInfo> tracks,
-                         bool readOnly)
+                         bool readOnly,
+                         bool editImmediately)
 {
     _open = true;
-    _mode = Mode::View;
+    _mode = (!readOnly && editImmediately) ? Mode::Edit : Mode::View;
     _readOnly = readOnly;
     _header = std::move(header);
     _tracks = std::move(tracks);

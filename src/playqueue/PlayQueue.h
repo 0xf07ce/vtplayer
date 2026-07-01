@@ -22,6 +22,7 @@ public:
     bool empty() const { return _tracks.empty(); }
 
     TrackInfo const * at(int idx) const;
+    TrackInfo * at(int idx);
 
     void setTracks(std::vector<TrackInfo> tracks) { _tracks = std::move(tracks); }
     void clear() { _tracks.clear(); }

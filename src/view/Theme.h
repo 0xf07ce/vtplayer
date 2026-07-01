@@ -14,6 +14,8 @@ namespace vtplayer
 
     struct Theme
     {
+        bool isLight = false;
+
         // Global
         Color background{0x12, 0x10, 0x1A};
         Color foreground{0xB0, 0xA8, 0xC0};
@@ -101,6 +103,7 @@ namespace vtplayer
         static Theme light()
         {
             Theme theme;
+            theme.isLight = true;
 
             // Global
             theme.background = Color{0xF4, 0xF3, 0xF6};

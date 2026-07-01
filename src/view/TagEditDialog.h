@@ -59,7 +59,7 @@ public:
     /// dialog is locked to View mode (F3 does nothing) — used when the
     /// targets are plugin-handled files whose tags cannot be written.
     void open(std::string header, std::vector<TrackInfo> tracks,
-              bool readOnly = false);
+              bool readOnly = false, bool editImmediately = false);
     void close();
     bool isOpen() const { return _open; }
 

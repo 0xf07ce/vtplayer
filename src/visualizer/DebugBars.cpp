@@ -40,6 +40,25 @@ namespace vtplayer
             {0x70, 0x80, 0x6F}, // moss
         }};
 
+        constexpr std::array<Color, 16> kLightPalette = {{
+            {0xB8, 0x1D, 0x4A}, // crimson
+            {0xC7, 0x4A, 0x19}, // vermilion
+            {0xA9, 0x67, 0x00}, // amber brown
+            {0x7B, 0x7E, 0x00}, // olive
+            {0x20, 0x83, 0x2E}, // green
+            {0x00, 0x7F, 0x62}, // teal
+            {0x00, 0x78, 0x91}, // cyan
+            {0x1E, 0x68, 0xB3}, // blue
+            {0x4C, 0x56, 0xC4}, // indigo
+            {0x75, 0x43, 0xB8}, // violet
+            {0x98, 0x33, 0xA3}, // purple
+            {0xB2, 0x2B, 0x78}, // magenta
+            {0x8D, 0x45, 0x00}, // burnt orange
+            {0x2F, 0x6F, 0x2B}, // forest
+            {0x00, 0x66, 0x8E}, // steel teal
+            {0x5A, 0x43, 0x9E}, // royal purple
+        }};
+
         // === MatrixRain intensity-envelope mirror ===
         // Constants duplicated from MatrixRain.cpp on purpose: this is a
         // debug view of those exact derivations, so any drift in the source
@@ -280,7 +299,8 @@ namespace vtplayer
             // Bar — single style per row so the renderer's truecolor diff
             // cache emits the ANSI fg-set sequence once and then just runs
             // through `=` chars.
-            ventty::Style const barStyle{m.color, _theme.background};
+            Color const barColor = _theme.isLight ? kLightPalette[i] : m.color;
+            ventty::Style const barStyle{barColor, _theme.background};
             int const fillCols = static_cast<int>(m.value * static_cast<float>(barWidth) + 0.5f);
             int const fill = std::clamp(fillCols, 0, barWidth);
             int const barX0 = x + kPrefixChars;

@@ -8,6 +8,7 @@
 
 #include <ventty/widget/Widget.h>
 
+#include <filesystem>
 #include <functional>
 #include <set>
 #include <string>
@@ -55,6 +56,8 @@ public:
     /// order. Used by the "add to playlist" action.
     std::vector<TrackInfo> selectedTracks() const;
     TrackInfo const * track(int idx) const;
+    bool replaceTrackPath(std::filesystem::path const & oldPath,
+                          TrackInfo const & replacement);
     int trackCount() const { return _queue.size(); }
     bool empty() const { return _queue.empty(); }
 

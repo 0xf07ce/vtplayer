@@ -49,6 +49,8 @@ add_executable(vtplayer
     view/PlayQueueView.cpp
     view/TagEditDialog.h
     view/TagEditDialog.cpp
+    view/FileRenameDialog.h
+    view/FileRenameDialog.cpp
     view/TransportBar.h
     view/TransportBar.cpp
     view/VisualizerView.h
@@ -106,6 +108,8 @@ add_executable(vtplayer
     util/UnicodeNormalize.cpp
     util/TagLibSilencer.h
     util/TagLibSilencer.cpp
+    util/TagReader.h
+    util/TagReader.cpp
     util/TagWriter.h
     util/TagWriter.cpp
 )

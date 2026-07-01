@@ -14,6 +14,12 @@ TrackInfo const * PlayQueue::at(int idx) const
     return &_tracks[idx];
 }
 
+TrackInfo * PlayQueue::at(int idx)
+{
+    if (idx < 0 || idx >= static_cast<int>(_tracks.size())) return nullptr;
+    return &_tracks[idx];
+}
+
 void PlayQueue::insertTrack(int idx, TrackInfo track)
 {
     if (idx < 0) idx = 0;

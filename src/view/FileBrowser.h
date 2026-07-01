@@ -44,6 +44,7 @@ public:
     int selectedIndex() const { return _selectedIndex; }
     FileEntry const * selectedEntry() const;
     std::filesystem::path const & currentDirectory() const { return _currentDir; }
+    bool locate(std::filesystem::path const & path);
 
     /// Non-recursively collect audio files from `dir`, applying the same
     /// extension and hidden-file filters as the browser listing. Results

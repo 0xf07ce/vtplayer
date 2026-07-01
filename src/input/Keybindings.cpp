@@ -292,6 +292,8 @@ namespace vtplayer
             "map normal a       append\n"
             "map normal b       add-playlist\n"
             "map normal t       tag-edit\n"
+            "map normal <F3>    tag-edit-immediate\n"
+            "map normal <F5>    file-rename\n"
             "map normal /       search\n"
             "map normal n       search-next\n"
             "map normal N       search-prev\n"
@@ -316,8 +318,7 @@ namespace vtplayer
             "map normal <BS>       go-back\n"
             "map normal <C-a>      select-all\n"
             "map normal <C-e>      playlist-edit\n"
-            "map normal <C-s>      playlist-save\n"
-            "map normal <F5>       refresh\n";
+            "map normal <C-s>      playlist-save\n";
     }
 
     char const * Keybindings::viKeysText()
@@ -396,10 +397,11 @@ namespace vtplayer
             "map normal a        append\n"
             "map normal b        add-playlist\n"
             "map normal t        tag-edit\n"
+            "map normal <F3>     tag-edit-immediate\n"
+            "map normal <F5>     file-rename\n"
             "map normal /        search\n"
             "map normal n        search-next\n"
             "map normal N        search-prev\n"
-            "map normal <F5>     refresh\n"
             "map normal <BS>     go-back\n"
             "\n"
             "# -- Visual mode: motions extend the selection, d deletes it --\n"

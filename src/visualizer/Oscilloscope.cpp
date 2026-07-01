@@ -21,10 +21,11 @@ namespace vtplayer
             return;
 
         int const N = static_cast<int>(_samples.size());
-        // Braille sub-pixels are small, so a bright warm tone keeps the
-        // trace readable. Amber, borrowed from the DebugBars earth-tone
-        // palette.
-        ventty::Color const kTrace{0xC9, 0xA0, 0x62};
+        // Braille sub-pixels are tiny; the light theme needs near-black
+        // contrast so the dotted trace doesn't disappear on the pale bg.
+        ventty::Color const kTrace =
+            _theme.isLight ? ventty::Color{0x14, 0x10, 0x1F}
+                           : ventty::Color{0xC9, 0xA0, 0x62};
         ventty::Style traceStyle{kTrace, _theme.background};
 
         // Plot the trace into a Braille sub-pixel canvas (2x4 dots per cell):

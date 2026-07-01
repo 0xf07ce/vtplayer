@@ -12,6 +12,7 @@
 #include "../view/ConfirmDialog.h"
 #include "../view/ContextMenu.h"
 #include "../view/FileBrowser.h"
+#include "../view/FileRenameDialog.h"
 #include "../view/HeaderBar.h"
 #include "../view/LibraryView.h"
 #include "../view/LibrarySearchDialog.h"
@@ -210,7 +211,11 @@ namespace vtplayer
 
         /// 't' handler: figure out what the user is pointing at in the
         /// focused panel and open the tag editor with the right scope.
-        void openTagEditor();
+        void openTagEditor(bool editImmediately = false);
+        bool openFileRenameDialog();
+        std::optional<std::string>
+        applyFileRename(std::filesystem::path const & path,
+                        std::string const & newName);
 
         /// Save callback: write tags to disk, refresh the in-memory library
         /// + repository, and rebuild dependent views.
@@ -547,6 +552,7 @@ namespace vtplayer
         std::unique_ptr<LibrarySearchDialog> _searchDialog;
         std::unique_ptr<SummonTrackDialog> _summonTrackDialog;
         std::unique_ptr<TagEditDialog> _tagEditDialog;
+        std::unique_ptr<FileRenameDialog> _fileRenameDialog;
         std::unique_ptr<TextInputDialog> _textInputDialog;
         std::unique_ptr<ConfirmDialog> _confirmDialog;
 

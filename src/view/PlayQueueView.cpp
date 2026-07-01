@@ -218,6 +218,23 @@ TrackInfo const * PlayQueueView::track(int idx) const
     return _queue.at(idx);
 }
 
+bool PlayQueueView::replaceTrackPath(std::filesystem::path const & oldPath,
+                                     TrackInfo const & replacement)
+{
+    bool changed = false;
+    for (int i = 0; i < _queue.size(); ++i)
+    {
+        if (auto * t = _queue.at(i); t && t->path == oldPath)
+        {
+            *t = replacement;
+            changed = true;
+        }
+    }
+    if (changed)
+        notifyContentsChanged();
+    return changed;
+}
+
 std::vector<TrackInfo> PlayQueueView::selectedTracks() const
 {
     std::set<int> idxs = _multiSelected;

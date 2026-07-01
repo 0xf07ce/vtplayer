@@ -49,6 +49,8 @@ namespace vtplayer
         Append,
         AddToPlaylist,
         TagEdit,
+        TagEditImmediate,
+        RenameFile,
         Search,
         SearchNext,
         SearchPrev,

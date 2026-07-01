@@ -25,6 +25,35 @@ namespace vtplayer
             };
             return Color(mix(a.r, b.r), mix(a.g, b.g), mix(a.b, b.b));
         }
+
+        Color hsvToRgb(double hueDeg, double sat, double val)
+        {
+            hueDeg = std::fmod(hueDeg, 360.0);
+            if (hueDeg < 0.0)
+                hueDeg += 360.0;
+            sat = std::clamp(sat, 0.0, 1.0);
+            val = std::clamp(val, 0.0, 1.0);
+
+            double const c = val * sat;
+            double const x = c * (1.0 - std::abs(std::fmod(hueDeg / 60.0, 2.0) - 1.0));
+            double const m = val - c;
+
+            double r = 0.0;
+            double g = 0.0;
+            double b = 0.0;
+            if (hueDeg < 60.0) { r = c; g = x; }
+            else if (hueDeg < 120.0) { r = x; g = c; }
+            else if (hueDeg < 180.0) { g = c; b = x; }
+            else if (hueDeg < 240.0) { g = x; b = c; }
+            else if (hueDeg < 300.0) { r = x; b = c; }
+            else { r = c; b = x; }
+
+            auto ch = [](double v)
+            {
+                return static_cast<uint8_t>(std::lround(std::clamp(v, 0.0, 1.0) * 255.0));
+            };
+            return Color{ch(r + m), ch(g + m), ch(b + m)};
+        }
     } // namespace
 
     void VinylVis::update(AudioEngine const & /*engine*/)
@@ -59,20 +88,25 @@ namespace vtplayer
             {0x01, 0x08}, {0x02, 0x10}, {0x04, 0x20}, {0x40, 0x80},
         };
 
-        // Body palette: small spread (subtle grooves + gentle rotating
-        // sheen) between two close theme shades — no harsh contrast.
+        // Dark-theme body palette: small spread (subtle grooves + gentle
+        // rotating sheen) between two close theme shades — no harsh contrast.
         std::vector<ventty::Style> palette;
         palette.reserve(kPaletteSteps);
-        for (int i = 0; i < kPaletteSteps; ++i)
+        if (!_theme.isLight)
         {
-            double t = static_cast<double>(i) / (kPaletteSteps - 1);
-            // Top end pushed a bit past visBarMid toward visBarHigh so the
-            // rotating sheen reads more clearly (still a gentle spread).
-            Color hi = lerp(_theme.visBarMid, _theme.visBarHigh, 0.65);
-            palette.push_back({lerp(_theme.visBarLow, hi, t),
-                               _theme.background});
+            for (int i = 0; i < kPaletteSteps; ++i)
+            {
+                double t = static_cast<double>(i) / (kPaletteSteps - 1);
+                // Top end pushed a bit past visBarMid toward visBarHigh so the
+                // rotating sheen reads more clearly (still a gentle spread).
+                Color hi = lerp(_theme.visBarMid, _theme.visBarHigh, 0.65);
+                palette.push_back({lerp(_theme.visBarLow, hi, t),
+                                   _theme.background});
+            }
         }
-        ventty::Style const labelStyle{_theme.visBarLow, _theme.background};
+        ventty::Style const labelStyle{
+            _theme.isLight ? Color{0x22, 0x1A, 0x30} : _theme.visBarLow,
+            _theme.background};
 
         for (int cy = 0; cy < h; ++cy)
             for (int cx = 0; cx < w; ++cx)
@@ -101,6 +135,17 @@ namespace vtplayer
                 if (rr <= labelR)
                 {
                     st = labelStyle;
+                }
+                else if (_theme.isLight)
+                {
+                    double const phi = std::atan2(dy, dx);
+                    double const angular = (phi + _angle) / (2.0 * M_PI);
+                    double const radial = (rr - labelR) / std::max(1.0, R - labelR);
+                    double const sheen = 0.5 + 0.5 * std::cos(phi - _angle);
+                    double const groove = 0.5 + 0.5 * std::sin((rr - labelR) * grooveFreq);
+                    double const hue = (angular * 360.0) + radial * 210.0 + groove * 35.0;
+                    double const value = 0.48 + 0.18 * sheen + 0.08 * groove;
+                    st = ventty::Style{hsvToRgb(hue, 0.88, value), _theme.background};
                 }
                 else
                 {
