@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 1.1.5 (2026-07-07)
+
+- Minor bug fixes.
+
 ## 1.1.4 (2026-07-07)
 
 - Play queue tracks can now open tag editing directly with `F3`, matching
