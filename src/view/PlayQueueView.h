@@ -56,6 +56,9 @@ public:
     /// order. Used by the "add to playlist" action.
     std::vector<TrackInfo> selectedTracks() const;
     TrackInfo const * track(int idx) const;
+    TrackInfo const * findTrack(std::filesystem::path const & path) const;
+    bool updateTrackInfo(std::filesystem::path const & path,
+                         TrackInfo const & replacement);
     bool replaceTrackPath(std::filesystem::path const & oldPath,
                           TrackInfo const & replacement);
     int trackCount() const { return _queue.size(); }

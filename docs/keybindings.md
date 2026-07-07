@@ -30,6 +30,8 @@ All shortcuts work regardless of Korean IME input state.
 | `/` | Search library (Tab cycles filter: Any / Artist / Album / Title / Year) |
 | `N` / `Shift+N` | Jump to next / previous search result |
 | `T` | Edit tags (artist / album / track / folder, scoped to selection) |
+| `F3` | Edit tags immediately |
+| `F5` | Rename selected local file |
 
 ## Browser — File browser
 
@@ -42,7 +44,7 @@ All shortcuts work regardless of Korean IME input state.
 | `A` | Add selected file (or every audio file in the selected dir, non-recursive) to play queue |
 | `T` | Edit tags of selected audio file |
 | `Backspace` | Go up to parent directory |
-| `F5` | Refresh directory listing |
+| `F5` | Rename selected audio file |
 
 ## Browser — Playlist browser
 
@@ -76,6 +78,8 @@ All shortcuts work regardless of Korean IME input state.
 | `Ctrl+Up` / `Ctrl+Down` | Move selected track up / down |
 | `Ctrl+A` | Select all |
 | `T` | Edit tags (multi-selection if any, else cursor track) |
+| `F3` | Edit tags immediately |
+| `F5` | Rename selected local file |
 
 ## Visualizer
 

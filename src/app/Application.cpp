@@ -1773,8 +1773,9 @@ namespace vtplayer
         }
 
         if (_screen == Screen::Browser && event.key == Key::F3
-            && _focus == FocusPanel::FileBrowser
-            && (leftIsLibrary() || activeLeftWidget() == LeftSlot::FileBrowser))
+            && (_focus == FocusPanel::PlayQueue
+                || (_focus == FocusPanel::FileBrowser
+                    && (leftIsLibrary() || activeLeftWidget() == LeftSlot::FileBrowser))))
         {
             openTagEditor(/*editImmediately=*/true);
             return;
@@ -2252,8 +2253,10 @@ namespace vtplayer
                 openTagEditor();
             break;
         case Action::TagEditImmediate:
-            if (_screen == Screen::Browser && _focus == FocusPanel::FileBrowser
-                && (leftIsLibrary() || activeLeftWidget() == LeftSlot::FileBrowser))
+            if (_screen == Screen::Browser
+                && (_focus == FocusPanel::PlayQueue
+                    || (_focus == FocusPanel::FileBrowser
+                        && (leftIsLibrary() || activeLeftWidget() == LeftSlot::FileBrowser))))
             {
                 openTagEditor(/*editImmediately=*/true);
             }
@@ -3065,7 +3068,12 @@ namespace vtplayer
             {
                 merged = *existing;
             }
-            else
+            else if (_playQueueView)
+            {
+                if (auto const *queued = _playQueueView->findTrack(path))
+                    merged = *queued;
+            }
+            if (merged.path.empty())
             {
                 merged.path = path;
                 merged.format = TrackInfo::formatFromPath(path);
@@ -3092,6 +3100,8 @@ namespace vtplayer
                 _library.upsert(merged);
                 if (repoOpen) _libraryRepo->upsert(merged);
             }
+            if (_playQueueView)
+                _playQueueView->updateTrackInfo(path, merged);
 
             // If the just-edited track is the one currently loaded in the
             // audio engine, push the new metadata so transport / visualizer
@@ -3126,8 +3136,7 @@ namespace vtplayer
 
     bool Application::openFileRenameDialog()
     {
-        if (!_fileRenameDialog || _screen != Screen::Browser
-            || _focus != FocusPanel::FileBrowser)
+        if (!_fileRenameDialog || _screen != Screen::Browser)
         {
             return false;
         }
@@ -3135,7 +3144,16 @@ namespace vtplayer
         TrackInfo track;
         bool found = false;
 
-        if (leftIsLibrary() && _libraryView)
+        if (_focus == FocusPanel::PlayQueue && _playQueueView)
+        {
+            if (auto const *selected = _playQueueView->selectedTrack();
+                selected && !selected->isStream())
+            {
+                track = *selected;
+                found = true;
+            }
+        }
+        else if (_focus == FocusPanel::FileBrowser && leftIsLibrary() && _libraryView)
         {
             auto sel = _libraryView->currentSelection();
             if (sel.kind == LibraryView::SelectionKind::Track
@@ -3145,7 +3163,8 @@ namespace vtplayer
                 found = true;
             }
         }
-        else if (activeLeftWidget() == LeftSlot::FileBrowser && _fileBrowser)
+        else if (_focus == FocusPanel::FileBrowser
+                 && activeLeftWidget() == LeftSlot::FileBrowser && _fileBrowser)
         {
             auto const *entry = _fileBrowser->selectedEntry();
             if (entry && entry->isAudio && !entry->isDirectory && !entry->isPlaylist)
@@ -3223,6 +3242,11 @@ namespace vtplayer
         bool const wasIndexed = (_library.find(path) != nullptr);
         if (auto const *existing = _library.find(path))
             replacement = *existing;
+        else if (_playQueueView)
+        {
+            if (auto const *queued = _playQueueView->findTrack(path))
+                replacement = *queued;
+        }
 
         ec.clear();
         std::filesystem::rename(path, target, ec);

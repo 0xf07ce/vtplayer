@@ -218,6 +218,31 @@ TrackInfo const * PlayQueueView::track(int idx) const
     return _queue.at(idx);
 }
 
+TrackInfo const * PlayQueueView::findTrack(std::filesystem::path const & path) const
+{
+    for (int i = 0; i < _queue.size(); ++i)
+    {
+        if (auto const * t = _queue.at(i); t && t->path == path)
+            return t;
+    }
+    return nullptr;
+}
+
+bool PlayQueueView::updateTrackInfo(std::filesystem::path const & path,
+                                    TrackInfo const & replacement)
+{
+    bool changed = false;
+    for (int i = 0; i < _queue.size(); ++i)
+    {
+        if (auto * t = _queue.at(i); t && t->path == path)
+        {
+            *t = replacement;
+            changed = true;
+        }
+    }
+    return changed;
+}
+
 bool PlayQueueView::replaceTrackPath(std::filesystem::path const & oldPath,
                                      TrackInfo const & replacement)
 {

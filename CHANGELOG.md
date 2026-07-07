@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 1.1.4 (2026-07-07)
+
+- Play queue tracks can now open tag editing directly with `F3`, matching
+  the source-panel immediate edit workflow.
+- Tag saves now refresh matching play queue entries so edited metadata is
+  visible immediately in the right panel.
+- The tag editor now shows the selected file name above its shortcut footer,
+  with a compact summary for multi-track edits.
+- Play queue `F5` rename support and the keybinding reference now match the
+  current queue and file-browser behavior.
+
 ## 1.1.3 (2026-07-01)
 
 - Added a single-file rename workflow on `F5` for local audio files. The

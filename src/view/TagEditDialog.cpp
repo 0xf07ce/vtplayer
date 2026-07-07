@@ -42,6 +42,22 @@ int parseIntOrZero(std::string const & s)
     }
 }
 
+std::string fileSummary(std::vector<TrackInfo> const & tracks)
+{
+    if (tracks.empty() || tracks.front().path.empty())
+        return " File: (unknown) ";
+
+    std::string name = tracks.front().path.filename().string();
+    if (name.empty())
+        name = tracks.front().path.string();
+
+    if (tracks.size() == 1)
+        return " File: " + name + " ";
+
+    return " File: " + name + "  (+" + std::to_string(tracks.size() - 1)
+           + " more) ";
+}
+
 /// Common value across all tracks for the string field selected by `pick`;
 /// empty string if all tracks share the empty value; nullopt if they differ.
 template <typename F>
@@ -475,7 +491,8 @@ void TagEditDialog::draw(ventty::Window & window)
     int const screenH = window.height();
 
     int const fieldRows = static_cast<int>(_fields.size());
-    int const desiredH  = 4 /*frame+header+sep+spacer*/ + fieldRows + 3 /*sep+footer+pad*/;
+    int const desiredH  = 4 /*frame+header+sep+spacer*/ + fieldRows
+                          + 4 /*sep+file+footer+pad*/;
     int const dlgW = std::min(80, std::max(50, screenW - 8));
     int const dlgH = std::min(std::max(desiredH, 10), std::max(8, screenH - 4));
     int const x = (screenW - dlgW) / 2;
@@ -635,11 +652,14 @@ void TagEditDialog::drawEditor(ventty::Window & window,
     }
 
     // Footer separator.
-    int const footerSepY = y + dlgH - 2;
+    int const footerSepY = y + dlgH - 3;
     for (int i = 1; i < dlgW - 1; ++i)
     {
         window.putChar(x + i, footerSepY, ventty::HR_THIN, frame);
     }
+
+    std::string fileLine = truncateToWidth(fileSummary(_tracks), dlgW - 4, "...");
+    window.drawText(x + 2, y + dlgH - 2, fileLine, dim);
 
     std::string footer;
     switch (_mode)
