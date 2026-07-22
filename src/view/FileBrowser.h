@@ -77,6 +77,7 @@ protected:
     void onFocusChanged() override;
 
 private:
+    void goToParentDirectory();
     void scrollToSelected();
     void extendSelectionTo(int newIndex);
 

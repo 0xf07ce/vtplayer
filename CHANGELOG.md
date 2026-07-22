@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 1.1.6 (2026-07-22)
+
+- File browser parent navigation now focuses the directory the user just came
+  from after Backspace or activating `..`, instead of jumping to the first
+  parent-list entry.
+- Added regression coverage for FileBrowser parent navigation focus.
+
 ## 1.1.5 (2026-07-07)
 
 - Minor bug fixes.

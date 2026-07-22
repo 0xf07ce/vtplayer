@@ -250,6 +250,18 @@ FileEntry const * FileBrowser::selectedEntry() const
     return nullptr;
 }
 
+void FileBrowser::goToParentDirectory()
+{
+    if (!_currentDir.has_parent_path() || _currentDir == _currentDir.root_path())
+    {
+        return;
+    }
+
+    std::filesystem::path const child = _currentDir;
+    setDirectory(_currentDir.parent_path());
+    locate(child);
+}
+
 bool FileBrowser::locate(std::filesystem::path const & path)
 {
     for (int i = 0; i < static_cast<int>(_entries.size()); ++i)
@@ -506,7 +518,14 @@ bool FileBrowser::handleKey(ventty::KeyEvent const & event)
         }
         if (entry->isDirectory)
         {
-            setDirectory(entry->path);
+            if (entry->isParent)
+            {
+                goToParentDirectory();
+            }
+            else
+            {
+                setDirectory(entry->path);
+            }
             return true;
         }
         if (entry->isPlaylist && _onOpenPlaylist)
@@ -540,10 +559,7 @@ bool FileBrowser::handleKey(ventty::KeyEvent const & event)
 
     if (event.key == Key::Backspace)
     {
-        if (_currentDir.has_parent_path() && _currentDir != _currentDir.root_path())
-        {
-            setDirectory(_currentDir.parent_path());
-        }
+        goToParentDirectory();
         return true;
     }
 
@@ -597,7 +613,14 @@ bool FileBrowser::handleMouse(ventty::MouseEvent const & event)
                     auto const * entry = selectedEntry();
                     if (entry && entry->isDirectory)
                     {
-                        setDirectory(entry->path);
+                        if (entry->isParent)
+                        {
+                            goToParentDirectory();
+                        }
+                        else
+                        {
+                            setDirectory(entry->path);
+                        }
                     }
                     else if (entry && entry->isPlaylist && _onOpenPlaylist)
                     {

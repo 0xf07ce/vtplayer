@@ -1,7 +1,6 @@
-# Unit tests for vtplayer's pure-logic modules (parsers, normalizer, play
-# queue, config). These intentionally avoid the audio/library/UI layers so the
-# test binary links nothing heavier than ventty (needed only for the UTF-8
-# helper used by UnicodeNormalize).
+# Unit tests for vtplayer's low-level modules and lightweight view behavior.
+# These intentionally avoid the audio/library layers so the test binary links
+# nothing heavier than ventty.
 
 # The dummy plugins are pure C — proving the host boundary is a real C ABI.
 enable_language(C)
@@ -30,6 +29,7 @@ add_executable(vtplayer_tests
     test_config.cpp
     test_plugin.cpp
     test_keybindings.cpp
+    test_filebrowser.cpp
 
     # Modules under test, compiled directly into the test binary.
     ${CMAKE_SOURCE_DIR}/src/util/M3uReader.cpp
@@ -42,6 +42,7 @@ add_executable(vtplayer_tests
     ${CMAKE_SOURCE_DIR}/src/audio/PluginSource.cpp
     ${CMAKE_SOURCE_DIR}/src/input/Actions.cpp
     ${CMAKE_SOURCE_DIR}/src/input/Keybindings.cpp
+    ${CMAKE_SOURCE_DIR}/src/view/FileBrowser.cpp
 )
 
 target_include_directories(vtplayer_tests PRIVATE
