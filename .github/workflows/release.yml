@@ -202,6 +202,9 @@ jobs:
           git clone "https://x-access-token:${{ secrets.TAP_PUSH_TOKEN }}@github.com/${TAP_REPO}.git" "$tap_dir"
           echo "TAP_DIR=$tap_dir" >> "$GITHUB_ENV"
 
+      - name: Trust tap formula
+        run: brew trust 0xf07ce/tap
+
       - name: Merge bottle blocks into formula
         run: |
           set -euo pipefail

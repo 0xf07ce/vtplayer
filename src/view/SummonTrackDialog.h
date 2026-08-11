@@ -72,6 +72,7 @@ public:
     {
         Idle,
         Searching,
+        SearchingNext,
         Results,
         NoResults,
         Failed,
@@ -104,6 +105,8 @@ private:
         SearchStatus status = SearchStatus::Idle;
         int selectedIndex = 0;
         int scrollOffset = 0;
+        bool hasMore = false;
+        bool nextSearchFailed = false;
         std::uint64_t generation = 0;
     };
 
@@ -112,13 +115,15 @@ private:
     ProviderState const & activeState() const;
     Provider const & activeProvider() const;
     void switchProvider(int delta);
-    void startSearch();
+    void startSearch(bool nextPage = false);
     void startDownload();
     void pollSearch();
     void requestCancelRunningWorker();
     SearchOutcome runProviderSearch(std::size_t providerIndex,
                                     std::string query,
                                     std::filesystem::path currentDir,
+                                    std::size_t resultOffset,
+                                    std::size_t maxResults,
                                     std::uint64_t generation);
     SearchOutcome runProviderDownload(std::size_t providerIndex,
                                       ResultRow row,

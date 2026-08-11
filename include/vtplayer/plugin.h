@@ -283,6 +283,7 @@ typedef struct VtpSummonQueryRequest
     const char *query;
     const char *current_dir;
     uint32_t    max_results;
+    uint32_t    result_offset;
 } VtpSummonQueryRequest;
 
 typedef struct VtpSummonResult

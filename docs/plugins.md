@@ -178,6 +178,7 @@ typedef struct VtpSummonQueryRequest
     const char *query;
     const char *current_dir;
     uint32_t    max_results;
+    uint32_t    result_offset;
 } VtpSummonQueryRequest;
 
 typedef struct VtpSummonResult
@@ -233,9 +234,11 @@ called before the module is unloaded, after the dialog has joined any worker
 thread.
 
 `query` runs on a host worker thread. The host passes the query string, the
-current FileBrowser directory, and a maximum result count. It also passes a
-host-owned `results` array and `*n_results` capacity; fill up to that many
-slots, then set `*n_results` to the number written. Return `0` on success.
+current FileBrowser directory, a zero-based result offset, and a maximum result
+count. It also passes a host-owned `results` array and `*n_results` capacity;
+fill up to that many slots starting at `result_offset`, then set `*n_results`
+to the number written. Providers built against an older request prefix treat
+the offset as zero. Return `0` on success.
 Result strings must remain valid until the next `query`, `download`, `cancel`,
 or `destroy` call on the same handle; the host copies them immediately.
 

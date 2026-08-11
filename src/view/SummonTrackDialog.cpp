@@ -7,7 +7,7 @@
 #include <ventty/core/Utf8.h>
 
 #include <algorithm>
-#include <array>
+#include <limits>
 #include <string_view>
 
 namespace vtplayer
@@ -18,7 +18,8 @@ namespace
 
 using Key = ventty::KeyEvent::Key;
 
-constexpr std::size_t kMaxResults = 32;
+constexpr std::size_t kResultsPageSize = 10;
+constexpr std::size_t kMaxResults = std::numeric_limits<std::uint32_t>::max();
 
 std::string copyCString(char const * s)
 {
@@ -100,16 +101,17 @@ std::size_t nextCodepointStart(std::string const & s, std::size_t pos)
 
 std::string formatResultRow(SummonTrackDialog::ResultRow const & row)
 {
-    std::string out = row.title;
+    std::string out;
+    if (!row.duration.empty() && row.duration != "NA")
+    {
+        out += row.duration;
+        out += " ";
+    }
+    out += row.title;
     if (!row.channel.empty() && row.channel != "NA")
     {
         out += " - ";
         out += row.channel;
-    }
-    if (!row.duration.empty() && row.duration != "NA")
-    {
-        out += "  ";
-        out += row.duration;
     }
     return out;
 }
@@ -120,6 +122,8 @@ std::string statusText(SummonTrackDialog::SearchStatus status, std::size_t resul
     {
         case SummonTrackDialog::SearchStatus::Searching:
             return "searching";
+        case SummonTrackDialog::SearchStatus::SearchingNext:
+            return "searching next";
         case SummonTrackDialog::SearchStatus::Results:
             return std::to_string(resultCount) + " result" + (resultCount == 1 ? "" : "s");
         case SummonTrackDialog::SearchStatus::NoResults:
@@ -199,6 +203,8 @@ void SummonTrackDialog::open()
         state.status = SearchStatus::Idle;
         state.selectedIndex = 0;
         state.scrollOffset = 0;
+        state.hasMore = false;
+        state.nextSearchFailed = false;
         ++state.generation;
     }
 
@@ -308,15 +314,69 @@ void SummonTrackDialog::pollSearch()
         return;
     }
 
-    state.results = std::move(rows);
-    state.selectedIndex = 0;
-    state.scrollOffset = 0;
+    bool const searchedNext = state.status == SearchStatus::SearchingNext;
+    std::size_t const previousCount = state.results.size();
     if (!ok)
-        state.status = SearchStatus::Failed;
-    else if (state.results.empty())
-        state.status = SearchStatus::NoResults;
+    {
+        if (searchedNext)
+        {
+            state.status = SearchStatus::Results;
+            state.nextSearchFailed = true;
+            state.hasMore = true;
+            state.selectedIndex = static_cast<int>(state.results.size());
+        }
+        else
+        {
+            state.status = SearchStatus::Failed;
+        }
+        return;
+    }
+
+    std::size_t const returnedCount = rows.size();
+    std::size_t addedCount = returnedCount;
+    if (searchedNext)
+    {
+        addedCount = 0;
+        for (auto & row : rows)
+        {
+            auto const duplicate = std::find_if(
+                state.results.begin(),
+                state.results.end(),
+                [&](ResultRow const & existing) {
+                    return (!row.url.empty() && existing.url == row.url)
+                           || (!row.opaque.empty() && existing.opaque == row.opaque);
+                });
+            if (duplicate == state.results.end())
+            {
+                state.results.push_back(std::move(row));
+                ++addedCount;
+            }
+        }
+    }
     else
-        state.status = SearchStatus::Results;
+    {
+        state.results = std::move(rows);
+    }
+    state.hasMore = returnedCount >= kResultsPageSize
+                    && state.results.size() < kMaxResults
+                    && (!searchedNext || addedCount > 0);
+    state.nextSearchFailed = false;
+    if (searchedNext)
+    {
+        if (state.results.size() > previousCount)
+            state.selectedIndex = static_cast<int>(previousCount);
+        else if (!state.results.empty())
+            state.selectedIndex = static_cast<int>(state.results.size()) - 1;
+        else
+            state.selectedIndex = 0;
+    }
+    else
+    {
+        state.selectedIndex = 0;
+        state.scrollOffset = 0;
+    }
+
+    state.status = state.results.empty() ? SearchStatus::NoResults : SearchStatus::Results;
 }
 
 void SummonTrackDialog::clearResultsForEdit()
@@ -328,15 +388,18 @@ void SummonTrackDialog::clearResultsForEdit()
     state.results.clear();
     state.selectedIndex = 0;
     state.scrollOffset = 0;
+    state.hasMore = false;
+    state.nextSearchFailed = false;
 }
 
-void SummonTrackDialog::startSearch()
+void SummonTrackDialog::startSearch(bool nextPage)
 {
     pollSearch();
     if (!hasProviders()) return;
 
     ProviderState & state = activeState();
     if (state.query.empty()) return;
+    if (nextPage && state.results.empty()) return;
 
     {
         std::lock_guard<std::mutex> lock(_searchMutex);
@@ -347,10 +410,22 @@ void SummonTrackDialog::startSearch()
     std::filesystem::path currentDir =
         _downloadDirectoryProvider ? _downloadDirectoryProvider() : fallbackCurrentDirectory();
 
-    state.results.clear();
-    state.selectedIndex = 0;
-    state.scrollOffset = 0;
-    state.status = SearchStatus::Searching;
+    std::size_t const resultOffset = nextPage ? state.results.size() : 0;
+    if (resultOffset >= kMaxResults) return;
+    std::size_t const maxResults = std::min(kResultsPageSize, kMaxResults - resultOffset);
+
+    if (!nextPage)
+    {
+        state.results.clear();
+        state.selectedIndex = 0;
+        state.scrollOffset = 0;
+    }
+    else
+    {
+        state.selectedIndex = static_cast<int>(state.results.size());
+    }
+    state.nextSearchFailed = false;
+    state.status = nextPage ? SearchStatus::SearchingNext : SearchStatus::Searching;
     std::uint64_t const generation = ++state.generation;
     std::size_t const providerIndex = _activeProviderIndex;
     std::string query = state.query;
@@ -373,10 +448,14 @@ void SummonTrackDialog::startSearch()
                                  providerIndex,
                                  query = std::move(query),
                                  currentDir = std::move(currentDir),
+                                 resultOffset,
+                                 maxResults,
                                  generation]() mutable {
         SearchOutcome outcome = runProviderSearch(providerIndex,
                                                   std::move(query),
                                                   std::move(currentDir),
+                                                  resultOffset,
+                                                  maxResults,
                                                   generation);
         std::lock_guard<std::mutex> lock(_searchMutex);
         _workerRunning = false;
@@ -453,6 +532,8 @@ SummonTrackDialog::SearchOutcome SummonTrackDialog::runProviderSearch(
     std::size_t providerIndex,
     std::string query,
     std::filesystem::path currentDir,
+    std::size_t resultOffset,
+    std::size_t maxResults,
     std::uint64_t generation)
 {
     SearchOutcome outcome;
@@ -463,7 +544,8 @@ SummonTrackDialog::SearchOutcome SummonTrackDialog::runProviderSearch(
     if (!provider.plugin || !provider.plugin->query)
         return outcome;
 
-    std::array<VtpSummonResult, kMaxResults> rawResults{};
+    maxResults = std::clamp(maxResults, std::size_t{1}, kMaxResults);
+    std::vector<VtpSummonResult> rawResults(maxResults);
     for (auto & result : rawResults)
         result.struct_size = sizeof(VtpSummonResult);
 
@@ -473,6 +555,7 @@ SummonTrackDialog::SearchOutcome SummonTrackDialog::runProviderSearch(
     request.query = query.c_str();
     request.current_dir = currentDirString.c_str();
     request.max_results = static_cast<std::uint32_t>(rawResults.size());
+    request.result_offset = static_cast<std::uint32_t>(resultOffset);
 
     std::size_t count = rawResults.size();
     int rc = provider.plugin->query(provider.handle, &request, rawResults.data(), &count);
@@ -671,12 +754,19 @@ bool SummonTrackDialog::handleKey(ventty::KeyEvent const & event)
     }
 
     ProviderState & state = activeState();
-    if (state.status == SearchStatus::Searching || state.status == SearchStatus::Downloading)
+    if (state.status == SearchStatus::Searching
+        || state.status == SearchStatus::SearchingNext
+        || state.status == SearchStatus::Downloading)
         return true;
 
     if (event.key == Key::Enter)
     {
-        if (!state.results.empty())
+        bool const searchNextSelected = state.hasMore
+                                        && state.selectedIndex
+                                               == static_cast<int>(state.results.size());
+        if (searchNextSelected)
+            startSearch(true);
+        else if (!state.results.empty())
             startDownload();
         else
             startSearch();
@@ -723,7 +813,8 @@ bool SummonTrackDialog::handleKey(ventty::KeyEvent const & event)
     }
     if (event.key == Key::Down)
     {
-        if (state.selectedIndex < static_cast<int>(state.results.size()) - 1)
+        int const lastIndex = static_cast<int>(state.results.size()) - (state.hasMore ? 0 : 1);
+        if (state.selectedIndex < lastIndex)
             ++state.selectedIndex;
         return true;
     }
@@ -734,8 +825,9 @@ bool SummonTrackDialog::handleKey(ventty::KeyEvent const & event)
     }
     if (event.key == Key::PageDown)
     {
-        if (!state.results.empty())
-            state.selectedIndex = std::min(static_cast<int>(state.results.size()) - 1,
+        int const lastIndex = static_cast<int>(state.results.size()) - (state.hasMore ? 0 : 1);
+        if (lastIndex >= 0)
+            state.selectedIndex = std::min(lastIndex,
                                            state.selectedIndex + 8);
         return true;
     }
@@ -886,6 +978,9 @@ void SummonTrackDialog::draw(ventty::Window & window)
         return;
     }
 
+    bool const showSearchNext = state.hasMore || state.status == SearchStatus::SearchingNext;
+    int const rowCount = static_cast<int>(state.results.size()) + (showSearchNext ? 1 : 0);
+
     if (state.selectedIndex < state.scrollOffset) state.scrollOffset = state.selectedIndex;
     if (state.selectedIndex >= state.scrollOffset + listH)
         state.scrollOffset = state.selectedIndex - listH + 1;
@@ -894,10 +989,25 @@ void SummonTrackDialog::draw(ventty::Window & window)
     for (int i = 0; i < listH; ++i)
     {
         int const idx = state.scrollOffset + i;
-        if (idx >= static_cast<int>(state.results.size())) break;
+        if (idx >= rowCount) break;
 
         int const ry = listY + i;
         bool const cursor = idx == state.selectedIndex;
+        if (idx == static_cast<int>(state.results.size()))
+        {
+            ventty::Style const rowStyle = cursor ? sel : accent;
+            window.fill(x + 1, ry, dlgW - 2, 1, U' ', rowStyle);
+            std::string const label = state.status == SearchStatus::SearchingNext
+                                          ? "Searching next 10..."
+                                          : (state.nextSearchFailed
+                                                 ? "Search next failed - Enter to retry"
+                                                 : "Search next 10");
+            window.drawText(x + 2,
+                            ry,
+                            rightTruncateToWidth(label, innerW, "..."),
+                            rowStyle);
+            continue;
+        }
         bool const disabled = (state.results[idx].flags & VTP_SUMMON_RESULT_DISABLED) != 0;
         ventty::Style const rowStyle = cursor ? sel : (disabled ? dim : body);
         window.fill(x + 1, ry, dlgW - 2, 1, U' ', rowStyle);

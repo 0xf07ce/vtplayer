@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 1.1.7 (2026-08-11)
+
+- Summon Track search results now show duration first and support loading the
+  next 10 results without replacing the current page.
+- Extended the summon provider request with a zero-based `result_offset` so
+  providers can implement stable pagination while retaining compatibility with
+  the previous request prefix.
+- The Homebrew release workflow now trusts the tap before merging bottle blocks
+  into the formula.
+
 ## 1.1.6 (2026-07-22)
 
 - File browser parent navigation now focuses the directory the user just came
