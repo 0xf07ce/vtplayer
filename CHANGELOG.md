@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## 1.1.8 (2026-08-14)
+
+- Refreshed the macOS build against the current Homebrew FFmpeg dynamic
+  libraries to restore startup after an FFmpeg upgrade.
+
 ## 1.1.7 (2026-08-11)
 
 - Summon Track search results now show duration first and support loading the
