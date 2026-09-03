@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## 1.1.9 (2026-09-03)
+
+- File browser tag viewing and editing now reads metadata directly from the
+  selected file, including files that are not registered in the library.
+
 ## 1.1.8 (2026-08-14)
 
 - Refreshed the macOS build against the current Homebrew FFmpeg dynamic

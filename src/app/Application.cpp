@@ -2991,17 +2991,15 @@ namespace vtplayer
                 if (entry->isPlaylist) return;
                 if (!entry->isAudio)   return;
 
-                // Prefer the library-indexed TrackInfo (it has parsed tags
-                // already); fall back to a path-only TrackInfo otherwise so
-                // dirty-field semantics still let the user write tags.
-                TrackInfo seed;
-                if (auto const *indexed = _library.find(entry->path))
-                    seed = *indexed;
-                else
-                {
-                    seed.path = entry->path;
+                // FileBrowser is a live filesystem view, so read metadata
+                // directly from the selected file. The file may be outside
+                // the library root or not indexed yet, and an indexed row may
+                // be stale until the next scan.
+                TrackInfo seed = readTrackInfo(
+                    entry->path, /*filenameTitleFallback=*/false);
+                seed.path = entry->path;
+                if (seed.format == AudioFormat::Unknown)
                     seed.format = TrackInfo::formatFromPath(entry->path);
-                }
                 tracks.push_back(std::move(seed));
                 headerText = "File: " + entry->path.filename().string();
             }
